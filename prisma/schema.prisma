@@ -1,0 +1,146 @@
+// prisma/schema.prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  password      String
+  nom           String
+  prenom        String
+  phoneNumber   String    @default("")
+  role          String    @default("CONSEILLER")
+  teamId        String?
+  superviseurId String?
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  lastLoginAt   DateTime?
+
+  team           Team?        @relation("TeamMembers", fields: [teamId], references: [id])
+  supervisedTeam Team?        @relation("TeamSuperviseur")
+  superviseur    User?        @relation("ConseillerSuperviseur", fields: [superviseurId], references: [id])
+  conseillers    User[]       @relation("ConseillerSuperviseur")
+  assignedCalls  Call[]
+  callResults    CallResult[]
+  loginLogs      LoginLog[]
+
+  @@map("users")
+}
+
+model Team {
+  id            String  @id @default(cuid())
+  nom           String
+  description   String?
+  superviseurId String? @unique
+
+  superviseur User?  @relation("TeamSuperviseur", fields: [superviseurId], references: [id])
+  users       User[] @relation("TeamMembers")
+
+  @@map("teams")
+}
+
+model PhoneLine {
+  id           String  @id @default(cuid())
+  label        String
+  numeroMasque String
+  isActive     Boolean @default(true)
+
+  calls Call[]
+
+  @@map("phone_lines")
+}
+
+model Call {
+  id              String    @id @default(cuid())
+  phoneLineId     String
+  assignedUserId  String?
+  callerNumber    String    @default("")
+  isManual        Boolean   @default(false)
+  isMissed        Boolean   @default(false)
+  durationSeconds Int       @default(0)
+  startedAt       DateTime
+  endedAt         DateTime?
+  statut          String
+  importBatchId   String?
+  rawMeta         String?   @default("")
+
+  phoneLine    PhoneLine    @relation(fields: [phoneLineId], references: [id])
+  assignedUser User?        @relation(fields: [assignedUserId], references: [id])
+  result       CallResult?
+  importBatch  ImportBatch? @relation(fields: [importBatchId], references: [id])
+
+  @@map("calls")
+}
+
+model CallResult {
+  id        String   @id @default(cuid())
+  callId    String   @unique
+  userId    String
+  resultat  String
+  notes     String?
+  createdAt DateTime @default(now())
+
+  call Call @relation(fields: [callId], references: [id])
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("call_results")
+}
+
+model CallResultOption {
+  id       String  @id @default(cuid())
+  label    String
+  value    String  @unique
+  color    String  @default("gray")
+  isActive Boolean @default(true)
+  order    Int     @default(0)
+
+  @@map("call_result_options")
+}
+
+model ImportBatch {
+  id          String   @id @default(cuid())
+  fileName    String
+  totalRows   Int      @default(0)
+  importedRows Int     @default(0)
+  skippedRows Int      @default(0)
+  createdAt   DateTime @default(now())
+  createdBy   String   @default("")
+
+  calls Call[]
+
+  @@map("import_batches")
+}
+
+model LoginLog {
+  id        String   @id @default(cuid())
+  userId    String
+  ip        String   @default("")
+  userAgent String   @default("")
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("login_logs")
+}
+
+model KeyyoConfig {
+  id               String    @id @default(cuid())
+  apiKey           String    @default("")
+  webhookUrl       String    @default("")
+  phoneNumber      String    @default("")
+  distributionMode String    @default("ROUND_ROBIN")
+  maxRingSeconds   Int       @default(30)
+  isActive         Boolean   @default(false)
+  lastTestedAt     DateTime?
+  lastTestSuccess  Boolean   @default(false)
+  lastTestMessage  String    @default("")
+  updatedAt        DateTime  @updatedAt
+
+  @@map("keyyo_config")
+}
