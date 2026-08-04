@@ -1,82 +1,96 @@
 // src/app/api/calls/manual/route.ts
-import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { CALL_USER_SELECT } from "@/lib/selects";
+import { badRequest, handleApiError, readJson, requireRole } from "@/lib/api";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+type ManualCallPayload = {
+  callerNumber?: string;
+  assignedUserId?: string;
+  phoneLineId?: string;
+  startedAt?: string;
+  durationSeconds?: number | string;
+  statut?: string;
+  isMissed?: boolean;
+  resultat?: string | null;
+  notes?: string | null;
+};
 
 export async function POST(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
-
-  const user = session.user as any;
-  if (user.role !== "ADMINISTRATEUR") {
-    return NextResponse.json({ error: "Réservé à l'administrateur" }, { status: 403 });
-  }
-
-  const body = await req.json();
-  const {
-    callerNumber,
-    assignedUserId,
-    phoneLineId,
-    startedAt,
-    durationSeconds,
-    statut,
-    isMissed,
-    resultat,
-    notes,
-  } = body;
-
-  if (!callerNumber?.trim()) {
-    return NextResponse.json({ error: "Le numéro appelant est obligatoire" }, { status: 400 });
-  }
-  if (!assignedUserId) {
-    return NextResponse.json({ error: "Le conseiller est obligatoire" }, { status: 400 });
-  }
-  if (!phoneLineId) {
-    return NextResponse.json({ error: "La ligne téléphonique est obligatoire" }, { status: 400 });
-  }
-  if (!startedAt) {
-    return NextResponse.json({ error: "La date et l'heure sont obligatoires" }, { status: 400 });
-  }
-  if (!statut) {
-    return NextResponse.json({ error: "Le statut est obligatoire" }, { status: 400 });
-  }
-
-  const startDate    = new Date(startedAt);
-  const dur          = Number(durationSeconds) || 0;
-  const endDate      = dur > 0 ? new Date(startDate.getTime() + dur * 1000) : null;
-  const missedBool   = isMissed === true || statut === "MANQUE";
-
-  const call = await prisma.call.create({
-    data: {
-      phoneLineId,
+  try {
+    const user = await requireRole("ADMINISTRATEUR");
+    const {
+      callerNumber,
       assignedUserId,
-      callerNumber:   callerNumber.trim(),
-      isManual:       true,
-      isMissed:       missedBool,
-      durationSeconds: dur,
-      startedAt:      startDate,
-      endedAt:        endDate,
+      phoneLineId,
+      startedAt,
+      durationSeconds,
       statut,
-    },
-    include: {
-      phoneLine:    true,
-      assignedUser: { select: { id: true, nom: true, prenom: true } },
-      result:       true,
-    },
-  });
+      isMissed,
+      resultat,
+      notes,
+    } = await readJson<ManualCallPayload>(req);
 
-  // If a result was provided, create it immediately
-  if (resultat && !missedBool) {
-    await prisma.callResult.create({
-      data: {
-        callId:   call.id,
-        userId:   user.userId,
-        resultat,
-        notes:    notes ?? null,
-      },
+    if (!callerNumber?.trim()) throw badRequest("Le numéro appelant est obligatoire");
+    if (!assignedUserId) throw badRequest("Le conseiller est obligatoire");
+    if (!phoneLineId) throw badRequest("La ligne téléphonique est obligatoire");
+    if (!startedAt) throw badRequest("La date et l'heure sont obligatoires");
+    if (!statut) throw badRequest("Le statut est obligatoire");
+
+    const startDate = new Date(startedAt);
+    if (Number.isNaN(startDate.getTime())) throw badRequest("Date de début invalide");
+
+    const duration = Number(durationSeconds) || 0;
+    if (duration < 0) throw badRequest("Durée invalide");
+
+    const missed = isMissed === true || statut === "MANQUE";
+
+    // Reject unknown FKs up front so the client gets a 400 rather than a
+    // Prisma foreign-key error surfacing as a 500.
+    const [conseiller, phoneLine] = await Promise.all([
+      prisma.user.findUnique({ where: { id: assignedUserId }, select: { id: true } }),
+      prisma.phoneLine.findUnique({ where: { id: phoneLineId }, select: { id: true } }),
+    ]);
+    if (!conseiller) throw badRequest("Conseiller introuvable");
+    if (!phoneLine) throw badRequest("Ligne téléphonique introuvable");
+
+    const call = await prisma.$transaction(async (tx) => {
+      const created = await tx.call.create({
+        data: {
+          phoneLineId,
+          assignedUserId,
+          callerNumber: callerNumber.trim(),
+          isManual: true,
+          isMissed: missed,
+          durationSeconds: duration,
+          startedAt: startDate,
+          endedAt: duration > 0 ? new Date(startDate.getTime() + duration * 1000) : null,
+          statut,
+        },
+      });
+
+      if (resultat && !missed) {
+        await tx.callResult.create({
+          data: { callId: created.id, userId: user.userId, resultat, notes: notes ?? null },
+        });
+      }
+
+      return tx.call.findUnique({
+        where: { id: created.id },
+        include: {
+          phoneLine: true,
+          assignedUser: { select: CALL_USER_SELECT },
+          result: true,
+        },
+      });
     });
-  }
 
-  return NextResponse.json(call, { status: 201 });
+    return NextResponse.json(call, { status: 201 });
+  } catch (error) {
+    return handleApiError(error, "POST /api/calls/manual");
+  }
 }

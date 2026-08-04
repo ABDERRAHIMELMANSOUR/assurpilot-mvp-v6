@@ -1,124 +1,116 @@
 // src/app/api/config/keyyo/route.ts
-import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+import type { KeyyoConfig, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { badRequest, handleApiError, readJson, requireRole } from "@/lib/api";
 
-// Helper: get or create the single KeyyoConfig row
-async function getOrCreateConfig() {
-  let config = await prisma.keyyoConfig.findFirst();
-  if (!config) {
-    config = await prisma.keyyoConfig.create({
-      data: {
-        apiKey: "",
-        webhookUrl: "",
-        phoneNumber: "",
-        distributionMode: "ROUND_ROBIN",
-        maxRingSeconds: 30,
-        isActive: false,
-      },
-    });
-  }
-  return config;
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+type KeyyoPayload = {
+  apiKey?: string;
+  webhookUrl?: string;
+  phoneNumber?: string;
+  distributionMode?: string;
+  maxRingSeconds?: number | string;
+  isActive?: boolean;
+};
+
+/** Get or create the single KeyyoConfig row. */
+async function getOrCreateConfig(): Promise<KeyyoConfig> {
+  const existing = await prisma.keyyoConfig.findFirst();
+  if (existing) return existing;
+  return prisma.keyyoConfig.create({
+    data: {
+      apiKey: "",
+      webhookUrl: "",
+      phoneNumber: "",
+      distributionMode: "ROUND_ROBIN",
+      maxRingSeconds: 30,
+      isActive: false,
+    },
+  });
 }
 
-export async function GET(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
-
-  const user = session.user as any;
-  if (user.role !== "ADMINISTRATEUR") {
-    return NextResponse.json({ error: "Accès réservé à l'administrateur" }, { status: 403 });
-  }
-
-  const config = await getOrCreateConfig();
-
-  // Mask the API key in the response (show only last 4 chars)
-  return NextResponse.json({
+/** Never return the raw API key to the client — only a masked hint. */
+function toPublicConfig(config: KeyyoConfig) {
+  return {
     ...config,
-    apiKeyMasked: config.apiKey
-      ? "••••••••••••" + config.apiKey.slice(-4)
-      : "",
-    apiKey: "", // never send the real key back to the client
-  });
+    apiKeyMasked: config.apiKey ? "••••••••••••" + config.apiKey.slice(-4) : "",
+    apiKey: "",
+  };
+}
+
+export async function GET() {
+  try {
+    await requireRole("ADMINISTRATEUR");
+    const config = await getOrCreateConfig();
+    return NextResponse.json(toPublicConfig(config));
+  } catch (error) {
+    return handleApiError(error, "GET /api/config/keyyo");
+  }
 }
 
 export async function PUT(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
+  try {
+    await requireRole("ADMINISTRATEUR");
+    const { apiKey, webhookUrl, phoneNumber, distributionMode, maxRingSeconds, isActive } =
+      await readJson<KeyyoPayload>(req);
 
-  const user = session.user as any;
-  if (user.role !== "ADMINISTRATEUR") {
-    return NextResponse.json({ error: "Accès réservé à l'administrateur" }, { status: 403 });
+    const config = await getOrCreateConfig();
+
+    const data: Prisma.KeyyoConfigUpdateInput = {};
+    if (webhookUrl !== undefined) data.webhookUrl = webhookUrl.trim();
+    if (phoneNumber !== undefined) data.phoneNumber = phoneNumber.trim();
+    if (distributionMode !== undefined) data.distributionMode = distributionMode;
+    if (isActive !== undefined) data.isActive = isActive;
+    if (maxRingSeconds !== undefined) {
+      const seconds = Number(maxRingSeconds);
+      if (!Number.isFinite(seconds) || seconds <= 0) {
+        throw badRequest("Durée de sonnerie invalide");
+      }
+      data.maxRingSeconds = Math.round(seconds);
+    }
+    // An empty apiKey means "leave the stored key untouched".
+    if (apiKey && apiKey.trim() !== "") data.apiKey = apiKey.trim();
+
+    const updated = await prisma.keyyoConfig.update({ where: { id: config.id }, data });
+    return NextResponse.json(toPublicConfig(updated));
+  } catch (error) {
+    return handleApiError(error, "PUT /api/config/keyyo");
   }
-
-  const body = await req.json();
-  const { apiKey, webhookUrl, phoneNumber, distributionMode, maxRingSeconds, isActive } = body;
-
-  const config = await getOrCreateConfig();
-
-  const updateData: any = {};
-  if (webhookUrl   !== undefined) updateData.webhookUrl      = webhookUrl;
-  if (phoneNumber  !== undefined) updateData.phoneNumber     = phoneNumber;
-  if (distributionMode !== undefined) updateData.distributionMode = distributionMode;
-  if (maxRingSeconds   !== undefined) updateData.maxRingSeconds   = Number(maxRingSeconds);
-  if (isActive     !== undefined) updateData.isActive        = isActive;
-  // Only update API key if a new non-empty value is provided
-  if (apiKey && apiKey.trim() !== "") updateData.apiKey = apiKey.trim();
-
-  const updated = await prisma.keyyoConfig.update({
-    where: { id: config.id },
-    data: updateData,
-  });
-
-  return NextResponse.json({
-    ...updated,
-    apiKeyMasked: updated.apiKey ? "••••••••••••" + updated.apiKey.slice(-4) : "",
-    apiKey: "",
-  });
 }
 
-export async function POST(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
+/** Connection test. Simulated for now — replace with a real Keyyo API call. */
+export async function POST() {
+  try {
+    await requireRole("ADMINISTRATEUR");
+    const config = await getOrCreateConfig();
 
-  const user = session.user as any;
-  if (user.role !== "ADMINISTRATEUR") {
-    return NextResponse.json({ error: "Accès réservé à l'administrateur" }, { status: 403 });
+    let success = false;
+    let message: string;
+
+    if (!config.apiKey) {
+      message = "Clé API manquante. Veuillez configurer votre clé API Keyyo.";
+    } else if (!config.phoneNumber) {
+      message = "Numéro de téléphone manquant. Veuillez saisir votre numéro Keyyo.";
+    } else if (!config.webhookUrl) {
+      message = "URL de webhook manquante. Veuillez configurer l'URL de réception des appels.";
+    } else {
+      success = true;
+      message =
+        `Connexion Keyyo simulée avec succès. Numéro ${config.phoneNumber} ` +
+        `· Mode de distribution : ${config.distributionMode}`;
+    }
+
+    await prisma.keyyoConfig.update({
+      where: { id: config.id },
+      data: { lastTestedAt: new Date(), lastTestSuccess: success, lastTestMessage: message },
+    });
+
+    return NextResponse.json({ success, message });
+  } catch (error) {
+    return handleApiError(error, "POST /api/config/keyyo");
   }
-
-  const config = await getOrCreateConfig();
-
-  // Simulate a Keyyo connection test
-  // In production, this would make a real API call to Keyyo
-  const hasApiKey    = config.apiKey.length > 0;
-  const hasPhone     = config.phoneNumber.length > 0;
-  const hasWebhook   = config.webhookUrl.length > 0;
-
-  let success = false;
-  let message = "";
-
-  if (!hasApiKey) {
-    message = "Clé API manquante. Veuillez configurer votre clé API Keyyo.";
-  } else if (!hasPhone) {
-    message = "Numéro de téléphone manquant. Veuillez saisir votre numéro Keyyo.";
-  } else if (!hasWebhook) {
-    message = "URL de webhook manquante. Veuillez configurer l'URL de réception des appels.";
-  } else {
-    // Simulate a successful test
-    success = true;
-    message = `Connexion Keyyo simulée avec succès. Numéro ${config.phoneNumber} · Mode de distribution : ${config.distributionMode}`;
-  }
-
-  // Save test result
-  await prisma.keyyoConfig.update({
-    where: { id: config.id },
-    data: {
-      lastTestedAt: new Date(),
-      lastTestSuccess: success,
-      lastTestMessage: message,
-    },
-  });
-
-  return NextResponse.json({ success, message });
 }

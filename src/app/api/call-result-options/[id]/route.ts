@@ -1,59 +1,73 @@
 // src/app/api/call-result-options/[id]/route.ts
-import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { badRequest, handleApiError, notFound, readJson, requireRole } from "@/lib/api";
 
-function adminOnly(role: string) {
-  return role !== "ADMINISTRATEUR"
-    ? NextResponse.json({ error: "Réservé à l'administrateur" }, { status: 403 })
-    : null;
-}
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
-  const deny = adminOnly((session.user as any).role);
-  if (deny) return deny;
+type RouteContext = { params: { id: string } };
 
-  const body = await req.json();
-  const { label, color, isActive, order } = body;
+type OptionPayload = {
+  label?: string;
+  color?: string;
+  isActive?: boolean;
+  order?: number | string;
+};
 
-  const option = await prisma.callResultOption.findUnique({ where: { id: params.id } });
-  if (!option) return NextResponse.json({ error: "Option introuvable" }, { status: 404 });
+export async function PUT(req: NextRequest, { params }: RouteContext) {
+  try {
+    await requireRole("ADMINISTRATEUR");
+    const { label, color, isActive, order } = await readJson<OptionPayload>(req);
 
-  const updated = await prisma.callResultOption.update({
-    where: { id: params.id },
-    data: {
-      ...(label    !== undefined && { label: label.trim() }),
-      ...(color    !== undefined && { color }),
-      ...(isActive !== undefined && { isActive }),
-      ...(order    !== undefined && { order: Number(order) }),
-    },
-  });
-  return NextResponse.json(updated);
-}
+    const option = await prisma.callResultOption.findUnique({ where: { id: params.id } });
+    if (!option) throw notFound("Option introuvable");
 
-export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
-  const deny = adminOnly((session.user as any).role);
-  if (deny) return deny;
+    const data: Prisma.CallResultOptionUpdateInput = {};
+    if (label !== undefined) {
+      if (!label.trim()) throw badRequest("Le label ne peut pas être vide");
+      data.label = label.trim();
+    }
+    if (color !== undefined) data.color = color;
+    if (isActive !== undefined) data.isActive = isActive;
+    if (order !== undefined) {
+      const parsedOrder = Number(order);
+      if (!Number.isFinite(parsedOrder)) throw badRequest("Ordre invalide");
+      data.order = parsedOrder;
+    }
 
-  const option = await prisma.callResultOption.findUnique({ where: { id: params.id } });
-  if (!option) return NextResponse.json({ error: "Option introuvable" }, { status: 404 });
-
-  // Check if any call results use this option
-  const inUse = await prisma.callResult.count({ where: { resultat: option.value } });
-  if (inUse > 0) {
-    // Soft delete — deactivate instead of hard delete
-    const updated = await prisma.callResultOption.update({
-      where: { id: params.id },
-      data: { isActive: false },
-    });
-    return NextResponse.json({ ...updated, warning: `Cette option est utilisée par ${inUse} appel(s). Elle a été désactivée plutôt que supprimée.` });
+    const updated = await prisma.callResultOption.update({ where: { id: params.id }, data });
+    return NextResponse.json(updated);
+  } catch (error) {
+    return handleApiError(error, `PUT /api/call-result-options/${params.id}`);
   }
+}
 
-  await prisma.callResultOption.delete({ where: { id: params.id } });
-  return NextResponse.json({ success: true });
+export async function DELETE(_req: NextRequest, { params }: RouteContext) {
+  try {
+    await requireRole("ADMINISTRATEUR");
+
+    const option = await prisma.callResultOption.findUnique({ where: { id: params.id } });
+    if (!option) throw notFound("Option introuvable");
+
+    const inUse = await prisma.callResult.count({ where: { resultat: option.value } });
+    if (inUse > 0) {
+      // Soft delete — hard-deleting would orphan the historical results.
+      const updated = await prisma.callResultOption.update({
+        where: { id: params.id },
+        data: { isActive: false },
+      });
+      return NextResponse.json({
+        ...updated,
+        warning: `Cette option est utilisée par ${inUse} appel(s). Elle a été désactivée plutôt que supprimée.`,
+      });
+    }
+
+    await prisma.callResultOption.delete({ where: { id: params.id } });
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    return handleApiError(error, `DELETE /api/call-result-options/${params.id}`);
+  }
 }

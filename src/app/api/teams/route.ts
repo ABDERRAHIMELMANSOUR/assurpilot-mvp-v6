@@ -1,37 +1,34 @@
 // src/app/api/teams/route.ts
-import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { handleApiError, requireRole } from "@/lib/api";
 
-export async function GET(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-  const user = session.user as any;
-  if (!["ADMINISTRATEUR", "SUPERVISEUR"].includes(user.role)) {
-    return NextResponse.json({ error: "Accès refusé" }, { status: 403 });
-  }
+export async function GET() {
+  try {
+    await requireRole("ADMINISTRATEUR", "SUPERVISEUR");
 
-  const teams = await prisma.team.findMany({
-    include: {
-      superviseur: { select: { id: true, nom: true, prenom: true } },
-      users: {
-        where: { role: "CONSEILLER" },
-        select: { id: true },
+    const teams = await prisma.team.findMany({
+      include: {
+        superviseur: { select: { id: true, nom: true, prenom: true } },
+        users: { where: { role: "CONSEILLER" }, select: { id: true } },
       },
-    },
-    orderBy: { nom: "asc" },
-  });
+      orderBy: { nom: "asc" },
+    });
 
-  return NextResponse.json(
-    teams.map((t) => ({
-      id: t.id,
-      nom: t.nom,
-      description: t.description,
-      superviseurId: t.superviseurId,
-      superviseur: t.superviseur,
-      conseillerCount: t.users.length,
-    }))
-  );
+    return NextResponse.json(
+      teams.map((team) => ({
+        id: team.id,
+        nom: team.nom,
+        description: team.description,
+        superviseurId: team.superviseurId,
+        superviseur: team.superviseur,
+        conseillerCount: team.users.length,
+      }))
+    );
+  } catch (error) {
+    return handleApiError(error, "GET /api/teams");
+  }
 }

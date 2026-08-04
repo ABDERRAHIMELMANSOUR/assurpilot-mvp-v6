@@ -1,63 +1,137 @@
 // src/app/api/users/[id]/route.ts
-import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+import type { Prisma } from "@prisma/client";
 import bcrypt from "bcryptjs";
-import { USER_SELECT } from "../route";
+import { prisma } from "@/lib/prisma";
+import { USER_SELECT } from "@/lib/selects";
+import {
+  badRequest,
+  conflict,
+  forbidden,
+  handleApiError,
+  notFound,
+  readJson,
+  requireRole,
+  type SessionUser,
+} from "@/lib/api";
 
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
-  const cu = session.user as any;
-  if (!["ADMINISTRATEUR", "SUPERVISEUR"].includes(cu.role)) return NextResponse.json({ error: "Accès refusé" }, { status: 403 });
-  const user = await prisma.user.findUnique({ where: { id: params.id }, select: USER_SELECT });
-  if (!user) return NextResponse.json({ error: "Utilisateur introuvable" }, { status: 404 });
-  if (cu.role === "SUPERVISEUR" && (user as any).teamId !== cu.teamId) return NextResponse.json({ error: "Accès refusé" }, { status: 403 });
-  return NextResponse.json(user);
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+type RouteContext = { params: { id: string } };
+
+type UserPayload = {
+  email?: string;
+  nom?: string;
+  prenom?: string;
+  phoneNumber?: string;
+  password?: string;
+  role?: string;
+  teamId?: string | null;
+  superviseurId?: string | null;
+  isActive?: boolean;
+};
+
+/** A superviseur may only manage active conseillers inside their own team. */
+function assertCanManage(
+  currentUser: SessionUser,
+  target: { teamId: string | null; role: string }
+) {
+  if (currentUser.role !== "SUPERVISEUR") return;
+  if (target.teamId !== currentUser.teamId || target.role !== "CONSEILLER") {
+    throw forbidden();
+  }
 }
 
-export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
-  const cu = session.user as any;
-  if (!["ADMINISTRATEUR", "SUPERVISEUR"].includes(cu.role)) return NextResponse.json({ error: "Accès refusé" }, { status: 403 });
-  const target = await prisma.user.findUnique({ where: { id: params.id } });
-  if (!target) return NextResponse.json({ error: "Utilisateur introuvable" }, { status: 404 });
-  if (cu.role === "SUPERVISEUR" && (target.teamId !== cu.teamId || target.role !== "CONSEILLER")) return NextResponse.json({ error: "Accès refusé" }, { status: 403 });
-
-  const { email, nom, prenom, phoneNumber, password, role, teamId, superviseurId, isActive } = await req.json();
-  if (email && email !== target.email) {
-    const dup = await prisma.user.findUnique({ where: { email } });
-    if (dup) return NextResponse.json({ error: "Cette adresse email est déjà utilisée" }, { status: 409 });
+export async function GET(_req: NextRequest, { params }: RouteContext) {
+  try {
+    const currentUser = await requireRole("ADMINISTRATEUR", "SUPERVISEUR");
+    const user = await prisma.user.findUnique({
+      where: { id: params.id },
+      select: USER_SELECT,
+    });
+    if (!user) throw notFound("Utilisateur introuvable");
+    assertCanManage(currentUser, { teamId: user.teamId, role: user.role });
+    return NextResponse.json(user);
+  } catch (error) {
+    return handleApiError(error, `GET /api/users/${params.id}`);
   }
-
-  const data: any = {};
-  if (email       !== undefined) data.email       = email;
-  if (nom         !== undefined) data.nom         = nom;
-  if (prenom      !== undefined) data.prenom      = prenom;
-  if (phoneNumber !== undefined) data.phoneNumber = phoneNumber;
-  if (isActive    !== undefined) data.isActive    = isActive;
-  if (password)                  data.password    = await bcrypt.hash(password, 10);
-  if (cu.role === "ADMINISTRATEUR") {
-    if (role          !== undefined) data.role          = role;
-    if (teamId        !== undefined) data.teamId        = teamId || null;
-    if (superviseurId !== undefined) data.superviseurId = superviseurId || null;
-  }
-
-  const updated = await prisma.user.update({ where: { id: params.id }, data, select: USER_SELECT });
-  return NextResponse.json(updated);
 }
 
-export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
-  const cu = session.user as any;
-  if (!["ADMINISTRATEUR", "SUPERVISEUR"].includes(cu.role)) return NextResponse.json({ error: "Accès refusé" }, { status: 403 });
-  if (params.id === cu.userId) return NextResponse.json({ error: "Impossible de désactiver votre propre compte" }, { status: 400 });
-  const target = await prisma.user.findUnique({ where: { id: params.id } });
-  if (!target) return NextResponse.json({ error: "Utilisateur introuvable" }, { status: 404 });
-  if (cu.role === "SUPERVISEUR" && (target.teamId !== cu.teamId || target.role !== "CONSEILLER")) return NextResponse.json({ error: "Accès refusé" }, { status: 403 });
-  await prisma.user.update({ where: { id: params.id }, data: { isActive: false } });
-  return NextResponse.json({ success: true });
+export async function PUT(req: NextRequest, { params }: RouteContext) {
+  try {
+    const currentUser = await requireRole("ADMINISTRATEUR", "SUPERVISEUR");
+
+    const target = await prisma.user.findUnique({ where: { id: params.id } });
+    if (!target) throw notFound("Utilisateur introuvable");
+    assertCanManage(currentUser, target);
+
+    const { email, nom, prenom, phoneNumber, password, role, teamId, superviseurId, isActive } =
+      await readJson<UserPayload>(req);
+
+    const data: Prisma.UserUpdateInput = {};
+
+    if (email !== undefined) {
+      const normalizedEmail = email.trim().toLowerCase();
+      if (!normalizedEmail) throw badRequest("L'email ne peut pas être vide");
+      if (normalizedEmail !== target.email) {
+        const duplicate = await prisma.user.findUnique({ where: { email: normalizedEmail } });
+        if (duplicate) throw conflict("Cette adresse email est déjà utilisée");
+      }
+      data.email = normalizedEmail;
+    }
+    if (nom !== undefined) {
+      if (!nom.trim()) throw badRequest("Le nom ne peut pas être vide");
+      data.nom = nom.trim();
+    }
+    if (prenom !== undefined) {
+      if (!prenom.trim()) throw badRequest("Le prénom ne peut pas être vide");
+      data.prenom = prenom.trim();
+    }
+    if (phoneNumber !== undefined) data.phoneNumber = phoneNumber.trim();
+    if (isActive !== undefined) data.isActive = isActive;
+    if (password) data.password = await bcrypt.hash(password, 10);
+
+    // Role, team and coach assignment stay admin-only.
+    if (currentUser.role === "ADMINISTRATEUR") {
+      if (role !== undefined) data.role = role;
+      if (teamId !== undefined) {
+        data.team = teamId ? { connect: { id: teamId } } : { disconnect: true };
+      }
+      if (superviseurId !== undefined) {
+        data.superviseur = superviseurId
+          ? { connect: { id: superviseurId } }
+          : { disconnect: true };
+      }
+    }
+
+    const updated = await prisma.user.update({
+      where: { id: params.id },
+      data,
+      select: USER_SELECT,
+    });
+    return NextResponse.json(updated);
+  } catch (error) {
+    return handleApiError(error, `PUT /api/users/${params.id}`);
+  }
+}
+
+export async function DELETE(_req: NextRequest, { params }: RouteContext) {
+  try {
+    const currentUser = await requireRole("ADMINISTRATEUR", "SUPERVISEUR");
+    if (params.id === currentUser.userId) {
+      throw badRequest("Impossible de désactiver votre propre compte");
+    }
+
+    const target = await prisma.user.findUnique({ where: { id: params.id } });
+    if (!target) throw notFound("Utilisateur introuvable");
+    assertCanManage(currentUser, target);
+
+    // Soft delete — the call history keeps pointing at this user.
+    await prisma.user.update({ where: { id: params.id }, data: { isActive: false } });
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    return handleApiError(error, `DELETE /api/users/${params.id}`);
+  }
 }

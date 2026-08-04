@@ -1,97 +1,100 @@
 // src/app/api/analytics/route.ts
-import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { handleApiError, requireUser } from "@/lib/api";
+import { buildDateRange } from "@/lib/dates";
 
-function buildDateFilter(searchParams: URLSearchParams) {
-  const dateFrom = searchParams.get("dateFrom");
-  const dateTo   = searchParams.get("dateTo");
-  const period   = searchParams.get("period");
-  let startDate: Date | undefined;
-  let endDate: Date | undefined;
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-  if (period) {
-    const now = new Date();
-    endDate = new Date(now);
-    if (period === "today") {
-      startDate = new Date(now); startDate.setHours(0,0,0,0);
-    } else if (period === "week") {
-      startDate = new Date(now); startDate.setDate(startDate.getDate() - 7);
-    } else if (period === "month") {
-      startDate = new Date(now); startDate.setDate(1); startDate.setHours(0,0,0,0);
-    }
-  } else {
-    if (dateFrom) startDate = new Date(dateFrom);
-    if (dateTo)   { endDate = new Date(dateTo); endDate.setHours(23,59,59,999); }
-  }
-  if (!startDate && !endDate) return undefined;
-  const filter: any = {};
-  if (startDate) filter.gte = startDate;
-  if (endDate)   filter.lte = endDate;
-  return filter;
+const DEVIS = "DEVIS_REALISE";
+
+type CallWithResult = { isMissed: boolean; durationSeconds: number; result: { resultat: string } | null };
+
+function tally(calls: CallWithResult[]) {
+  const total = calls.length;
+  const manques = calls.filter((c) => c.isMissed).length;
+  const repondus = total - manques;
+  const devis = calls.filter((c) => c.result?.resultat === DEVIS).length;
+  return {
+    total,
+    manques,
+    repondus,
+    devis,
+    tauxConversion: repondus > 0 ? Math.round((devis / repondus) * 100) : 0,
+  };
 }
 
 export async function GET(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
+  try {
+    const user = await requireUser();
+    const range = buildDateRange(new URL(req.url).searchParams);
+    const startedAtWhere: Prisma.CallWhereInput = range ? { startedAt: range } : {};
 
-  const user = session.user as any;
-  const { searchParams } = new URL(req.url);
-  const dateFilter = buildDateFilter(searchParams);
-  const startedAtWhere = dateFilter ? { startedAt: dateFilter } : {};
+    if (user.role === "CONSEILLER") {
+      const calls = await prisma.call.findMany({
+        where: { assignedUserId: user.userId, ...startedAtWhere },
+        select: {
+          isMissed: true,
+          durationSeconds: true,
+          result: { select: { resultat: true } },
+        },
+      });
 
-  if (user.role === "CONSEILLER") {
-    const calls = await prisma.call.findMany({
-      where: { assignedUserId: user.userId, ...startedAtWhere },
-      include: { result: true },
-    });
-    const total       = calls.length;
-    const manques     = calls.filter((c) => c.isMissed).length;
-    const repondus    = calls.filter((c) => !c.isMissed).length;
-    const devis       = calls.filter((c) => c.result?.resultat === "DEVIS_REALISE").length;
-    const durations   = calls.filter((c) => c.durationSeconds > 0).map((c) => c.durationSeconds);
-    const dureeMoyenne = durations.length ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length) : 0;
-    return NextResponse.json({ total, manques, repondus, devis, dureeMoyenne, tauxConversion: repondus > 0 ? Math.round((devis / repondus) * 100) : 0 });
-  }
+      const stats = tally(calls);
+      const durations = calls.filter((c) => c.durationSeconds > 0).map((c) => c.durationSeconds);
+      const dureeMoyenne = durations.length
+        ? Math.round(durations.reduce((sum, d) => sum + d, 0) / durations.length)
+        : 0;
 
-  if (user.role === "SUPERVISEUR") {
+      return NextResponse.json({ ...stats, dureeMoyenne });
+    }
+
+    const isSuperviseur = user.role === "SUPERVISEUR";
     const agents = await prisma.user.findMany({
-      where: { teamId: user.teamId, role: "CONSEILLER" },
-      include: { assignedCalls: { where: startedAtWhere, include: { result: true } } },
+      where: isSuperviseur
+        ? { role: "CONSEILLER", teamId: user.teamId }
+        : { role: "CONSEILLER" },
+      select: {
+        id: true,
+        nom: true,
+        prenom: true,
+        team: { select: { nom: true } },
+        assignedCalls: {
+          where: startedAtWhere,
+          select: {
+            isMissed: true,
+            durationSeconds: true,
+            result: { select: { resultat: true } },
+          },
+        },
+      },
     });
-    const leaderboard = agents.map((a) => {
-      const total   = a.assignedCalls.length;
-      const repondus = a.assignedCalls.filter((c) => !c.isMissed).length;
-      const devis   = a.assignedCalls.filter((c) => c.result?.resultat === "DEVIS_REALISE").length;
-      const manques = a.assignedCalls.filter((c) => c.isMissed).length;
-      return { id: a.id, nom: a.nom, prenom: a.prenom, total, repondus, devis, manques, tauxConversion: repondus > 0 ? Math.round((devis / repondus) * 100) : 0 };
-    }).sort((a, b) => b.tauxConversion - a.tauxConversion);
-    return NextResponse.json({
-      totalAppels:  leaderboard.reduce((s, a) => s + a.total,   0),
-      totalDevis:   leaderboard.reduce((s, a) => s + a.devis,   0),
-      totalManques: leaderboard.reduce((s, a) => s + a.manques, 0),
-      leaderboard,
-    });
-  }
 
-  // ADMIN
-  const allUsers = await prisma.user.findMany({
-    where: { role: "CONSEILLER" },
-    include: { assignedCalls: { where: startedAtWhere, include: { result: true } }, team: true },
-  });
-  const leaderboard = allUsers.map((a) => {
-    const total    = a.assignedCalls.length;
-    const repondus = a.assignedCalls.filter((c) => !c.isMissed).length;
-    const devis    = a.assignedCalls.filter((c) => c.result?.resultat === "DEVIS_REALISE").length;
-    const manques  = a.assignedCalls.filter((c) => c.isMissed).length;
-    return { id: a.id, nom: a.nom, prenom: a.prenom, team: a.team?.nom ?? "—", total, repondus, devis, manques, tauxConversion: repondus > 0 ? Math.round((devis / repondus) * 100) : 0 };
-  }).sort((a, b) => b.tauxConversion - a.tauxConversion);
-  return NextResponse.json({
-    totalAppels:  leaderboard.reduce((s, a) => s + a.total,   0),
-    totalDevis:   leaderboard.reduce((s, a) => s + a.devis,   0),
-    totalManques: leaderboard.reduce((s, a) => s + a.manques, 0),
-    totalAgents:  allUsers.length,
-    leaderboard,
-  });
+    const leaderboard = agents
+      .map((agent) => ({
+        id: agent.id,
+        nom: agent.nom,
+        prenom: agent.prenom,
+        team: agent.team?.nom ?? "—",
+        ...tally(agent.assignedCalls),
+      }))
+      .sort((a, b) => b.tauxConversion - a.tauxConversion);
+
+    const totals = {
+      totalAppels: leaderboard.reduce((sum, a) => sum + a.total, 0),
+      totalDevis: leaderboard.reduce((sum, a) => sum + a.devis, 0),
+      totalManques: leaderboard.reduce((sum, a) => sum + a.manques, 0),
+    };
+
+    return NextResponse.json(
+      isSuperviseur
+        ? { ...totals, leaderboard }
+        : { ...totals, totalAgents: agents.length, leaderboard }
+    );
+  } catch (error) {
+    return handleApiError(error, "GET /api/analytics");
+  }
 }

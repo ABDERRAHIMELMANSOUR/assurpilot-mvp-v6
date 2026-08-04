@@ -3,9 +3,15 @@ generator client {
   provider = "prisma-client-js"
 }
 
+// PostgreSQL on Vercel:
+//   DATABASE_URL -> pooled connection (PgBouncer / Neon pooler / Supabase pooler),
+//                   used by the serverless functions at runtime.
+//   DIRECT_URL   -> direct connection, used by `prisma migrate` / `prisma db push`,
+//                   which cannot run through a transaction pooler.
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model User {
@@ -30,6 +36,10 @@ model User {
   callResults    CallResult[]
   loginLogs      LoginLog[]
 
+  @@index([role])
+  @@index([teamId])
+  @@index([superviseurId])
+  @@index([phoneNumber])
   @@map("users")
 }
 
@@ -53,6 +63,7 @@ model PhoneLine {
 
   calls Call[]
 
+  @@index([isActive])
   @@map("phone_lines")
 }
 
@@ -75,6 +86,10 @@ model Call {
   result       CallResult?
   importBatch  ImportBatch? @relation(fields: [importBatchId], references: [id])
 
+  @@index([startedAt])
+  @@index([assignedUserId, startedAt])
+  @@index([phoneLineId])
+  @@index([importBatchId])
   @@map("calls")
 }
 
@@ -89,6 +104,8 @@ model CallResult {
   call Call @relation(fields: [callId], references: [id])
   user User @relation(fields: [userId], references: [id])
 
+  @@index([userId])
+  @@index([resultat])
   @@map("call_results")
 }
 
@@ -100,20 +117,22 @@ model CallResultOption {
   isActive Boolean @default(true)
   order    Int     @default(0)
 
+  @@index([order])
   @@map("call_result_options")
 }
 
 model ImportBatch {
   id          String   @id @default(cuid())
-  fileName    String
-  totalRows   Int      @default(0)
-  importedRows Int     @default(0)
-  skippedRows Int      @default(0)
-  createdAt   DateTime @default(now())
-  createdBy   String   @default("")
+  fileName     String
+  totalRows    Int      @default(0)
+  importedRows Int      @default(0)
+  skippedRows  Int      @default(0)
+  createdAt    DateTime @default(now())
+  createdBy    String   @default("")
 
   calls Call[]
 
+  @@index([createdAt])
   @@map("import_batches")
 }
 
@@ -126,6 +145,7 @@ model LoginLog {
 
   user User @relation(fields: [userId], references: [id])
 
+  @@index([userId, createdAt])
   @@map("login_logs")
 }
 

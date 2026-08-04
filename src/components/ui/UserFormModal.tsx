@@ -1,8 +1,22 @@
 "use client";
 import { useState, useEffect } from "react";
+import { errorMessage, fetchJson, fetchJsonOr } from "@/lib/fetchJson";
 
 type Team  = { id: string; nom: string };
-type Coach = { id: string; prenom: string; nom: string; phoneNumber?: string };
+// Field names mirror the /api/users payload: nom, prenom, phoneNumber.
+type Coach = { id: string; prenom: string; nom: string; phoneNumber?: string; isActive: boolean };
+
+type UserPayload = {
+  prenom: string;
+  nom: string;
+  email: string;
+  phoneNumber: string;
+  isActive: boolean;
+  password?: string;
+  role?: string;
+  teamId?: string | null;
+  superviseurId?: string | null;
+};
 
 interface UserFormModalProps {
   mode: "create" | "edit";
@@ -38,39 +52,66 @@ export default function UserFormModal({
   const isAdmin = currentUserRole === "ADMINISTRATEUR";
 
   useEffect(() => {
-    if (isAdmin) {
-      fetch("/api/teams").then((r) => r.json()).then((d) => setTeams(Array.isArray(d) ? d : []));
-      fetch("/api/users?role=SUPERVISEUR").then((r) => r.json())
-        .then((d) => setCoachs(Array.isArray(d) ? d.filter((u: any) => u.isActive) : []));
-    }
+    if (!isAdmin) return;
+    let cancelled = false;
+
+    // These two dropdowns are optional context — a failure must not break the form.
+    void (async () => {
+      const [teamList, coachList] = await Promise.all([
+        fetchJsonOr<Team[]>([], "/api/teams"),
+        fetchJsonOr<Coach[]>([], "/api/users?role=SUPERVISEUR"),
+      ]);
+      if (cancelled) return;
+      setTeams(Array.isArray(teamList) ? teamList : []);
+      setCoachs(Array.isArray(coachList) ? coachList.filter((c) => c.isActive) : []);
+    })();
+
+    return () => { cancelled = true; };
   }, [isAdmin]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setSaving(true); setError("");
+    setError("");
+
     if (!prenom.trim() || !nom.trim() || !email.trim()) {
       setError("Prénom, nom et email sont obligatoires.");
-      setSaving(false); return;
+      return;
     }
     if (mode === "create" && !password) {
       setError("Le mot de passe est obligatoire lors de la création.");
-      setSaving(false); return;
+      return;
     }
-    const body: any = { prenom, nom, email, phoneNumber, isActive };
+
+    const body: UserPayload = {
+      prenom: prenom.trim(),
+      nom: nom.trim(),
+      email: email.trim(),
+      phoneNumber: phoneNumber.trim(),
+      isActive,
+    };
     if (password) body.password = password;
     if (isAdmin) {
       body.role          = targetRole;
       body.teamId        = teamId || null;
       body.superviseurId = coachId || null;
     }
+
     const url    = mode === "create" ? "/api/users" : `/api/users/${initialData!.id}`;
     const method = mode === "create" ? "POST" : "PUT";
+
+    setSaving(true);
     try {
-      const res  = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-      const data = await res.json();
-      if (!res.ok) { setError(data.error ?? "Erreur lors de l'enregistrement."); setSaving(false); return; }
-      onSaved(); onClose();
-    } catch { setError("Erreur réseau."); setSaving(false); }
+      await fetchJson(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      onSaved();
+      onClose();
+    } catch (err) {
+      setError(errorMessage(err, "Erreur lors de l'enregistrement."));
+      setSaving(false);
+    }
   }
 
   const roleLabel = targetRole === "CONSEILLER" ? "Conseiller" : "Coach";

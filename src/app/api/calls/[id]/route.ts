@@ -1,118 +1,155 @@
 // src/app/api/calls/[id]/route.ts
-// Admin-only: read, update, delete a single call (only manual/imported calls)
-import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+// Admin-only: read, update, delete a single call (only manual/imported calls).
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { CALL_USER_SELECT } from "@/lib/selects";
+import {
+  badRequest,
+  handleApiError,
+  notFound,
+  readJson,
+  requireRole,
+} from "@/lib/api";
 
-function adminOnly(role: string) {
-  if (role !== "ADMINISTRATEUR") {
-    return NextResponse.json({ error: "Réservé à l'administrateur" }, { status: 403 });
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+type RouteContext = { params: { id: string } };
+
+type CallPayload = {
+  callerNumber?: string;
+  assignedUserId?: string | null;
+  phoneLineId?: string;
+  startedAt?: string;
+  durationSeconds?: number | string;
+  statut?: string;
+  isMissed?: boolean;
+  resultat?: string | null;
+  notes?: string | null;
+};
+
+const CALL_INCLUDE = {
+  phoneLine: true,
+  assignedUser: { select: CALL_USER_SELECT },
+  result: true,
+} as const;
+
+export async function GET(_req: NextRequest, { params }: RouteContext) {
+  try {
+    await requireRole("ADMINISTRATEUR");
+    const call = await prisma.call.findUnique({
+      where: { id: params.id },
+      include: CALL_INCLUDE,
+    });
+    if (!call) throw notFound("Appel introuvable");
+    return NextResponse.json(call);
+  } catch (error) {
+    return handleApiError(error, `GET /api/calls/${params.id}`);
   }
-  return null;
 }
 
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
-  const deny = adminOnly((session.user as any).role);
-  if (deny) return deny;
+export async function PUT(req: NextRequest, { params }: RouteContext) {
+  try {
+    const currentUser = await requireRole("ADMINISTRATEUR");
 
-  const call = await prisma.call.findUnique({
-    where: { id: params.id },
-    include: {
-      phoneLine:    true,
-      assignedUser: { select: { id: true, nom: true, prenom: true, phoneNumber: true } },
-      result:       true,
-    },
-  });
-  if (!call) return NextResponse.json({ error: "Appel introuvable" }, { status: 404 });
-  return NextResponse.json(call);
-}
-
-export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
-  const deny = adminOnly((session.user as any).role);
-  if (deny) return deny;
-
-  const call = await prisma.call.findUnique({ where: { id: params.id } });
-  if (!call) return NextResponse.json({ error: "Appel introuvable" }, { status: 404 });
-
-  // Only allow editing manual/imported calls
-  if (!call.isManual) {
-    return NextResponse.json({
-      error: "Seuls les appels importés manuellement peuvent être modifiés",
-    }, { status: 400 });
-  }
-
-  const body = await req.json();
-  const {
-    callerNumber, assignedUserId, phoneLineId,
-    startedAt, durationSeconds, statut, isMissed,
-    // result fields
-    resultat, notes,
-  } = body;
-
-  const dur        = durationSeconds !== undefined ? Number(durationSeconds) : call.durationSeconds;
-  const missedBool = isMissed !== undefined ? isMissed : call.isMissed;
-  const started    = startedAt ? new Date(startedAt) : call.startedAt;
-
-  const updatedCall = await prisma.call.update({
-    where: { id: params.id },
-    data: {
-      ...(callerNumber    !== undefined && { callerNumber }),
-      ...(assignedUserId  !== undefined && { assignedUserId: assignedUserId || null }),
-      ...(phoneLineId     !== undefined && { phoneLineId }),
-      startedAt:      started,
-      durationSeconds: dur,
-      isMissed:       missedBool,
-      statut:         statut ?? (missedBool ? "MANQUE" : "REPONDU"),
-      endedAt:        missedBool ? null : new Date(started.getTime() + dur * 1000),
-    },
-    include: {
-      phoneLine:    true,
-      assignedUser: { select: { id: true, nom: true, prenom: true } },
-      result:       true,
-    },
-  });
-
-  // Upsert result if provided
-  if (resultat !== undefined && assignedUserId) {
-    const userId = (session.user as any).userId;
-    if (resultat === null || resultat === "") {
-      await prisma.callResult.deleteMany({ where: { callId: params.id } });
-    } else {
-      await prisma.callResult.upsert({
-        where:  { callId: params.id },
-        create: { callId: params.id, userId, resultat, notes: notes ?? null },
-        update: { resultat, notes: notes ?? null },
-      });
+    const call = await prisma.call.findUnique({ where: { id: params.id } });
+    if (!call) throw notFound("Appel introuvable");
+    if (!call.isManual) {
+      throw badRequest("Seuls les appels importés manuellement peuvent être modifiés");
     }
-  }
 
-  return NextResponse.json(updatedCall);
+    const body = await readJson<CallPayload>(req);
+    const {
+      callerNumber,
+      assignedUserId,
+      phoneLineId,
+      startedAt,
+      durationSeconds,
+      statut,
+      isMissed,
+      resultat,
+      notes,
+    } = body;
+
+    let started = call.startedAt;
+    if (startedAt !== undefined) {
+      started = new Date(startedAt);
+      if (Number.isNaN(started.getTime())) throw badRequest("Date de début invalide");
+    }
+
+    let duration = call.durationSeconds;
+    if (durationSeconds !== undefined) {
+      duration = Number(durationSeconds);
+      if (!Number.isFinite(duration) || duration < 0) {
+        throw badRequest("Durée invalide");
+      }
+    }
+
+    const missed = isMissed ?? call.isMissed;
+    const nextAssignedUserId =
+      assignedUserId !== undefined ? assignedUserId || null : call.assignedUserId;
+
+    // One transaction so the call and its result never diverge on partial failure.
+    const updatedCall = await prisma.$transaction(async (tx) => {
+      const updated = await tx.call.update({
+        where: { id: params.id },
+        data: {
+          ...(callerNumber !== undefined && { callerNumber }),
+          ...(assignedUserId !== undefined && { assignedUserId: nextAssignedUserId }),
+          ...(phoneLineId !== undefined && { phoneLineId }),
+          startedAt: started,
+          durationSeconds: duration,
+          isMissed: missed,
+          statut: statut ?? (missed ? "MANQUE" : "REPONDU"),
+          endedAt: missed ? null : new Date(started.getTime() + duration * 1000),
+        },
+      });
+
+      if (resultat !== undefined) {
+        if (!resultat) {
+          await tx.callResult.deleteMany({ where: { callId: params.id } });
+        } else if (nextAssignedUserId) {
+          await tx.callResult.upsert({
+            where: { callId: params.id },
+            create: {
+              callId: params.id,
+              userId: currentUser.userId,
+              resultat,
+              notes: notes ?? null,
+            },
+            update: { resultat, notes: notes ?? null },
+          });
+        }
+      }
+
+      return tx.call.findUnique({ where: { id: updated.id }, include: CALL_INCLUDE });
+    });
+
+    return NextResponse.json(updatedCall);
+  } catch (error) {
+    return handleApiError(error, `PUT /api/calls/${params.id}`);
+  }
 }
 
-export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
-  const deny = adminOnly((session.user as any).role);
-  if (deny) return deny;
+export async function DELETE(_req: NextRequest, { params }: RouteContext) {
+  try {
+    await requireRole("ADMINISTRATEUR");
 
-  const call = await prisma.call.findUnique({ where: { id: params.id } });
-  if (!call) return NextResponse.json({ error: "Appel introuvable" }, { status: 404 });
+    const call = await prisma.call.findUnique({ where: { id: params.id } });
+    if (!call) throw notFound("Appel introuvable");
+    if (!call.isManual) {
+      throw badRequest("Seuls les appels importés manuellement peuvent être supprimés");
+    }
 
-  // Only allow deleting manual/imported calls
-  if (!call.isManual) {
-    return NextResponse.json({
-      error: "Seuls les appels importés manuellement peuvent être supprimés",
-    }, { status: 400 });
+    // The result row holds an FK to the call, so it has to go first.
+    await prisma.$transaction([
+      prisma.callResult.deleteMany({ where: { callId: params.id } }),
+      prisma.call.delete({ where: { id: params.id } }),
+    ]);
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    return handleApiError(error, `DELETE /api/calls/${params.id}`);
   }
-
-  // Delete result first (FK constraint), then call
-  await prisma.callResult.deleteMany({ where: { callId: params.id } });
-  await prisma.call.delete({ where: { id: params.id } });
-
-  return NextResponse.json({ success: true });
 }

@@ -1,20 +1,19 @@
 "use client";
 import { useState } from "react";
 import { useSession } from "next-auth/react";
+import { errorMessage, fetchJson } from "@/lib/fetchJson";
 import UserFormModal from "./UserFormModal";
 
+/**
+ * Mirrors the payload of /api/users (see USER_SELECT in src/lib/selects.ts).
+ * Field names match the Prisma model exactly: nom, prenom, phoneNumber.
+ */
 export type UserRow = {
   id: string; prenom: string; nom: string; email: string; phoneNumber?: string;
   role: string; teamId?: string | null; superviseurId?: string | null;
   isActive: boolean; createdAt: string; lastLoginAt?: string | null;
   team?:        { id: string; nom: string } | null;
   superviseur?: { id: string; nom: string; prenom: string; phoneNumber?: string } | null;
-};
-
-const ROLE_UI: Record<string, { label: string; cls: string }> = {
-  CONSEILLER:     { label: "Conseiller", cls: "badge-blue"   },
-  SUPERVISEUR:    { label: "Coach",      cls: "badge-yellow" },
-  ADMINISTRATEUR: { label: "Admin",      cls: "badge-gray"   },
 };
 
 function timeAgo(d: string): string {
@@ -50,11 +49,16 @@ export default function UsersTable({ users, targetRole, currentUserRole, onRefre
   async function handleDelete(u: UserRow) {
     if (!confirm(`Désactiver ${u.prenom} ${u.nom} ?\nL'historique des appels est conservé.`)) return;
     setDeleting(u.id); setDelError("");
-    const res  = await fetch(`/api/users/${u.id}`, { method: "DELETE" });
-    const data = await res.json();
-    if (!res.ok) setDelError(data.error ?? "Erreur.");
-    else onRefresh();
-    setDeleting(null);
+    try {
+      await fetchJson(`/api/users/${u.id}`, { method: "DELETE" });
+      onRefresh();
+    } catch (err) {
+      setDelError(errorMessage(err, "La désactivation a échoué."));
+    } finally {
+      // Always clear the pending state — otherwise a failed request leaves the
+      // row's buttons disabled forever.
+      setDeleting(null);
+    }
   }
 
   return (

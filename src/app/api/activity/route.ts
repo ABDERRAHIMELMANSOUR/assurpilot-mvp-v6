@@ -1,37 +1,41 @@
 // src/app/api/activity/route.ts
-import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { NextResponse } from "next/server";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { handleApiError, requireRole } from "@/lib/api";
 
-export async function GET(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-  const user = session.user as any;
-  if (!["ADMINISTRATEUR", "SUPERVISEUR"].includes(user.role)) {
-    return NextResponse.json({ error: "Accès refusé" }, { status: 403 });
-  }
+export async function GET() {
+  try {
+    const user = await requireRole("ADMINISTRATEUR", "SUPERVISEUR");
 
-  // Build user scope
-  let userWhere: any = { role: "CONSEILLER" };
-  if (user.role === "SUPERVISEUR") {
-    userWhere.teamId = user.teamId;
-  }
+    const where: Prisma.UserWhereInput = { role: "CONSEILLER" };
+    if (user.role === "SUPERVISEUR") where.teamId = user.teamId;
 
-  const users = await prisma.user.findMany({
-    where: userWhere,
-    select: {
-      id: true, nom: true, prenom: true, email: true,
-      role: true, isActive: true, lastLoginAt: true,
-      loginLogs: {
-        orderBy: { createdAt: "desc" },
-        take: 5,
-        select: { id: true, createdAt: true, ip: true },
+    const users = await prisma.user.findMany({
+      where,
+      select: {
+        id: true,
+        nom: true,
+        prenom: true,
+        email: true,
+        phoneNumber: true,
+        role: true,
+        isActive: true,
+        lastLoginAt: true,
+        loginLogs: {
+          orderBy: { createdAt: "desc" },
+          take: 5,
+          select: { id: true, createdAt: true, ip: true },
+        },
       },
-    },
-    orderBy: { lastLoginAt: "desc" },
-  });
+      orderBy: { lastLoginAt: "desc" },
+    });
 
-  return NextResponse.json(users);
+    return NextResponse.json(users);
+  } catch (error) {
+    return handleApiError(error, "GET /api/activity");
+  }
 }
