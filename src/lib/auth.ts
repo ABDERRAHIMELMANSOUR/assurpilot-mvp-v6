@@ -17,6 +17,27 @@ if (!secret && process.env.NODE_ENV === "production") {
   );
 }
 
+/**
+ * Signals that the failure was infrastructure/configuration, not a wrong
+ * password, so the UI can say so instead of blaming the user's credentials.
+ */
+class AuthConfigurationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AuthConfigurationError";
+  }
+}
+
+/** Renders an unknown thrown value into something useful in the Vercel logs. */
+function describeError(error: unknown): string {
+  if (error && typeof error === "object") {
+    const e = error as { name?: string; code?: string; message?: string };
+    const parts = [e.name, e.code && `code=${e.code}`, e.message].filter(Boolean);
+    if (parts.length) return parts.join(" ");
+  }
+  return String(error);
+}
+
 /** Extracts a header value from the raw request NextAuth hands to `authorize`. */
 function headerValue(req: unknown, name: string): string {
   const headers = (req as { headers?: Record<string, string | string[] | undefined> })?.headers;
@@ -38,14 +59,58 @@ export const authOptions: NextAuthOptions = {
       },
       async authorize(credentials, req) {
         try {
-          if (!credentials?.email || !credentials?.password) return null;
+          if (!credentials?.email || !credentials?.password) {
+            console.error("[auth] REJECTED: email or password missing from the request");
+            return null;
+          }
 
           const email = credentials.email.trim().toLowerCase();
-          const user = await prisma.user.findUnique({ where: { email } });
-          if (!user || !user.isActive) return null;
 
-          const valid = await bcrypt.compare(credentials.password, user.password);
-          if (!valid) return null;
+          // The database lookup is isolated so a connectivity/config failure is
+          // never silently reported as "wrong password" — by far the most common
+          // cause of a login that fails only once deployed.
+          let user: Awaited<ReturnType<typeof prisma.user.findUnique>>;
+          try {
+            user = await prisma.user.findUnique({ where: { email } });
+          } catch (dbError) {
+            console.error(
+              "[auth] DATABASE ERROR during user lookup — this is NOT a bad password. " +
+                "Check DATABASE_URL (is the password percent-encoded?) and that the " +
+                "schema has been applied.",
+              describeError(dbError)
+            );
+            throw new AuthConfigurationError("database unreachable");
+          }
+
+          if (!user) {
+            console.error(`[auth] REJECTED: no user row with email ${email}`);
+            return null;
+          }
+          if (!user.isActive) {
+            console.error(`[auth] REJECTED: user ${email} exists but isActive = false`);
+            return null;
+          }
+          if (typeof user.password !== "string" || !/^\$2[aby]\$/.test(user.password)) {
+            console.error(
+              `[auth] REJECTED: stored password for ${email} is not a bcrypt hash ` +
+                `(got ${typeof user.password}, length ${String(user.password ?? "").length}). ` +
+                "Was the row seeded with a plaintext password?"
+            );
+            return null;
+          }
+
+          let valid: boolean;
+          try {
+            valid = await bcrypt.compare(credentials.password, user.password);
+          } catch (compareError) {
+            console.error("[auth] REJECTED: bcrypt.compare threw", describeError(compareError));
+            return null;
+          }
+          if (!valid) {
+            console.error(`[auth] REJECTED: password mismatch for ${email}`);
+            return null;
+          }
+          console.info(`[auth] OK: ${email} authenticated as ${user.role}`);
 
           // Audit trail — must never block a legitimate login if it fails.
           try {
@@ -73,9 +138,12 @@ export const authOptions: NextAuthOptions = {
             superviseurId: user.superviseurId,
           };
         } catch (error) {
-          // A thrown error here becomes a 500 from /api/auth/callback/credentials.
-          // Returning null keeps it a clean "invalid credentials" response.
-          console.error("[auth] authorize failed:", error);
+          // Configuration/infrastructure failures are re-thrown so NextAuth
+          // reports them as something other than "bad credentials"; the login
+          // page uses that to show an accurate message. Everything else is
+          // swallowed to avoid leaking which accounts exist.
+          if (error instanceof AuthConfigurationError) throw error;
+          console.error("[auth] REJECTED: unexpected error in authorize", describeError(error));
           return null;
         }
       },

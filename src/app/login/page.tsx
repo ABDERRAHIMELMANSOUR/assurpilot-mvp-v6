@@ -15,7 +15,16 @@ export default function LoginPage() {
     setLoading(true); setError("");
     const res = await signIn("credentials", { email, password, redirect: false });
     if (res?.error) {
-      setError("Email ou mot de passe incorrect.");
+      // NextAuth reports a rejected credential as "CredentialsSignin". Anything
+      // else (Configuration, a thrown AuthConfigurationError, a 500) means the
+      // server is misconfigured — saying "wrong password" there sends you
+      // hunting for the wrong problem entirely.
+      setError(
+        res.error === "CredentialsSignin"
+          ? "Email ou mot de passe incorrect."
+          : "Connexion au serveur impossible. Vérifiez la configuration " +
+            "(base de données, variables d'environnement) — consultez /api/health."
+      );
       setLoading(false);
     } else {
       router.push("/"); router.refresh();
