@@ -49,8 +49,10 @@ model Team {
   description   String?
   superviseurId String? @unique
 
-  superviseur User?  @relation("TeamSuperviseur", fields: [superviseurId], references: [id])
-  users       User[] @relation("TeamMembers")
+  superviseur User?       @relation("TeamSuperviseur", fields: [superviseurId], references: [id])
+  users       User[]      @relation("TeamMembers")
+  phoneLines  PhoneLine[]
+  calls       Call[]
 
   @@map("teams")
 }
@@ -58,12 +60,18 @@ model Team {
 model PhoneLine {
   id           String  @id @default(cuid())
   label        String
+  // Full line number, matched against "Numéro appelant" / "Numéro appelé"
+  // during an import. Stored however the operator typed it; comparisons go
+  // through normalizePhone() so +33/33/0 prefixes are all equivalent.
   numeroMasque String
   isActive     Boolean @default(true)
+  teamId       String?
 
+  team  Team?  @relation(fields: [teamId], references: [id])
   calls Call[]
 
   @@index([isActive])
+  @@index([teamId])
   @@map("phone_lines")
 }
 
@@ -79,8 +87,10 @@ model Call {
   endedAt         DateTime?
   statut          String
   importBatchId   String?
+  teamId          String?
   rawMeta         String?   @default("")
 
+  team         Team?        @relation(fields: [teamId], references: [id])
   phoneLine    PhoneLine    @relation(fields: [phoneLineId], references: [id])
   assignedUser User?        @relation(fields: [assignedUserId], references: [id])
   result       CallResult?
@@ -90,6 +100,7 @@ model Call {
   @@index([assignedUserId, startedAt])
   @@index([phoneLineId])
   @@index([importBatchId])
+  @@index([teamId])
   @@map("calls")
 }
 
@@ -122,7 +133,7 @@ model CallResultOption {
 }
 
 model ImportBatch {
-  id          String   @id @default(cuid())
+  id           String   @id @default(cuid())
   fileName     String
   totalRows    Int      @default(0)
   importedRows Int      @default(0)

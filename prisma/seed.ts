@@ -1,6 +1,7 @@
 // prisma/seed.ts
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { LINE_ROUTES } from "../src/lib/phone";
 
 const prisma = new PrismaClient();
 
@@ -94,12 +95,28 @@ async function main() {
   // ── Business phone lines (the 2 real lines) ───────────────────────────────────
   // numeroMasque stores the actual line number used for matching during import
   // "Numéro appelé" in Keyyo files = the line that received the call
-  const lineAuto  = await prisma.phoneLine.create({
-    data: { label: "Ligne Auto",  numeroMasque: "0988288362", isActive: true },
-  });
-  const lineSante = await prisma.phoneLine.create({
-    data: { label: "Ligne Santé", numeroMasque: "0180873462", isActive: true },
-  });
+  // The four production lines, each owned by the team that answers it. Imports
+  // route on these numbers (see src/lib/phone.ts), so team + line must agree.
+  const routedTeams = new Map<string, string>();
+  const routedLines = new Map<string, { id: string }>();
+  for (const route of LINE_ROUTES) {
+    let teamId = routedTeams.get(route.team);
+    if (!teamId) {
+      const team = await prisma.team.create({
+        data: { nom: route.team, description: `Appels reçus sur ${route.label}` },
+      });
+      teamId = team.id;
+      routedTeams.set(route.team, teamId);
+    }
+    const line = await prisma.phoneLine.create({
+      data: { label: route.label, numeroMasque: route.numero, isActive: true, teamId },
+    });
+    routedLines.set(route.numero, { id: line.id });
+  }
+
+  // Kept under their historical names for the sample calls below.
+  const lineAuto = routedLines.get("0988288362")!;
+  const lineSante = routedLines.get("0180873462")!;
 
   // ── Keyyo config ──────────────────────────────────────────────────────────────
   await prisma.keyyoConfig.create({
@@ -149,6 +166,7 @@ async function main() {
     const call = await prisma.call.create({
       data: {
         phoneLineId: c.line.id, assignedUserId: agent1.id,
+        teamId: (await prisma.phoneLine.findUnique({ where: { id: c.line.id }, select: { teamId: true } }))?.teamId ?? null,
         callerNumber: c.caller, isMissed: c.isMissed,
         durationSeconds: c.dur,
         statut: c.isMissed ? "MANQUE" : "REPONDU",
@@ -165,6 +183,7 @@ async function main() {
     const call = await prisma.call.create({
       data: {
         phoneLineId: c.line.id, assignedUserId: agent2.id,
+        teamId: (await prisma.phoneLine.findUnique({ where: { id: c.line.id }, select: { teamId: true } }))?.teamId ?? null,
         callerNumber: c.caller, isMissed: c.isMissed,
         durationSeconds: c.dur,
         statut: c.isMissed ? "MANQUE" : "REPONDU",
@@ -183,9 +202,10 @@ async function main() {
   console.log("  🎯 Coach     : coach@assurpilot.fr          / coach123");
   console.log("  👤 Conseiller: marie.laurent@assurpilot.fr  / agent123  (ligne Auto  0988288362)");
   console.log("  👤 Conseiller: pierre.durand@assurpilot.fr  / agent123  (ligne Santé 0180873462)");
-  console.log("\n📞 Lignes configurées :");
-  console.log("  Ligne Auto   : 0988288362  (33988288362)");
-  console.log("  Ligne Santé  : 0180873462  (33180873462)");
+  console.log("\n📞 Lignes configurées (routage des imports) :");
+  for (const route of LINE_ROUTES) {
+    console.log(`  ${route.numero}  →  ${route.team}   (${route.label})`);
+  }
 }
 
 main()

@@ -2,21 +2,46 @@
 import { useEffect, useState, useCallback } from "react";
 import CallsTable from "@/components/ui/CallsTable";
 import DateFilter, { DateFilterState, buildQueryString } from "@/components/ui/DateFilter";
+import { errorMessage } from "@/lib/fetchJson";
 import Link from "next/link";
 
-const EMPTY: DateFilterState = { period: "month", dateFrom: "", dateTo: "" };
+// "Tout" by default: this list is the record of every call, so a default period
+// would silently hide imported history and make the page disagree with the
+// dashboard totals.
+const EMPTY: DateFilterState = { period: "", dateFrom: "", dateTo: "" };
 
 export default function AdminAppelsPage() {
   const [calls,   setCalls]   = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter,  setFilter]  = useState<DateFilterState>(EMPTY);
   const [statut,  setStatut]  = useState("all");
+  const [error,   setError]   = useState("");
+  const [truncated, setTruncated] = useState<{ shown: number; total: number } | null>(null);
 
   const fetchCalls = useCallback(async () => {
-    setLoading(true);
-    const data = await fetch("/api/calls" + buildQueryString(filter)).then((r) => r.json());
-    setCalls(Array.isArray(data) ? data : []);
-    setLoading(false);
+    setLoading(true); setError(""); setTruncated(null);
+    try {
+      // A failed request used to fall through to an empty array, which rendered
+      // as "Aucun appel pour cette période" — indistinguishable from no data.
+      const res = await fetch("/api/calls" + buildQueryString(filter));
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error ?? `Erreur ${res.status}`);
+      }
+      const data = await res.json();
+      setCalls(Array.isArray(data) ? data : []);
+      if (res.headers.get("X-Truncated") === "true") {
+        setTruncated({
+          shown: Number(res.headers.get("X-Returned-Count") ?? 0),
+          total: Number(res.headers.get("X-Total-Count") ?? 0),
+        });
+      }
+    } catch (err) {
+      setCalls([]);
+      setError(errorMessage(err, "Impossible de charger les appels."));
+    } finally {
+      setLoading(false);
+    }
   }, [filter]);
 
   useEffect(() => { fetchCalls(); }, [fetchCalls]);
@@ -69,6 +94,19 @@ export default function AdminAppelsPage() {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
           Les appels marqués <strong className="mx-1">Import</strong> peuvent être modifiés ou supprimés via le bouton <strong className="ml-1">Modifier</strong>.
+        </div>
+      )}
+
+      {error && (
+        <div className="mb-3 bg-red-50 border border-red-200 rounded-xl px-4 py-2.5 text-sm text-red-700">
+          {error}
+        </div>
+      )}
+
+      {truncated && (
+        <div className="mb-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 text-xs text-amber-800">
+          Affichage des {truncated.shown} appels les plus récents sur {truncated.total}.
+          Affinez la période pour voir les autres.
         </div>
       )}
 

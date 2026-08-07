@@ -23,19 +23,29 @@ export function buildDateRange(searchParams: URLSearchParams): DateRange | undef
 
   if (period) {
     const now = new Date();
-    endDate = new Date(now);
     startDate = new Date(now);
+    endDate = new Date(now);
 
+    // The end of a period is the end of its last DAY, never "right now".
+    // Clamping to `now` silently hid every call timestamped later in the day —
+    // so "Aujourd'hui" could report zero while calls for today existed, and
+    // imported rows whose times run ahead of the server clock disappeared.
     switch (period) {
       case "today":
         startDate.setHours(0, 0, 0, 0);
+        endDate.setHours(23, 59, 59, 999);
         break;
       case "week":
         startDate.setDate(startDate.getDate() - 7);
+        startDate.setHours(0, 0, 0, 0);
+        endDate.setHours(23, 59, 59, 999);
         break;
       case "month":
         startDate.setDate(1);
         startDate.setHours(0, 0, 0, 0);
+        // Last instant of the current month: day 0 of next month.
+        endDate.setMonth(endDate.getMonth() + 1, 0);
+        endDate.setHours(23, 59, 59, 999);
         break;
       default:
         throw badRequest(`Période inconnue : ${period}`);

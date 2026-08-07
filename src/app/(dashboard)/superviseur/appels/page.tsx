@@ -3,7 +3,7 @@ import { useEffect, useState, useCallback } from "react";
 import CallsTable from "@/components/ui/CallsTable";
 import DateFilter, { DateFilterState, buildQueryString } from "@/components/ui/DateFilter";
 
-const EMPTY: DateFilterState = { period: "month", dateFrom: "", dateTo: "" };
+const EMPTY: DateFilterState = { period: "", dateFrom: "", dateTo: "" };
 
 export default function SuperviseurAppelsPage() {
   const [calls,   setCalls]   = useState<any[]>([]);

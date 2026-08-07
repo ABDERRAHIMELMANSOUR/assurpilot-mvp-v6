@@ -5,7 +5,7 @@ import CallsTable from "@/components/ui/CallsTable";
 import StatCard from "@/components/ui/StatCard";
 import DateFilter, { DateFilterState, buildQueryString } from "@/components/ui/DateFilter";
 
-const EMPTY_FILTER: DateFilterState = { period: "month", dateFrom: "", dateTo: "" };
+const EMPTY_FILTER: DateFilterState = { period: "", dateFrom: "", dateTo: "" };
 
 export default function ConseillerPage() {
   const { data: session } = useSession();

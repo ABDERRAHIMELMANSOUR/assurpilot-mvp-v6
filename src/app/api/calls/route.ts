@@ -26,18 +26,32 @@ export async function GET(req: NextRequest) {
     }
     if (range) where.startedAt = range;
 
-    const calls = await prisma.call.findMany({
-      where,
-      include: {
-        phoneLine: true,
-        assignedUser: { select: CALL_USER_SELECT },
-        result: true,
-      },
-      orderBy: { startedAt: "desc" },
-      take: MAX_ROWS,
-    });
+    // Count alongside the page so a truncated list can say so rather than
+    // quietly disagreeing with the dashboard totals.
+    const [total, calls] = await Promise.all([
+      prisma.call.count({ where }),
+      prisma.call.findMany({
+        where,
+        include: {
+          phoneLine: true,
+          team: { select: { id: true, nom: true } },
+          assignedUser: { select: CALL_USER_SELECT },
+          result: true,
+        },
+        orderBy: { startedAt: "desc" },
+        take: MAX_ROWS,
+      }),
+    ]);
 
-    return NextResponse.json(calls);
+    // The response stays a bare array for backwards compatibility; the totals
+    // ride along in headers so callers can detect truncation.
+    return NextResponse.json(calls, {
+      headers: {
+        "X-Total-Count": String(total),
+        "X-Returned-Count": String(calls.length),
+        "X-Truncated": total > calls.length ? "true" : "false",
+      },
+    });
   } catch (error) {
     return handleApiError(error, "GET /api/calls");
   }
