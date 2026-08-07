@@ -5,6 +5,7 @@ import type { Prisma } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { USER_SELECT } from "@/lib/selects";
+import { isDirectReport } from "@/lib/scope";
 import {
   badRequest,
   conflict,
@@ -33,15 +34,17 @@ type UserPayload = {
   isActive?: boolean;
 };
 
-/** A superviseur may only manage active conseillers inside their own team. */
+/**
+ * A superviseur may only manage conseillers who report directly to them.
+ * Team membership is not enough: a team is shared between coaches, so keying
+ * off it let one coach edit another's people.
+ */
 function assertCanManage(
   currentUser: SessionUser,
-  target: { teamId: string | null; role: string }
+  target: { role: string; superviseurId: string | null }
 ) {
   if (currentUser.role !== "SUPERVISEUR") return;
-  if (target.teamId !== currentUser.teamId || target.role !== "CONSEILLER") {
-    throw forbidden();
-  }
+  if (!isDirectReport(currentUser.userId, target)) throw forbidden();
 }
 
 export async function GET(_req: NextRequest, { params }: RouteContext) {
@@ -52,7 +55,7 @@ export async function GET(_req: NextRequest, { params }: RouteContext) {
       select: USER_SELECT,
     });
     if (!user) throw notFound("Utilisateur introuvable");
-    assertCanManage(currentUser, { teamId: user.teamId, role: user.role });
+    assertCanManage(currentUser, { role: user.role, superviseurId: user.superviseurId });
     return NextResponse.json(user);
   } catch (error) {
     return handleApiError(error, `GET /api/users/${params.id}`);

@@ -5,6 +5,7 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { handleApiError, requireUser } from "@/lib/api";
 import { buildDateRange } from "@/lib/dates";
+import { directReportsWhere } from "@/lib/scope";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -54,9 +55,8 @@ export async function GET(req: NextRequest) {
 
     const isSuperviseur = user.role === "SUPERVISEUR";
     const agents = await prisma.user.findMany({
-      where: isSuperviseur
-        ? { role: "CONSEILLER", teamId: user.teamId }
-        : { role: "CONSEILLER" },
+      // Coach metrics cover only their own conseillers.
+      where: isSuperviseur ? directReportsWhere(user.userId) : { role: "CONSEILLER" },
       select: {
         id: true,
         nom: true,

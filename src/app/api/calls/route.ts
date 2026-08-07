@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { CALL_INCLUDE } from "@/lib/selects";
 import { forbidden, handleApiError, notFound, requireUser, type SessionUser } from "@/lib/api";
 import { buildDateRange } from "@/lib/dates";
+import { coachScopeFor, isDirectReport } from "@/lib/scope";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,15 +23,7 @@ const MAX_ROWS = 500;
 function scopeFor(user: SessionUser): Prisma.CallWhereInput {
   if (user.role === "ADMINISTRATEUR") return {};
 
-  if (user.role === "SUPERVISEUR") {
-    return {
-      OR: [
-        { assignedUserId: user.userId }, // calls that landed on the coach's own line
-        { transferredById: user.userId }, // calls the coach handed off
-        { assignedUser: { teamId: user.teamId } }, // their team's calls
-      ],
-    };
-  }
+  if (user.role === "SUPERVISEUR") return coachScopeFor(user);
 
   // A conseiller sees only what is assigned to them — including transfers in.
   return { assignedUserId: user.userId };
@@ -54,10 +47,9 @@ async function filterForUser(
     throw forbidden();
   }
   if (viewer.role === "SUPERVISEUR") {
+    // Themselves, or a conseiller who reports to them — nobody else.
     const isSelf = target.id === viewer.userId;
-    const inTeam = target.teamId !== null && target.teamId === viewer.teamId;
-    const isMine = target.superviseurId === viewer.userId;
-    if (!isSelf && !inTeam && !isMine) throw forbidden();
+    if (!isSelf && !isDirectReport(viewer.userId, target)) throw forbidden();
   }
 
   // A coach's own drill-down includes what they transferred away, mirroring

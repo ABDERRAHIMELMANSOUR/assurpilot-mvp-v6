@@ -10,6 +10,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { CALL_INCLUDE } from "@/lib/selects";
+import { isDirectReport } from "@/lib/scope";
 import {
   badRequest,
   forbidden,
@@ -43,7 +44,7 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
         id: true,
         assignedUserId: true,
         transferredById: true,
-        assignedUser: { select: { teamId: true } },
+        assignedUser: { select: { role: true, superviseurId: true } },
       },
     });
     if (!call) throw notFound("Appel introuvable");
@@ -53,8 +54,7 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
       const ownsIt =
         call.assignedUserId === user.userId ||
         call.transferredById === user.userId ||
-        (call.assignedUser?.teamId !== undefined &&
-          call.assignedUser?.teamId === user.teamId);
+        (call.assignedUser !== null && isDirectReport(user.userId, call.assignedUser));
       if (!ownsIt) throw forbidden("Cet appel n'est pas dans votre périmètre");
     }
 
@@ -88,12 +88,8 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
     if (!target.isActive) throw badRequest("Ce conseiller est désactivé");
 
     // A coach transfers only within their own team.
-    if (user.role === "SUPERVISEUR") {
-      const inTeam = target.teamId !== null && target.teamId === user.teamId;
-      const isMine = target.superviseurId === user.userId;
-      if (!inTeam && !isMine) {
-        throw forbidden("Ce conseiller ne fait pas partie de votre équipe");
-      }
+    if (user.role === "SUPERVISEUR" && !isDirectReport(user.userId, target)) {
+      throw forbidden("Ce conseiller ne fait pas partie de votre équipe");
     }
 
     // Whoever currently holds the call is the one recorded as transferring it,

@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { isDirectReport } from "@/lib/scope";
 import {
   badRequest,
   forbidden,
@@ -30,12 +31,19 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
     if (user.role === "CONSEILLER" && call.assignedUserId !== user.userId) {
       throw forbidden();
     }
-    if (user.role === "SUPERVISEUR" && call.assignedUserId) {
-      const owner = await prisma.user.findUnique({
-        where: { id: call.assignedUserId },
-        select: { teamId: true },
-      });
-      if (owner?.teamId !== user.teamId) throw forbidden();
+    if (user.role === "SUPERVISEUR" && call.assignedUserId !== user.userId) {
+      // A coach may qualify their own calls, or those of a conseiller who
+      // reports to them.
+      const owner = call.assignedUserId
+        ? await prisma.user.findUnique({
+            where: { id: call.assignedUserId },
+            select: { role: true, superviseurId: true },
+          })
+        : null;
+      const transferredByMe = call.transferredById === user.userId;
+      if (!transferredByMe && !(owner && isDirectReport(user.userId, owner))) {
+        throw forbidden();
+      }
     }
 
     const result = await prisma.callResult.upsert({

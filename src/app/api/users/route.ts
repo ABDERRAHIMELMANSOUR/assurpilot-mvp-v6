@@ -5,6 +5,7 @@ import type { Prisma } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { USER_SELECT } from "@/lib/selects";
+import { directReportsWhere } from "@/lib/scope";
 import {
   badRequest,
   conflict,
@@ -34,9 +35,11 @@ export async function GET(req: NextRequest) {
     const user = await requireRole("ADMINISTRATEUR", "SUPERVISEUR");
     const roleFilter = new URL(req.url).searchParams.get("role");
 
+    // A coach sees only their own conseillers. Scoping by teamId would leak
+    // every conseiller in the shared team bucket, including other coaches'.
     const where: Prisma.UserWhereInput =
       user.role === "SUPERVISEUR"
-        ? { role: "CONSEILLER", teamId: user.teamId }
+        ? directReportsWhere(user.userId)
         : { role: roleFilter ?? { in: ["CONSEILLER", "SUPERVISEUR"] } };
 
     const users = await prisma.user.findMany({

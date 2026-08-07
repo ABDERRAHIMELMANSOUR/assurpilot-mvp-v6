@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { handleApiError, requireRole } from "@/lib/api";
+import { directReportsWhere } from "@/lib/scope";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,8 +12,10 @@ export async function GET() {
   try {
     const user = await requireRole("ADMINISTRATEUR", "SUPERVISEUR");
 
-    const where: Prisma.UserWhereInput = { role: "CONSEILLER" };
-    if (user.role === "SUPERVISEUR") where.teamId = user.teamId;
+    const where: Prisma.UserWhereInput =
+      user.role === "SUPERVISEUR"
+        ? directReportsWhere(user.userId)
+        : { role: "CONSEILLER" };
 
     const users = await prisma.user.findMany({
       where,
