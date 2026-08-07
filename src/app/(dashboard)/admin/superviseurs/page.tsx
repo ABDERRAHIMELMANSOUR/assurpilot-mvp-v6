@@ -36,6 +36,7 @@ export default function AdminSuperveursPage() {
           targetRole="SUPERVISEUR"
           currentUserRole="ADMINISTRATEUR"
           onRefresh={fetchUsers}
+          detailBasePath="/admin/utilisateurs"
         />
       )}
     </div>

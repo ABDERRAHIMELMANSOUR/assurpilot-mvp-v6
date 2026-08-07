@@ -33,6 +33,7 @@ export default function CoachEquipePage() {
           targetRole="CONSEILLER"
           currentUserRole="SUPERVISEUR"
           onRefresh={fetchUsers}
+          detailBasePath="/superviseur/equipe"
         />
       )}
     </div>

@@ -60,6 +60,7 @@ export default function AdminConseillersPage() {
           targetRole="CONSEILLER"
           currentUserRole="ADMINISTRATEUR"
           onRefresh={fetchUsers}
+          detailBasePath="/admin/utilisateurs"
         />
       )}
     </div>

@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import ResultModal   from "./ResultModal";
 import EditCallModal from "./EditCallModal";
+import TransferModal from "./TransferModal";
 
 type ResultOption = { value: string; label: string; color: string };
 
@@ -17,6 +18,11 @@ type Call = {
   phoneLineId?:   string;
   phoneLine:      { label: string };
   assignedUser?:  { id?: string; nom: string; prenom: string } | null;
+  // Set once a coach has handed the call to a conseiller. The call stays in the
+  // coach's list, badged with its new owner.
+  transferredBy?: { id?: string; nom: string; prenom: string } | null;
+  transferredAt?: string | null;
+  team?:          { id: string; nom: string } | null;
   result?:        { resultat: string; notes?: string | null } | null;
 };
 
@@ -56,6 +62,10 @@ interface Props {
   showNotes?:   boolean;
   allowResult?: boolean;
   isAdmin?:     boolean;   // enables edit/delete on manual calls
+  /** Shows the "Transférer" action (coach workspace / admin). */
+  allowTransfer?: boolean;
+  /** Viewer's own id — used to tell "I transferred this" from "sent to me". */
+  currentUserId?: string;
   onRefresh?:   () => void;
 }
 
@@ -65,9 +75,12 @@ export default function CallsTable({
   showNotes    = false,
   allowResult  = false,
   isAdmin      = false,
+  allowTransfer = false,
+  currentUserId,
   onRefresh,
 }: Props) {
   const [resultModal, setResultModal]   = useState<Call | null>(null);
+  const [transferModal, setTransferModal] = useState<Call | null>(null);
   const [editModal,   setEditModal]     = useState<Call | null>(null);
   const [resultOptions, setOptions]     = useState<ResultOption[]>([]);
 
@@ -84,7 +97,7 @@ export default function CallsTable({
   }
 
   // Determine which columns need an actions cell
-  const hasActions = allowResult || isAdmin;
+  const hasActions = allowResult || isAdmin || allowTransfer;
 
   if (calls.length === 0) {
     return (
@@ -151,9 +164,26 @@ export default function CallsTable({
                     {/* Conseiller */}
                     {showAgent && (
                       <td className="table-td">
-                        {call.assignedUser
-                          ? <span className="text-sm whitespace-nowrap">{call.assignedUser.prenom} {call.assignedUser.nom}</span>
-                          : <span className="text-gray-400">—</span>}
+                        <div className="flex flex-col gap-0.5">
+                          {call.assignedUser
+                            ? <span className="text-sm whitespace-nowrap">{call.assignedUser.prenom} {call.assignedUser.nom}</span>
+                            : <span className="text-gray-400">—</span>}
+                          {call.transferredBy && call.assignedUser && (
+                            <span
+                              className="badge badge-blue whitespace-nowrap"
+                              style={{ fontSize: "10px", padding: "1px 5px" }}
+                              title={
+                                call.transferredAt
+                                  ? `Transféré le ${new Date(call.transferredAt).toLocaleString("fr-FR")}`
+                                  : undefined
+                              }
+                            >
+                              {call.transferredBy.id && call.transferredBy.id === currentUserId
+                                ? `Transféré à ${call.assignedUser.prenom} ${call.assignedUser.nom}`
+                                : `Transféré par ${call.transferredBy.prenom} ${call.transferredBy.nom}`}
+                            </span>
+                          )}
+                        </div>
                       </td>
                     )}
 
@@ -204,6 +234,16 @@ export default function CallsTable({
                         style={{ position: "sticky", right: 0, boxShadow: "-1px 0 0 #f3f4f6" }}
                       >
                         <div className="flex items-center justify-end gap-1.5">
+                          {/* Qualify + hand off to a conseiller (coach workspace) */}
+                          {allowTransfer && (
+                            <button
+                              onClick={() => setTransferModal(call)}
+                              className="btn btn-secondary text-xs py-1 px-2.5 whitespace-nowrap"
+                            >
+                              {call.transferredBy ? "Réassigner" : "Transférer"}
+                            </button>
+                          )}
+
                           {/* Result button (conseillers / all roles on non-missed) */}
                           {allowResult && !call.isMissed && !canManage && (
                             <button
@@ -237,6 +277,25 @@ export default function CallsTable({
       </div>
 
       {/* Result modal (for conseillers qualifying calls) */}
+      {transferModal && (
+        <TransferModal
+          call={{
+            id: transferModal.id,
+            callerNumber: transferModal.callerNumber,
+            startedAt: transferModal.startedAt,
+            assignedUser: transferModal.assignedUser?.id
+              ? { id: transferModal.assignedUser.id, prenom: transferModal.assignedUser.prenom, nom: transferModal.assignedUser.nom }
+              : null,
+            transferredBy: transferModal.transferredBy?.id
+              ? { id: transferModal.transferredBy.id, prenom: transferModal.transferredBy.prenom, nom: transferModal.transferredBy.nom }
+              : null,
+            result: transferModal.result ?? null,
+          }}
+          onClose={() => setTransferModal(null)}
+          onDone={() => { setTransferModal(null); onRefresh?.(); }}
+        />
+      )}
+
       {resultModal && (
         <ResultModal
           callId={resultModal.id}

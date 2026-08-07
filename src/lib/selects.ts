@@ -34,4 +34,17 @@ export const CALL_USER_SELECT = {
   nom: true,
   prenom: true,
   phoneNumber: true,
+  role: true,
+} as const;
+
+/**
+ * Everything a call row needs to render, including the coach who transferred
+ * it — the UI badges "Transféré à …" from `transferredBy` + `assignedUser`.
+ */
+export const CALL_INCLUDE = {
+  phoneLine: true,
+  team: { select: { id: true, nom: true } },
+  assignedUser: { select: CALL_USER_SELECT },
+  transferredBy: { select: CALL_USER_SELECT },
+  result: true,
 } as const;

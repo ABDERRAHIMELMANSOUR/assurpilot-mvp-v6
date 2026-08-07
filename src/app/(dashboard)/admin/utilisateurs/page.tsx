@@ -103,7 +103,13 @@ export default function UtilisateursPage() {
                       <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center text-xs font-semibold text-blue-700">
                         {u.prenom[0]}{u.nom[0]}
                       </div>
-                      <span className="font-medium text-gray-900 text-sm">{u.prenom} {u.nom}</span>
+                      <Link
+                        href={`/admin/utilisateurs/${u.id}`}
+                        className="font-medium text-blue-700 hover:underline text-sm"
+                        title={`Voir les appels de ${u.prenom} ${u.nom}`}
+                      >
+                        {u.prenom} {u.nom}
+                      </Link>
                     </div>
                   </td>
                   <td className="table-td font-mono text-sm text-gray-700">

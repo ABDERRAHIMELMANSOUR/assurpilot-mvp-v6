@@ -114,7 +114,8 @@ function parsingOptions(buffer: Buffer, extension: string): XLSX.ParsingOptions 
   return { type: "buffer", cellDates: true, raw: false };
 }
 
-type Conseiller = { id: string; nom: string; prenom: string; phoneNumber: string };
+/** Anyone a call can land on: a conseiller, or a coach with their own line. */
+type CallOwner = { id: string; nom: string; prenom: string; phoneNumber: string; role: string };
 
 type ParsedRow = {
   rowIndex: number;
@@ -138,7 +139,7 @@ type ParsedRow = {
   destination: string;
   dureeValorisee: number;
   site: string;
-  conseiller: Conseiller | null;
+  conseiller: CallOwner | null;
   isDuplicate: boolean;
   /** "" = valid, "duplicate" = already imported, anything else = skip reason. */
   error: string;
@@ -194,14 +195,16 @@ export async function POST(req: NextRequest) {
 
     // ── Reference data ────────────────────────────────────────────────────────
     const [conseillers, phoneLines] = await Promise.all([
+      // Coaches have their own lines too: a call whose "Numéro appelé" matches
+      // a coach must land in that coach's workspace, not be rejected.
       prisma.user.findMany({
-        where: { role: "CONSEILLER", isActive: true },
-        select: { id: true, nom: true, prenom: true, phoneNumber: true },
+        where: { role: { in: ["CONSEILLER", "SUPERVISEUR"] }, isActive: true },
+        select: { id: true, nom: true, prenom: true, phoneNumber: true, role: true },
       }),
       prisma.phoneLine.findMany({ where: { isActive: true } }),
     ]);
 
-    const conseillerByPhone = new Map<string, Conseiller>();
+    const conseillerByPhone = new Map<string, CallOwner>();
     for (const conseiller of conseillers) {
       const normalized = normalizePhone(conseiller.phoneNumber);
       if (normalized) conseillerByPhone.set(normalized, conseiller);
@@ -294,7 +297,7 @@ export async function POST(req: NextRequest) {
       if (!callerNumber) error = "Numéro présenté manquant";
       else if (!startedAt) error = "Date invalide ou manquante";
       else if (!numeroAppele) error = "Numéro appelé manquant";
-      else if (!conseiller) error = `Aucun conseiller avec le numéro ${numeroAppele}`;
+      else if (!conseiller) error = `Aucun utilisateur avec le numéro ${numeroAppele}`;
 
       return {
         rowIndex: index + 2, // +2 = 1-based row numbering plus the header row
@@ -393,6 +396,7 @@ export async function POST(req: NextRequest) {
           durationSeconds: row.durationSeconds,
           statut: row.statut,
           conseiller: row.conseiller ? `${row.conseiller.prenom} ${row.conseiller.nom}` : null,
+          destinataireRole: row.conseiller?.role ?? null,
           numeroAppelant: row.numeroAppelant,
           equipe: row.teamName,
           isDuplicate: row.isDuplicate,
@@ -402,7 +406,7 @@ export async function POST(req: NextRequest) {
         unmatchedNumbers: [
           ...new Set(
             invalidRows
-              .filter((row) => row.error.includes("conseiller"))
+              .filter((row) => row.error.includes("utilisateur"))
               .map((row) => row.numeroAppele)
           ),
         ],

@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { errorMessage, fetchJson } from "@/lib/fetchJson";
 import UserFormModal from "./UserFormModal";
@@ -32,9 +33,11 @@ interface Props {
   currentUserRole: string;
   onRefresh: () => void;
   showCreateButton?: boolean;
+  /** Base path for the per-user call history; row names link there. */
+  detailBasePath?: string;
 }
 
-export default function UsersTable({ users, targetRole, currentUserRole, onRefresh, showCreateButton = true }: Props) {
+export default function UsersTable({ users, targetRole, currentUserRole, onRefresh, showCreateButton = true, detailBasePath }: Props) {
   const { data: session }         = useSession();
   const currentUser               = session?.user as any;
   const [modalMode, setModalMode] = useState<"create" | "edit" | null>(null);
@@ -124,9 +127,19 @@ export default function UsersTable({ users, targetRole, currentUserRole, onRefre
                         }`}>
                           {u.prenom[0]}{u.nom[0]}
                         </div>
-                        <span className="text-sm font-medium text-gray-900 truncate max-w-[110px]" title={`${u.prenom} ${u.nom}`}>
-                          {u.prenom} {u.nom}
-                        </span>
+                        {detailBasePath ? (
+                          <Link
+                            href={`${detailBasePath}/${u.id}`}
+                            className="text-sm font-medium text-blue-700 hover:underline truncate max-w-[110px]"
+                            title={`Voir les appels de ${u.prenom} ${u.nom}`}
+                          >
+                            {u.prenom} {u.nom}
+                          </Link>
+                        ) : (
+                          <span className="text-sm font-medium text-gray-900 truncate max-w-[110px]" title={`${u.prenom} ${u.nom}`}>
+                            {u.prenom} {u.nom}
+                          </span>
+                        )}
                       </div>
                     </td>
                     <td className="table-td">

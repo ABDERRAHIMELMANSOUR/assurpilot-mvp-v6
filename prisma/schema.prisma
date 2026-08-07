@@ -28,13 +28,17 @@ model User {
   createdAt     DateTime  @default(now())
   lastLoginAt   DateTime?
 
-  team           Team?        @relation("TeamMembers", fields: [teamId], references: [id])
-  supervisedTeam Team?        @relation("TeamSuperviseur")
-  superviseur    User?        @relation("ConseillerSuperviseur", fields: [superviseurId], references: [id])
-  conseillers    User[]       @relation("ConseillerSuperviseur")
-  assignedCalls  Call[]
-  callResults    CallResult[]
-  loginLogs      LoginLog[]
+  team             Team?        @relation("TeamMembers", fields: [teamId], references: [id])
+  supervisedTeam   Team?        @relation("TeamSuperviseur")
+  superviseur      User?        @relation("ConseillerSuperviseur", fields: [superviseurId], references: [id])
+  conseillers      User[]       @relation("ConseillerSuperviseur")
+  assignedCalls    Call[]       @relation("CallAssignedUser")
+  // Calls this user (a coach) handed off to a conseiller. The call stays
+  // visible here after the transfer, which is what keeps it in the coach's
+  // workspace once assignedUserId has moved to the conseiller.
+  transferredCalls Call[]       @relation("CallTransferredBy")
+  callResults      CallResult[]
+  loginLogs        LoginLog[]
 
   @@index([role])
   @@index([teamId])
@@ -88,19 +92,26 @@ model Call {
   statut          String
   importBatchId   String?
   teamId          String?
+  // Set when a coach hands a call to a conseiller. assignedUserId then points
+  // at the conseiller (so it lands in their list) while transferredById keeps
+  // the coach's claim on it, and drives the "Transféré à X" badge.
+  transferredById String?
+  transferredAt   DateTime?
   rawMeta         String?   @default("")
 
-  team         Team?        @relation(fields: [teamId], references: [id])
-  phoneLine    PhoneLine    @relation(fields: [phoneLineId], references: [id])
-  assignedUser User?        @relation(fields: [assignedUserId], references: [id])
-  result       CallResult?
-  importBatch  ImportBatch? @relation(fields: [importBatchId], references: [id])
+  team          Team?        @relation(fields: [teamId], references: [id])
+  phoneLine     PhoneLine    @relation(fields: [phoneLineId], references: [id])
+  assignedUser  User?        @relation("CallAssignedUser", fields: [assignedUserId], references: [id])
+  transferredBy User?        @relation("CallTransferredBy", fields: [transferredById], references: [id])
+  result        CallResult?
+  importBatch   ImportBatch? @relation(fields: [importBatchId], references: [id])
 
   @@index([startedAt])
   @@index([assignedUserId, startedAt])
   @@index([phoneLineId])
   @@index([importBatchId])
   @@index([teamId])
+  @@index([transferredById])
   @@map("calls")
 }
 

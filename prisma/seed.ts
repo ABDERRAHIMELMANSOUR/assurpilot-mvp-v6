@@ -56,7 +56,9 @@ async function main() {
     data: {
       email: "coach@assurpilot.fr", password: hash("coach123"),
       nom: "Dubois", prenom: "Claire",
-      phoneNumber: "+33 6 00 00 00 02",
+      // A real line number: calls imported for this number land in the coach's
+      // workspace, where she can qualify and transfer them to a conseiller.
+      phoneNumber: "0182287364",
       role: "SUPERVISEUR",
       teamId: teamAuto.id,
       lastLoginAt: new Date(now.getTime() - 1000 * 60 * 60 * 2),
