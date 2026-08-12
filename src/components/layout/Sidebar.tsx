@@ -82,6 +82,12 @@ export default function Sidebar() {
             <NavLink href="/admin/appels/import" label="Import fichier" />
             <NavLink href="/admin/classement"    label="Classement" />
 
+            {/* Entity workspaces: each opens a view restricted to that entity's
+                coaches, conseillers and calls. */}
+            <SectionLabel label="Entités" />
+            <NavLink href="/admin/entites/CPA" label="Équipe CPA" />
+            <NavLink href="/admin/entites/ALM" label="Équipe ALM" />
+
             <SectionLabel label="Gestion" />
             <NavLink href="/admin/utilisateurs" label="Utilisateurs" />
             <NavLink href="/admin/conseillers"  label="Conseillers" />

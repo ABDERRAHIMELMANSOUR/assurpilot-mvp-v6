@@ -9,6 +9,7 @@ const EMPTY_FILTER: DateFilterState = { period: "", dateFrom: "", dateTo: "" };
 
 export default function ConseillerPage() {
   const { data: session } = useSession();
+  const currentUserId = (session?.user as { userId?: string } | undefined)?.userId;
   const [calls,   setCalls]   = useState<any[]>([]);
   const [stats,   setStats]   = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -29,7 +30,7 @@ export default function ConseillerPage() {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const user         = session?.user as any;
-  const pendingCount = calls.filter((c) => !c.isMissed && !c.result).length;
+  const pendingCount = calls.filter((c) => !c.result).length;
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
@@ -79,7 +80,14 @@ export default function ConseillerPage() {
 
       {loading
         ? <div className="card p-8 text-center text-gray-400 text-sm animate-pulse">Chargement...</div>
-        : <CallsTable calls={calls} allowResult showNotes onRefresh={fetchData} />
+        : <CallsTable
+            calls={calls}
+            allowResult
+            allowTransfer
+            currentUserId={currentUserId}
+            showNotes
+            onRefresh={fetchData}
+          />
       }
     </div>
   );

@@ -2,7 +2,8 @@
 import { useEffect, useState } from "react";
 import { errorMessage, fetchJsonOr } from "@/lib/fetchJson";
 
-type Conseiller = { id: string; prenom: string; nom: string; isActive: boolean };
+type Conseiller = { id: string; prenom: string; nom: string; team?: { nom: string } | null };
+type TargetsResponse = { entity: string | null; targets: Conseiller[] };
 type ResultOption = { id: string; label: string; value: string; isActive: boolean };
 
 export type TransferableCall = {
@@ -26,6 +27,7 @@ interface Props {
  */
 export default function TransferModal({ call, onClose, onDone }: Props) {
   const [conseillers, setConseillers] = useState<Conseiller[]>([]);
+  const [entity, setEntity] = useState<string | null>(null);
   const [options, setOptions] = useState<ResultOption[]>([]);
   const [target, setTarget] = useState(call.assignedUser?.id ?? "");
   const [resultat, setResultat] = useState(call.result?.resultat ?? "");
@@ -36,12 +38,16 @@ export default function TransferModal({ call, onClose, onDone }: Props) {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const [users, opts] = await Promise.all([
-        fetchJsonOr<Conseiller[]>([], "/api/users?role=CONSEILLER"),
+      // /api/transfer-targets already applies the caller's rules: a coach gets
+      // their own conseillers, a conseiller gets peers inside their entity
+      // (CPA or ALM) and never across it.
+      const [targets, opts] = await Promise.all([
+        fetchJsonOr<TargetsResponse>({ entity: null, targets: [] }, "/api/transfer-targets"),
         fetchJsonOr<ResultOption[]>([], "/api/call-result-options"),
       ]);
       if (cancelled) return;
-      setConseillers(Array.isArray(users) ? users.filter((u) => u.isActive) : []);
+      setConseillers(Array.isArray(targets?.targets) ? targets.targets : []);
+      setEntity(targets?.entity ?? null);
       setOptions(Array.isArray(opts) ? opts.filter((o) => o.isActive) : []);
     })();
     return () => { cancelled = true; };
@@ -117,6 +123,11 @@ export default function TransferModal({ call, onClose, onDone }: Props) {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Transférer à <span className="text-red-500">*</span>
+                {entity && (
+                  <span className="ml-1 text-xs font-normal text-blue-600">
+                    (entité {entity})
+                  </span>
+                )}
               </label>
               <select
                 value={target}
@@ -125,11 +136,15 @@ export default function TransferModal({ call, onClose, onDone }: Props) {
               >
                 <option value="">— Choisir un conseiller —</option>
                 {conseillers.map((c) => (
-                  <option key={c.id} value={c.id}>{c.prenom} {c.nom}</option>
+                  <option key={c.id} value={c.id}>
+                    {c.prenom} {c.nom}{c.team?.nom ? ` · ${c.team.nom}` : ""}
+                  </option>
                 ))}
               </select>
               {conseillers.length === 0 && (
-                <p className="text-xs text-amber-600 mt-1">Aucun conseiller disponible dans votre équipe.</p>
+                <p className="text-xs text-amber-600 mt-1">
+                  Aucun conseiller disponible{entity ? ` dans l'entité ${entity}` : ""}.
+                </p>
               )}
             </div>
 

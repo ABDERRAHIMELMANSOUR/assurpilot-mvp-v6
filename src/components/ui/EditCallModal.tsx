@@ -88,7 +88,9 @@ export default function EditCallModal({ call, onClose, onSaved, onDeleted }: Pro
           durationSeconds: totalSeconds,
           statut,
           isMissed,
-          resultat:        isMissed ? null : (resultat || null),
+          // A missed call can carry a result once it has been called back, so
+          // the qualification is preserved rather than cleared.
+          resultat:        resultat || null,
           notes:           notes.trim() || null,
         }),
       });
@@ -198,9 +200,7 @@ export default function EditCallModal({ call, onClose, onSaved, onDeleted }: Pro
                 </div>
               </div>
 
-              {/* Result + notes (only if not missed) */}
-              {!isMissed && (
-                <>
+              {/* Result + notes — available for missed calls too, so a callback can be qualified */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Résultat</label>
                     <div className="grid grid-cols-2 gap-2">
@@ -228,8 +228,6 @@ export default function EditCallModal({ call, onClose, onSaved, onDeleted }: Pro
                       placeholder="Observations, contexte..."
                       className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
                   </div>
-                </>
-              )}
 
               {error && (
                 <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm text-red-700">{error}</div>

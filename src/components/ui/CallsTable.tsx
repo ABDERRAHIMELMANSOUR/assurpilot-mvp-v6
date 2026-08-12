@@ -139,7 +139,9 @@ export default function CallsTable({
               {calls.map((call) => {
                 const statut      = statutConfig[call.statut] ?? { label: call.statut, cls: "badge-gray" };
                 const resBadge    = call.result ? getResultBadge(call.result.resultat) : null;
-                const needsResult = !call.isMissed && !call.result && allowResult;
+                // Missed calls are qualifiable too: an agent calls back and
+                // records the outcome against the original missed call.
+                const needsResult = !call.result && allowResult;
                 const canManage   = isAdmin && call.isManual;
 
                 return (
@@ -245,7 +247,7 @@ export default function CallsTable({
                           )}
 
                           {/* Result button (conseillers / all roles on non-missed) */}
-                          {allowResult && !call.isMissed && !canManage && (
+                          {allowResult && !canManage && (
                             <button
                               onClick={() => setResultModal(call)}
                               className={`btn text-xs py-1 px-2.5 whitespace-nowrap ${needsResult ? "btn-primary" : "btn-secondary"}`}

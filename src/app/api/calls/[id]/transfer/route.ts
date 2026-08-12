@@ -11,6 +11,7 @@ import type { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { CALL_INCLUDE } from "@/lib/selects";
 import { isDirectReport } from "@/lib/scope";
+import { entityOfTeamName } from "@/lib/entity";
 import {
   badRequest,
   forbidden,
@@ -35,7 +36,8 @@ type TransferPayload = {
 
 export async function POST(req: NextRequest, { params }: RouteContext) {
   try {
-    const user = await requireRole("ADMINISTRATEUR", "SUPERVISEUR");
+    // Conseillers may hand calls to peers inside their own entity.
+    const user = await requireRole("ADMINISTRATEUR", "SUPERVISEUR", "CONSEILLER");
     const { conseillerId, resultat, notes } = await readJson<TransferPayload>(req);
 
     const call = await prisma.call.findUnique({
@@ -48,6 +50,11 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
       },
     });
     if (!call) throw notFound("Appel introuvable");
+
+    // A conseiller may only move a call that is currently theirs.
+    if (user.role === "CONSEILLER" && call.assignedUserId !== user.userId) {
+      throw forbidden("Cet appel ne vous est pas attribué");
+    }
 
     // A coach may only move a call they can already see.
     if (user.role === "SUPERVISEUR") {
@@ -79,7 +86,10 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
 
     const target = await prisma.user.findUnique({
       where: { id: conseillerId },
-      select: { id: true, role: true, teamId: true, isActive: true, superviseurId: true },
+      select: {
+        id: true, role: true, teamId: true, isActive: true, superviseurId: true,
+        team: { select: { nom: true } },
+      },
     });
     if (!target) throw notFound("Conseiller introuvable");
     if (target.role !== "CONSEILLER") {
@@ -92,9 +102,31 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
       throw forbidden("Ce conseiller ne fait pas partie de votre équipe");
     }
 
+    // A conseiller transfers only inside their own entity — CPA people to CPA
+    // people, ALM to ALM, across coaches but never across the boundary.
+    if (user.role === "CONSEILLER") {
+      if (target.id === user.userId) {
+        throw badRequest("Cet appel vous est déjà attribué");
+      }
+      const me = await prisma.user.findUnique({
+        where: { id: user.userId },
+        select: { team: { select: { nom: true } } },
+      });
+      const myEntity = entityOfTeamName(me?.team?.nom);
+      const targetEntity = entityOfTeamName(target.team?.nom);
+      if (!myEntity) {
+        throw forbidden("Votre équipe n'est rattachée ni à CPA ni à ALM");
+      }
+      if (targetEntity !== myEntity) {
+        throw forbidden(`Transfert impossible : ce conseiller n'appartient pas à l'entité ${myEntity}`);
+      }
+    }
+
     // Whoever currently holds the call is the one recorded as transferring it,
     // so a re-transfer keeps pointing at the original coach rather than the
     // conseiller it passed through.
+    // Keep pointing at whoever first handed the call on, so a chain of
+    // transfers does not rewrite history to the most recent sender.
     const transferredById =
       call.transferredById ?? call.assignedUserId ?? user.userId;
 

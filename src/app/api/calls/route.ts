@@ -5,8 +5,8 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { CALL_INCLUDE } from "@/lib/selects";
 import { forbidden, handleApiError, notFound, requireUser, type SessionUser } from "@/lib/api";
-import { buildDateRange } from "@/lib/dates";
 import { coachScopeFor, isDirectReport } from "@/lib/scope";
+import { callFilterClauses } from "@/lib/callFilters";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -59,21 +59,49 @@ async function filterForUser(
     : { assignedUserId: target.id };
 }
 
+/**
+ * Narrows to everything under one coach — their own calls and those of the
+ * conseillers reporting to them. Used by the entity workspace's coach filter.
+ */
+async function filterForCoach(
+  viewer: SessionUser,
+  coachId: string
+): Promise<Prisma.CallWhereInput> {
+  const coach = await prisma.user.findUnique({
+    where: { id: coachId },
+    select: { id: true, role: true },
+  });
+  if (!coach || coach.role !== "SUPERVISEUR") throw notFound("Coach introuvable");
+  // Only an admin may pivot on an arbitrary coach; a coach may pivot on themselves.
+  if (viewer.role !== "ADMINISTRATEUR" && viewer.userId !== coach.id) throw forbidden();
+
+  return {
+    OR: [
+      { assignedUserId: coach.id },
+      { transferredById: coach.id },
+      { assignedUser: { superviseurId: coach.id, role: "CONSEILLER" } },
+    ],
+  };
+}
+
 export async function GET(req: NextRequest) {
   try {
     const user = await requireUser();
     const params = new URL(req.url).searchParams;
-    const range = buildDateRange(params);
 
     const clauses: Prisma.CallWhereInput[] = [scopeFor(user)];
 
-    // Profile drill-down. `conseillerId` / `coachId` are accepted as aliases so
-    // callers can be explicit about who they are asking for.
-    const targetId =
-      params.get("userId") ?? params.get("conseillerId") ?? params.get("coachId");
+    // Profile drill-down onto one person.
+    const targetId = params.get("userId") ?? params.get("conseillerId");
     if (targetId) clauses.push(await filterForUser(user, targetId));
 
-    if (range) clauses.push({ startedAt: range });
+    // Narrow to a coach's roster: their own calls plus their conseillers'.
+    // Distinct from `userId`, which is a single person.
+    const coachId = params.get("coachId");
+    if (coachId) clauses.push(await filterForCoach(user, coachId));
+
+    // Date range, entity / sub-team, team, line, statut.
+    clauses.push(...callFilterClauses(params));
 
     // AND of the scope, the optional person filter and the optional date range —
     // combining them by assignment would let one clobber another's OR block.

@@ -2,6 +2,7 @@
 import { useEffect, useState, useCallback } from "react";
 import CallsTable from "@/components/ui/CallsTable";
 import DateFilter, { DateFilterState, buildQueryString } from "@/components/ui/DateFilter";
+import ExportCallsButton from "@/components/ui/ExportCallsButton";
 import { errorMessage } from "@/lib/fetchJson";
 import Link from "next/link";
 
@@ -62,6 +63,8 @@ export default function AdminAppelsPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <DateFilter value={filter} onChange={setFilter} />
+          {/* Exports exactly what the filters above select. */}
+          <ExportCallsButton query={buildQueryString(filter)} />
           <Link href="/admin/appels/import" className="btn btn-secondary text-xs">
             ↑ Importer
           </Link>
