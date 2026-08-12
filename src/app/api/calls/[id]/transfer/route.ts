@@ -12,6 +12,7 @@ import { prisma } from "@/lib/prisma";
 import { CALL_INCLUDE } from "@/lib/selects";
 import { isDirectReport } from "@/lib/scope";
 import { entityOfTeamName } from "@/lib/entity";
+import { maskCallsFor } from "@/lib/mask";
 import {
   badRequest,
   forbidden,
@@ -79,7 +80,7 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
         },
         include: CALL_INCLUDE,
       });
-      return NextResponse.json(restored);
+      return NextResponse.json(maskCallsFor(user.role, [restored])[0]);
     }
 
     if (!conseillerId) throw badRequest("Le conseiller destinataire est obligatoire");
@@ -162,7 +163,7 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
       return tx.call.findUnique({ where: { id: params.id }, include: CALL_INCLUDE });
     });
 
-    return NextResponse.json(updated);
+    return NextResponse.json(updated ? maskCallsFor(user.role, [updated])[0] : updated);
   } catch (error) {
     return handleApiError(error, `POST /api/calls/${params.id}/transfer`);
   }

@@ -72,25 +72,6 @@ export default function LoginPage() {
           </form>
         </div>
 
-        <div className="mt-4 card p-4">
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Comptes de test</p>
-          <div className="space-y-1.5 text-xs text-gray-600">
-            {[
-              { role: "Admin",      email: "admin@assurpilot.fr",         pw: "admin123", color: "bg-purple-100 text-purple-700" },
-              { role: "Coach",      email: "coach@assurpilot.fr",         pw: "coach123", color: "bg-orange-100 text-orange-700" },
-              { role: "Conseiller", email: "marie.laurent@assurpilot.fr", pw: "agent123", color: "bg-blue-100 text-blue-700"    },
-              { role: "Conseiller", email: "pierre.durand@assurpilot.fr", pw: "agent123", color: "bg-blue-100 text-blue-700"    },
-            ].map((a) => (
-              <div key={a.email}
-                className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 rounded p-1 -mx-1"
-                onClick={() => { setEmail(a.email); setPassword(a.pw); }}>
-                <span className={`badge ${a.color}`}>{a.role}</span>
-                <span className="font-mono text-gray-500">{a.email}</span>
-              </div>
-            ))}
-          </div>
-          <p className="text-xs text-gray-400 mt-2">Cliquez pour remplir automatiquement</p>
-        </div>
       </div>
     </div>
   );

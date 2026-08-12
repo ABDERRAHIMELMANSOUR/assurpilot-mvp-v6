@@ -7,6 +7,7 @@ import { CALL_INCLUDE } from "@/lib/selects";
 import { forbidden, handleApiError, notFound, requireUser, type SessionUser } from "@/lib/api";
 import { coachScopeFor, isDirectReport } from "@/lib/scope";
 import { callFilterClauses } from "@/lib/callFilters";
+import { maskCallsFor } from "@/lib/mask";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -121,7 +122,8 @@ export async function GET(req: NextRequest) {
 
     // The response stays a bare array for backwards compatibility; the totals
     // ride along in headers so callers can detect truncation.
-    return NextResponse.json(calls, {
+    // Caller numbers are masked for every role except admin, at the source.
+    return NextResponse.json(maskCallsFor(user.role, calls), {
       headers: {
         "X-Total-Count": String(total),
         "X-Returned-Count": String(calls.length),
