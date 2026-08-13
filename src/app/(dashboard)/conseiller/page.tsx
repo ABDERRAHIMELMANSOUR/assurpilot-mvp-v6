@@ -36,8 +36,8 @@ export default function ConseillerPage() {
     <div className="p-6 max-w-6xl mx-auto">
       <div className="mb-5 flex items-start justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl font-semibold text-gray-900">Bonjour, {user?.name?.split(" ")[0]} 👋</h1>
-          <p className="text-sm text-gray-500 mt-0.5">
+          <h1 className="text-xl font-semibold text-slate-900">Bonjour, {user?.name?.split(" ")[0]} 👋</h1>
+          <p className="text-sm text-slate-500 mt-0.5">
             {new Date().toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })}
           </p>
         </div>
@@ -57,29 +57,29 @@ export default function ConseillerPage() {
 
       {loading ? (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6 animate-pulse">
-          {[...Array(4)].map((_, i) => <div key={i} className="h-24 bg-gray-100 rounded-xl" />)}
+          {[...Array(4)].map((_, i) => <div key={i} className="h-24 bg-slate-100 rounded-xl" />)}
         </div>
       ) : stats && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-          <StatCard label="Total appels"  value={stats.total}    sub={`${stats.repondus} répondus`} />
-          <StatCard label="Appels manqués" value={stats.manques}
+          <StatCard label="Total appels" tone="brand"  value={stats.total}    sub={`${stats.repondus} répondus`} />
+          <StatCard label="Appels manqués" tone="rose" value={stats.manques}
             sub={stats.total > 0 ? `${Math.round((stats.manques / stats.total) * 100)}% du total` : "0%"}
-            subColor={stats.manques > 0 ? "text-red-500" : "text-gray-400"} />
-          <StatCard label="Devis réalisés" value={stats.devis}
-            sub={`Taux ${stats.tauxConversion}%`} subColor="text-green-600" />
-          <StatCard label="Durée moyenne"
+            subColor={stats.manques > 0 ? "text-rose-500" : "text-slate-400"} />
+          <StatCard label="Devis réalisés" tone="emerald" value={stats.devis}
+            sub={`Taux ${stats.tauxConversion}%`} subColor="text-emerald-600" />
+          <StatCard label="Durée moyenne" tone="amber"
             value={`${Math.floor(stats.dureeMoyenne / 60)}:${(stats.dureeMoyenne % 60).toString().padStart(2, "0")}`}
             sub="min:sec par appel" />
         </div>
       )}
 
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-gray-700">Mes appels</h2>
-        <span className="text-xs text-gray-400">{calls.length} appel{calls.length > 1 ? "s" : ""}</span>
+        <h2 className="text-sm font-semibold text-slate-700">Mes appels</h2>
+        <span className="text-xs text-slate-400">{calls.length} appel{calls.length > 1 ? "s" : ""}</span>
       </div>
 
       {loading
-        ? <div className="card p-8 text-center text-gray-400 text-sm animate-pulse">Chargement...</div>
+        ? <div className="card p-8 text-center text-slate-400 text-sm animate-pulse">Chargement...</div>
         : <CallsTable
             calls={calls}
             allowResult

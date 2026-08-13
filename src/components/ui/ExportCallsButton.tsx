@@ -52,7 +52,7 @@ export default function ExportCallsButton({ query, label = "Exporter en Excel" }
       <button onClick={download} disabled={busy} className="btn btn-secondary text-xs disabled:opacity-50">
         {busy ? "Export..." : `↓ ${label}`}
       </button>
-      {error && <span className="text-xs text-red-600 mt-1">{error}</span>}
+      {error && <span className="text-xs text-rose-600 mt-1">{error}</span>}
     </span>
   );
 }

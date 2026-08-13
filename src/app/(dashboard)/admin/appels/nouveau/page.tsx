@@ -8,7 +8,7 @@ type ResultOption = { value: string; label: string; isActive: boolean };
 
 const STATUTS = [
   { value: "REPONDU",  label: "Répondu",  active: "border-green-400 bg-green-50 text-green-800"  },
-  { value: "MANQUE",   label: "Manqué",   active: "border-red-400 bg-red-50 text-red-800"         },
+  { value: "MANQUE",   label: "Manqué",   active: "border-red-400 bg-rose-50 text-red-800"         },
   { value: "EN_COURS", label: "En cours", active: "border-yellow-400 bg-yellow-50 text-yellow-800"},
 ];
 
@@ -85,7 +85,7 @@ export default function NouvelAppelPage() {
 
   if (loadingData) return (
     <div className="p-6 max-w-2xl mx-auto">
-      <div className="card p-10 text-center text-gray-400 animate-pulse">Chargement...</div>
+      <div className="card p-10 text-center text-slate-400 animate-pulse">Chargement...</div>
     </div>
   );
 
@@ -94,8 +94,8 @@ export default function NouvelAppelPage() {
       <div className="mb-6 flex items-center gap-3">
         <button onClick={() => router.back()} className="btn btn-secondary text-xs py-1 px-2.5">← Retour</button>
         <div>
-          <h1 className="text-xl font-semibold text-gray-900">Ajouter un appel manuel</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Pour les appels non importés depuis Keyyo</p>
+          <h1 className="text-xl font-semibold text-slate-900">Ajouter un appel manuel</h1>
+          <p className="text-sm text-slate-500 mt-0.5">Pour les appels non importés depuis Keyyo</p>
         </div>
       </div>
 
@@ -107,27 +107,27 @@ export default function NouvelAppelPage() {
 
       <form onSubmit={handleSubmit} className="space-y-5">
         <div className="card p-5 space-y-4">
-          <h2 className="text-sm font-semibold text-gray-700 pb-2 border-b border-gray-100">Informations de l'appel</h2>
+          <h2 className="text-sm font-semibold text-slate-700 pb-2 border-b border-slate-100">Informations de l'appel</h2>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Numéro appelant *</label>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Numéro appelant *</label>
               <input type="text" value={callerNumber} onChange={(e) => setCallerNumber(e.target.value)}
                 placeholder="+33 6 12 34 56 78"
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-400" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Ligne téléphonique *</label>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Ligne téléphonique *</label>
               <select value={phoneLineId} onChange={(e) => setPhoneLineId(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-400">
                 <option value="">— Choisir —</option>
                 {lines.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
               </select>
             </div>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Conseiller assigné *</label>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Conseiller assigné *</label>
             <select value={assignedUserId} onChange={(e) => setAssignedUserId(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+              className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-400">
               <option value="">— Choisir un conseiller —</option>
               {agents.map((a) => <option key={a.id} value={a.id}>{a.prenom} {a.nom}</option>)}
             </select>
@@ -135,34 +135,34 @@ export default function NouvelAppelPage() {
         </div>
 
         <div className="card p-5 space-y-4">
-          <h2 className="text-sm font-semibold text-gray-700 pb-2 border-b border-gray-100">Détails de l'appel</h2>
+          <h2 className="text-sm font-semibold text-slate-700 pb-2 border-b border-slate-100">Détails de l'appel</h2>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Date et heure *</label>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Date et heure *</label>
             <input type="datetime-local" value={startedAt} onChange={(e) => setStartedAt(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-400" />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Durée (min)</label>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Durée (min)</label>
               <input type="number" min="0" max="999" value={durationMins} onChange={(e) => setDurationMins(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-400" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Durée (sec)</label>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Durée (sec)</label>
               <input type="number" min="0" max="59" value={durationSecs} onChange={(e) => setDurationSecs(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-400" />
             </div>
           </div>
           {totalSeconds > 0 && (
-            <p className="text-xs text-gray-400">Total : {Math.floor(totalSeconds/60)} min {totalSeconds%60} sec</p>
+            <p className="text-xs text-slate-400">Total : {Math.floor(totalSeconds/60)} min {totalSeconds%60} sec</p>
           )}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Statut *</label>
+            <label className="block text-sm font-medium text-slate-700 mb-2">Statut *</label>
             <div className="flex gap-2">
               {STATUTS.map((s) => (
                 <button key={s.value} type="button" onClick={() => setStatut(s.value)}
                   className={`flex-1 py-2.5 rounded-lg border-2 text-sm font-medium transition-all ${
-                    statut === s.value ? s.active : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"
+                    statut === s.value ? s.active : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
                   }`}>
                   {s.label}
                 </button>
@@ -173,13 +173,13 @@ export default function NouvelAppelPage() {
 
         {!isMissed && (
           <div className="card p-5 space-y-4">
-            <h2 className="text-sm font-semibold text-gray-700 pb-2 border-b border-gray-100">Résultat et Notes</h2>
+            <h2 className="text-sm font-semibold text-slate-700 pb-2 border-b border-slate-100">Résultat et Notes</h2>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Résultat de l'appel</label>
+              <label className="block text-sm font-medium text-slate-700 mb-2">Résultat de l'appel</label>
               <div className="grid grid-cols-2 gap-2">
                 <button type="button" onClick={() => setResultat("")}
                   className={`px-3 py-2.5 rounded-lg border-2 text-sm font-medium text-left transition-all ${
-                    !resultat ? "border-gray-400 bg-gray-100 text-gray-800" : "border-gray-200 bg-white text-gray-500 hover:border-gray-300"
+                    !resultat ? "border-slate-400 bg-slate-100 text-slate-800" : "border-slate-200 bg-white text-slate-500 hover:border-slate-300"
                   }`}>
                   Sans résultat
                 </button>
@@ -187,8 +187,8 @@ export default function NouvelAppelPage() {
                   <button key={opt.value} type="button" onClick={() => setResultat(opt.value)}
                     className={`px-3 py-2.5 rounded-lg border-2 text-sm font-medium text-left transition-all ${
                       resultat === opt.value
-                        ? "border-blue-400 bg-blue-50 text-blue-800"
-                        : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"
+                        ? "border-blue-400 bg-brand-50 text-brand-800"
+                        : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
                     }`}>
                     {opt.label}
                   </button>
@@ -196,16 +196,16 @@ export default function NouvelAppelPage() {
               </div>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Notes</label>
               <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3}
                 placeholder="Observations, contexte..."
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
+                className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 resize-none" />
             </div>
           </div>
         )}
 
         {error && (
-          <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">{error}</div>
+          <div className="bg-rose-50 border border-rose-200 rounded-xl px-4 py-3 text-sm text-rose-700">{error}</div>
         )}
 
         <div className="flex gap-3 pt-1">

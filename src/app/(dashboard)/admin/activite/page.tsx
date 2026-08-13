@@ -18,12 +18,12 @@ function timeAgo(d: string): string {
 }
 
 function dot(last: string | null) {
-  if (!last) return { cls: "bg-gray-300", label: "Jamais connecté" };
+  if (!last) return { cls: "bg-slate-300", label: "Jamais connecté" };
   const h = (Date.now() - new Date(last).getTime()) / 3600000;
-  if (h < 1) return { cls: "bg-green-500", label: "En ligne récemment" };
+  if (h < 1) return { cls: "bg-emerald-500", label: "En ligne récemment" };
   if (h < 8) return { cls: "bg-green-300", label: "Actif aujourd'hui" };
   if (h < 48) return { cls: "bg-yellow-400", label: "Actif hier" };
-  return { cls: "bg-gray-300", label: "Inactif" };
+  return { cls: "bg-slate-300", label: "Inactif" };
 }
 
 export default function AdminActivitePage() {
@@ -43,79 +43,79 @@ export default function AdminActivitePage() {
   return (
     <div className="p-6 max-w-4xl mx-auto">
       <div className="mb-6">
-        <h1 className="text-xl font-semibold text-gray-900">Activité des utilisateurs</h1>
-        <p className="text-sm text-gray-500 mt-0.5">Dernières connexions et historique d'activité</p>
+        <h1 className="text-xl font-semibold text-slate-900">Activité des utilisateurs</h1>
+        <p className="text-sm text-slate-500 mt-0.5">Dernières connexions et historique d'activité</p>
       </div>
 
       {loading ? (
         <div className="space-y-2 animate-pulse">
-          {[...Array(4)].map((_, i) => <div key={i} className="h-16 bg-gray-100 rounded-xl" />)}
+          {[...Array(4)].map((_, i) => <div key={i} className="h-16 bg-slate-100 rounded-xl" />)}
         </div>
       ) : users.length === 0 ? (
-        <div className="card p-10 text-center text-gray-400 text-sm">Aucun utilisateur à afficher.</div>
+        <div className="card p-10 text-center text-slate-400 text-sm">Aucun utilisateur à afficher.</div>
       ) : (
         <div className="card overflow-hidden">
-          <div className="divide-y divide-gray-50">
+          <div className="divide-y divide-slate-100">
             {users.map((u) => {
               const d = dot(u.lastLoginAt);
               const open = expanded === u.id;
               return (
                 <div key={u.id}>
-                  <div className="px-5 py-3.5 flex items-center gap-3 hover:bg-gray-50 cursor-pointer transition-colors"
+                  <div className="px-5 py-3.5 flex items-center gap-3 hover:bg-slate-50 cursor-pointer transition-colors"
                     onClick={() => setExpanded(open ? null : u.id)}>
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold flex-shrink-0 ${u.isActive ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-500"}`}>
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold flex-shrink-0 ${u.isActive ? "bg-brand-50 text-brand-700" : "bg-slate-100 text-slate-500"}`}>
                       {u.prenom[0]}{u.nom[0]}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <p className="text-sm font-medium text-gray-900">{u.prenom} {u.nom}</p>
+                        <p className="text-sm font-medium text-slate-900">{u.prenom} {u.nom}</p>
                         <span className={`badge text-xs ${u.role === "SUPERVISEUR" ? "badge-yellow" : "badge-blue"}`}>
                           {u.role === "SUPERVISEUR" ? "Coach" : "Conseiller"}
                         </span>
                       </div>
-                      <p className="text-xs text-gray-400 font-mono truncate">{u.phoneNumber || u.email}</p>
+                      <p className="text-xs text-slate-400 font-mono truncate">{u.phoneNumber || u.email}</p>
                     </div>
                     <div className="flex items-center gap-1.5 flex-shrink-0">
                       <span className={`w-2.5 h-2.5 rounded-full ${d.cls}`} title={d.label} />
-                      <span className="text-xs text-gray-500 hidden sm:block">{d.label}</span>
+                      <span className="text-xs text-slate-500 hidden sm:block">{d.label}</span>
                     </div>
                     <div className="text-right flex-shrink-0 min-w-[100px]">
                       {u.lastLoginAt ? (
                         <>
-                          <p className="text-xs font-medium text-gray-700">{timeAgo(u.lastLoginAt)}</p>
-                          <p className="text-xs text-gray-400">
+                          <p className="text-xs font-medium text-slate-700">{timeAgo(u.lastLoginAt)}</p>
+                          <p className="text-xs text-slate-400">
                             {new Date(u.lastLoginAt).toLocaleDateString("fr-FR", { day: "2-digit", month: "short" })}
                             {" "}
                             {new Date(u.lastLoginAt).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}
                           </p>
                         </>
                       ) : (
-                        <p className="text-xs text-gray-400 italic">Jamais connecté</p>
+                        <p className="text-xs text-slate-400 italic">Jamais connecté</p>
                       )}
                     </div>
-                    <svg className={`w-4 h-4 text-gray-400 flex-shrink-0 transition-transform ${open ? "rotate-180" : ""}`}
+                    <svg className={`w-4 h-4 text-slate-400 flex-shrink-0 transition-transform ${open ? "rotate-180" : ""}`}
                       fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                     </svg>
                   </div>
                   {open && (
-                    <div className="px-5 pb-4 bg-gray-50 border-t border-gray-100">
-                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mt-3 mb-2">
+                    <div className="px-5 pb-4 bg-slate-50 border-t border-slate-100">
+                      <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mt-3 mb-2">
                         5 dernières connexions
                       </p>
                       {u.loginLogs.length === 0 ? (
-                        <p className="text-xs text-gray-400 italic">Aucune connexion enregistrée</p>
+                        <p className="text-xs text-slate-400 italic">Aucune connexion enregistrée</p>
                       ) : (
                         <div className="space-y-1.5">
                           {u.loginLogs.map((log) => (
-                            <div key={log.id} className="flex items-center gap-3 text-xs text-gray-600">
-                              <span className="w-1.5 h-1.5 rounded-full bg-gray-400 flex-shrink-0" />
+                            <div key={log.id} className="flex items-center gap-3 text-xs text-slate-600">
+                              <span className="w-1.5 h-1.5 rounded-full bg-slate-400 flex-shrink-0" />
                               <span className="font-medium">
                                 {new Date(log.createdAt).toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "short" })}
                                 {" à "}
                                 {new Date(log.createdAt).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}
                               </span>
-                              {log.ip && <span className="text-gray-400 font-mono">{log.ip}</span>}
+                              {log.ip && <span className="text-slate-400 font-mono">{log.ip}</span>}
                             </div>
                           ))}
                         </div>

@@ -104,9 +104,9 @@ export default function TransferModal({ call, onClose, onDone }: Props) {
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
-        <div className="px-6 py-4 border-b border-gray-100">
-          <h2 className="text-base font-semibold text-gray-900">Qualifier et transférer</h2>
-          <p className="text-xs text-gray-500 mt-0.5 font-mono">
+        <div className="px-6 py-4 border-b border-slate-100">
+          <h2 className="text-base font-semibold text-slate-900">Qualifier et transférer</h2>
+          <p className="text-xs text-slate-500 mt-0.5 font-mono">
             {call.callerNumber} · {new Date(call.startedAt).toLocaleString("fr-FR")}
           </p>
         </div>
@@ -114,17 +114,17 @@ export default function TransferModal({ call, onClose, onDone }: Props) {
         <form onSubmit={submit}>
           <div className="px-6 py-5 space-y-4">
             {call.transferredBy && (
-              <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-xs text-blue-700">
+              <div className="bg-brand-50 border border-brand-200 rounded-lg px-3 py-2 text-xs text-brand-700">
                 Transféré par {call.transferredBy.prenom} {call.transferredBy.nom}
                 {call.assignedUser && <> à <strong>{call.assignedUser.prenom} {call.assignedUser.nom}</strong></>}
               </div>
             )}
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Transférer à <span className="text-red-500">*</span>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Transférer à <span className="text-rose-500">*</span>
                 {entity && (
-                  <span className="ml-1 text-xs font-normal text-blue-600">
+                  <span className="ml-1 text-xs font-normal text-brand-600">
                     (entité {entity})
                   </span>
                 )}
@@ -132,7 +132,7 @@ export default function TransferModal({ call, onClose, onDone }: Props) {
               <select
                 value={target}
                 onChange={(e) => setTarget(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-400"
               >
                 <option value="">— Choisir un conseiller —</option>
                 {conseillers.map((c) => (
@@ -149,13 +149,13 @@ export default function TransferModal({ call, onClose, onDone }: Props) {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Résultat <span className="text-gray-400 font-normal">(optionnel)</span>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Résultat <span className="text-slate-400 font-normal">(optionnel)</span>
               </label>
               <select
                 value={resultat}
                 onChange={(e) => setResultat(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-400"
               >
                 <option value="">— Ne pas qualifier —</option>
                 {options.map((o) => (
@@ -165,22 +165,22 @@ export default function TransferModal({ call, onClose, onDone }: Props) {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Notes</label>
               <textarea
                 value={notes ?? ""}
                 onChange={(e) => setNotes(e.target.value)}
                 rows={3}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-400"
                 placeholder="Contexte pour le conseiller..."
               />
             </div>
 
             {error && (
-              <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm text-red-700">{error}</div>
+              <div className="bg-rose-50 border border-rose-200 rounded-lg px-3 py-2 text-sm text-rose-700">{error}</div>
             )}
           </div>
 
-          <div className="px-6 py-4 border-t border-gray-100 flex justify-between gap-2">
+          <div className="px-6 py-4 border-t border-slate-100 flex justify-between gap-2">
             <div>
               {call.transferredBy && (
                 <button type="button" onClick={cancelTransfer} disabled={saving}

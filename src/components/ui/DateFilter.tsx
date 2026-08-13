@@ -38,11 +38,11 @@ export default function DateFilter({ value, onChange }: Props) {
   return (
     <div className="flex flex-wrap items-center gap-2">
       {/* Quick period buttons */}
-      <div className="flex gap-1 bg-gray-100 rounded-lg p-0.5">
+      <div className="flex gap-1 bg-slate-100 rounded-lg p-0.5">
         <button
           onClick={() => onChange({ period: "", dateFrom: "", dateTo: "" })}
           className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-            !value.period ? "bg-white shadow-sm text-gray-900" : "text-gray-500 hover:text-gray-700"
+            !value.period ? "bg-white shadow-sm text-slate-900" : "text-slate-500 hover:text-slate-700"
           }`}
         >
           Tout
@@ -53,8 +53,8 @@ export default function DateFilter({ value, onChange }: Props) {
             onClick={() => setPeriod(p.key)}
             className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
               value.period === p.key
-                ? "bg-white shadow-sm text-gray-900"
-                : "text-gray-500 hover:text-gray-700"
+                ? "bg-white shadow-sm text-slate-900"
+                : "text-slate-500 hover:text-slate-700"
             }`}
           >
             {p.label}
@@ -69,14 +69,14 @@ export default function DateFilter({ value, onChange }: Props) {
             type="date"
             value={value.dateFrom}
             onChange={(e) => onChange({ ...value, dateFrom: e.target.value })}
-            className="px-2 py-1 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+            className="px-2 py-1 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-brand-400 bg-white"
           />
-          <span className="text-xs text-gray-400">→</span>
+          <span className="text-xs text-slate-400">→</span>
           <input
             type="date"
             value={value.dateTo}
             onChange={(e) => onChange({ ...value, dateTo: e.target.value })}
-            className="px-2 py-1 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+            className="px-2 py-1 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-brand-400 bg-white"
           />
         </div>
       )}

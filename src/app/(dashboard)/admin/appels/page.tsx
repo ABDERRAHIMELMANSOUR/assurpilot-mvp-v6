@@ -58,8 +58,8 @@ export default function AdminAppelsPage() {
     <div className="p-6 max-w-full mx-auto">
       <div className="mb-5 flex items-start justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl font-semibold text-gray-900">Tous les appels</h1>
-          <p className="text-sm text-gray-500 mt-0.5">{filtered.length} appel{filtered.length > 1 ? "s" : ""}</p>
+          <h1 className="text-xl font-semibold text-slate-900">Tous les appels</h1>
+          <p className="text-sm text-slate-500 mt-0.5">{filtered.length} appel{filtered.length > 1 ? "s" : ""}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <DateFilter value={filter} onChange={setFilter} />
@@ -92,7 +92,7 @@ export default function AdminAppelsPage() {
 
       {/* Admin note for manual calls */}
       {(statut === "manual" || statut === "all") && filtered.some((c) => c.isManual) && (
-        <div className="mb-3 bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5 text-xs text-blue-700 flex items-center gap-2">
+        <div className="mb-3 bg-brand-50 border border-brand-200 rounded-xl px-4 py-2.5 text-xs text-brand-700 flex items-center gap-2">
           <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
@@ -101,7 +101,7 @@ export default function AdminAppelsPage() {
       )}
 
       {error && (
-        <div className="mb-3 bg-red-50 border border-red-200 rounded-xl px-4 py-2.5 text-sm text-red-700">
+        <div className="mb-3 bg-rose-50 border border-rose-200 rounded-xl px-4 py-2.5 text-sm text-rose-700">
           {error}
         </div>
       )}
@@ -114,7 +114,7 @@ export default function AdminAppelsPage() {
       )}
 
       {loading
-        ? <div className="card p-8 text-center text-gray-400 animate-pulse">Chargement...</div>
+        ? <div className="card p-8 text-center text-slate-400 animate-pulse">Chargement...</div>
         : <CallsTable calls={filtered} showAgent showNotes isAdmin onRefresh={fetchCalls} />
       }
     </div>

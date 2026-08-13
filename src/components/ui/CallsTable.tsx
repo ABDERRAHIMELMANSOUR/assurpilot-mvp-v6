@@ -102,10 +102,10 @@ export default function CallsTable({
   if (calls.length === 0) {
     return (
       <div className="card p-12 text-center">
-        <svg className="w-10 h-10 text-gray-300 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg className="w-10 h-10 text-slate-300 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
         </svg>
-        <p className="text-gray-500 text-sm">Aucun appel pour cette période</p>
+        <p className="text-slate-500 text-sm">Aucun appel pour cette période</p>
       </div>
     );
   }
@@ -115,7 +115,7 @@ export default function CallsTable({
       <div className="card overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full" style={{ minWidth: hasActions ? "820px" : "620px" }}>
-            <thead className="bg-gray-50 border-b border-gray-100">
+            <thead className="bg-slate-50/70 border-b border-slate-100">
               <tr>
                 <th className="table-th" style={{ minWidth: "140px" }}>Appelant</th>
                 {showAgent  && <th className="table-th" style={{ minWidth: "120px" }}>Conseiller</th>}
@@ -127,15 +127,15 @@ export default function CallsTable({
                 {showNotes && <th className="table-th" style={{ minWidth: "150px" }}>Notes</th>}
                 {hasActions && (
                   <th
-                    className="table-th text-right bg-gray-50"
-                    style={{ minWidth: "140px", position: "sticky", right: 0, boxShadow: "-1px 0 0 #f3f4f6" }}
+                    className="table-th text-right bg-slate-50/70"
+                    style={{ minWidth: "140px", position: "sticky", right: 0, boxShadow: "-1px 0 0 #e2e8f0" }}
                   >
                     Actions
                   </th>
                 )}
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-50">
+            <tbody className="divide-y divide-slate-100">
               {calls.map((call) => {
                 const statut      = statutConfig[call.statut] ?? { label: call.statut, cls: "badge-gray" };
                 const resBadge    = call.result ? getResultBadge(call.result.resultat) : null;
@@ -147,12 +147,12 @@ export default function CallsTable({
                 return (
                   <tr
                     key={call.id}
-                    className={`hover:bg-gray-50 transition-colors ${needsResult ? "bg-amber-50/40" : ""}`}
+                    className={`transition-colors hover:bg-slate-50/80 ${needsResult ? "bg-amber-50/40" : ""}`}
                   >
                     {/* Appelant */}
                     <td className="table-td">
                       <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="font-mono text-sm text-gray-800 whitespace-nowrap">
+                        <span className="font-mono text-sm text-slate-800 whitespace-nowrap">
                           {call.callerNumber || "—"}
                         </span>
                         {call.isManual && (
@@ -169,7 +169,7 @@ export default function CallsTable({
                         <div className="flex flex-col gap-0.5">
                           {call.assignedUser
                             ? <span className="text-sm whitespace-nowrap">{call.assignedUser.prenom} {call.assignedUser.nom}</span>
-                            : <span className="text-gray-400">—</span>}
+                            : <span className="text-slate-400">—</span>}
                           {call.transferredBy && call.assignedUser && (
                             <span
                               className="badge badge-blue whitespace-nowrap"
@@ -191,11 +191,11 @@ export default function CallsTable({
 
                     {/* Ligne */}
                     <td className="table-td">
-                      <span className="text-xs text-gray-500 whitespace-nowrap">{call.phoneLine.label}</span>
+                      <span className="text-xs text-slate-500 whitespace-nowrap">{call.phoneLine.label}</span>
                     </td>
 
                     {/* Date */}
-                    <td className="table-td text-gray-500 text-xs whitespace-nowrap">
+                    <td className="table-td text-slate-500 text-xs whitespace-nowrap">
                       {formatDate(call.startedAt)}
                     </td>
 
@@ -213,19 +213,28 @@ export default function CallsTable({
                     <td className="table-td">
                       {resBadge ? (
                         <span className={`badge ${resBadge.cls}`}>{resBadge.label}</span>
-                      ) : call.isMissed ? (
-                        <span className="text-gray-300 text-xs">—</span>
                       ) : (
-                        <span className="text-amber-600 text-xs font-medium">À qualifier</span>
+                        <span className="badge badge-yellow">À qualifier</span>
                       )}
                     </td>
 
                     {/* Notes */}
                     {showNotes && (
-                      <td className="table-td" style={{ maxWidth: "180px" }}>
+                      <td className="table-td overflow-hidden">
+                        {/* Sized to the column (w-full) rather than a fixed
+                            width: the column is squeezed when many columns
+                            compete, and a fixed width would bleed under the
+                            sticky Actions cell instead of ellipsising. */}
                         {call.result?.notes
-                          ? <span className="text-xs text-gray-600 line-clamp-2">{call.result.notes}</span>
-                          : <span className="text-gray-300 text-xs">—</span>}
+                          ? (
+                            <span
+                              className="block w-full truncate text-xs text-slate-600"
+                              title={call.result.notes}
+                            >
+                              {call.result.notes}
+                            </span>
+                          )
+                          : <span className="text-slate-300 text-xs">—</span>}
                       </td>
                     )}
 
@@ -233,7 +242,7 @@ export default function CallsTable({
                     {hasActions && (
                       <td
                         className="table-td bg-white"
-                        style={{ position: "sticky", right: 0, boxShadow: "-1px 0 0 #f3f4f6" }}
+                        style={{ position: "sticky", right: 0, boxShadow: "-1px 0 0 #e2e8f0" }}
                       >
                         <div className="flex items-center justify-end gap-1.5">
                           {/* Qualify + hand off to a conseiller (coach workspace) */}

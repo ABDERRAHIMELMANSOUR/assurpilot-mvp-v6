@@ -95,8 +95,8 @@ export default function KeyyoConfigPage() {
   if (loading) {
     return (
       <div className="p-6 max-w-3xl mx-auto animate-pulse">
-        <div className="h-8 bg-gray-100 rounded w-1/3 mb-6" />
-        <div className="h-64 bg-gray-100 rounded-xl" />
+        <div className="h-8 bg-slate-100 rounded w-1/3 mb-6" />
+        <div className="h-64 bg-slate-100 rounded-xl" />
       </div>
     );
   }
@@ -104,8 +104,8 @@ export default function KeyyoConfigPage() {
   return (
     <div className="p-6 max-w-3xl mx-auto">
       <div className="mb-6">
-        <h1 className="text-xl font-semibold text-gray-900">Configuration Keyyo</h1>
-        <p className="text-sm text-gray-500 mt-0.5">
+        <h1 className="text-xl font-semibold text-slate-900">Configuration Keyyo</h1>
+        <p className="text-sm text-slate-500 mt-0.5">
           Paramètres de l'intégration VoIP pour la réception des appels entrants
         </p>
       </div>
@@ -116,12 +116,12 @@ export default function KeyyoConfigPage() {
           ? "bg-green-50 border-green-200"
           : "bg-amber-50 border-amber-200"
       }`}>
-        <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${isActive ? "bg-green-500" : "bg-amber-400"}`} />
+        <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${isActive ? "bg-emerald-500" : "bg-amber-400"}`} />
         <div>
           <p className={`text-sm font-medium ${isActive ? "text-green-800" : "text-amber-800"}`}>
             {isActive ? "Intégration Keyyo activée" : "Intégration Keyyo désactivée"}
           </p>
-          <p className={`text-xs ${isActive ? "text-green-600" : "text-amber-600"}`}>
+          <p className={`text-xs ${isActive ? "text-emerald-600" : "text-amber-600"}`}>
             {isActive
               ? "Les appels entrants sont reçus et distribués automatiquement."
               : "Activez l'intégration pour commencer à recevoir les appels."}
@@ -132,7 +132,7 @@ export default function KeyyoConfigPage() {
             type="button"
             onClick={() => setIsActive(!isActive)}
             className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${
-              isActive ? "bg-green-500" : "bg-gray-300"
+              isActive ? "bg-emerald-500" : "bg-slate-300"
             }`}
           >
             <span
@@ -147,12 +147,12 @@ export default function KeyyoConfigPage() {
       <form onSubmit={handleSave} className="space-y-5">
         {/* API credentials */}
         <div className="card p-5 space-y-4">
-          <h2 className="text-sm font-semibold text-gray-700 pb-2 border-b border-gray-100">
+          <h2 className="text-sm font-semibold text-slate-700 pb-2 border-b border-slate-100">
             Authentification API
           </h2>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-slate-700 mb-1">
               Clé API Keyyo
             </label>
             <input
@@ -160,15 +160,15 @@ export default function KeyyoConfigPage() {
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
               placeholder={config?.apiKeyMasked ? `Clé actuelle : ${config.apiKeyMasked}` : "Saisir votre clé API Keyyo"}
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+              className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 font-mono"
             />
-            <p className="text-xs text-gray-400 mt-1">
+            <p className="text-xs text-slate-400 mt-1">
               Disponible dans votre espace Keyyo → API &amp; Intégrations. Laisser vide pour conserver la clé actuelle.
             </p>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-slate-700 mb-1">
               Numéro de téléphone Keyyo
             </label>
             <input
@@ -176,9 +176,9 @@ export default function KeyyoConfigPage() {
               value={phoneNumber}
               onChange={(e) => setPhoneNumber(e.target.value)}
               placeholder="+33 1 23 45 67 89"
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-400"
             />
-            <p className="text-xs text-gray-400 mt-1">
+            <p className="text-xs text-slate-400 mt-1">
               Le numéro principal reçevant les appels entrants depuis Keyyo.
             </p>
           </div>
@@ -186,12 +186,12 @@ export default function KeyyoConfigPage() {
 
         {/* Webhook */}
         <div className="card p-5 space-y-4">
-          <h2 className="text-sm font-semibold text-gray-700 pb-2 border-b border-gray-100">
+          <h2 className="text-sm font-semibold text-slate-700 pb-2 border-b border-slate-100">
             Webhook de réception
           </h2>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-slate-700 mb-1">
               URL du webhook
             </label>
             <div className="flex gap-2">
@@ -200,7 +200,7 @@ export default function KeyyoConfigPage() {
                 value={webhookUrl}
                 onChange={(e) => setWebhookUrl(e.target.value)}
                 placeholder="https://votre-domaine.fr/webhooks/voip/keyyo"
-                className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+                className="flex-1 px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 font-mono"
               />
               <button
                 type="button"
@@ -211,7 +211,7 @@ export default function KeyyoConfigPage() {
                 Copier
               </button>
             </div>
-            <p className="text-xs text-gray-400 mt-1">
+            <p className="text-xs text-slate-400 mt-1">
               Renseignez cette URL dans votre dashboard Keyyo → Webhooks pour recevoir les événements d'appels.
             </p>
           </div>
@@ -219,12 +219,12 @@ export default function KeyyoConfigPage() {
 
         {/* Distribution rules */}
         <div className="card p-5 space-y-4">
-          <h2 className="text-sm font-semibold text-gray-700 pb-2 border-b border-gray-100">
+          <h2 className="text-sm font-semibold text-slate-700 pb-2 border-b border-slate-100">
             Règles de distribution des appels
           </h2>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-slate-700 mb-2">
               Mode de distribution
             </label>
             <div className="space-y-2">
@@ -233,8 +233,8 @@ export default function KeyyoConfigPage() {
                   key={m.value}
                   className={`flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all ${
                     distributionMode === m.value
-                      ? "border-blue-400 bg-blue-50"
-                      : "border-gray-200 hover:border-gray-300"
+                      ? "border-blue-400 bg-brand-50"
+                      : "border-slate-200 hover:border-slate-300"
                   }`}
                 >
                   <input
@@ -246,10 +246,10 @@ export default function KeyyoConfigPage() {
                     className="mt-0.5 flex-shrink-0"
                   />
                   <div>
-                    <p className={`text-sm font-medium ${distributionMode === m.value ? "text-blue-900" : "text-gray-800"}`}>
+                    <p className={`text-sm font-medium ${distributionMode === m.value ? "text-blue-900" : "text-slate-800"}`}>
                       {m.label}
                     </p>
-                    <p className={`text-xs mt-0.5 ${distributionMode === m.value ? "text-blue-600" : "text-gray-500"}`}>
+                    <p className={`text-xs mt-0.5 ${distributionMode === m.value ? "text-brand-600" : "text-slate-500"}`}>
                       {m.desc}
                     </p>
                   </div>
@@ -259,7 +259,7 @@ export default function KeyyoConfigPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-slate-700 mb-1">
               Durée de sonnerie maximale : <strong>{maxRingSeconds} secondes</strong>
             </label>
             <input
@@ -271,7 +271,7 @@ export default function KeyyoConfigPage() {
               onChange={(e) => setMaxRing(Number(e.target.value))}
               className="w-full"
             />
-            <div className="flex justify-between text-xs text-gray-400 mt-1">
+            <div className="flex justify-between text-xs text-slate-400 mt-1">
               <span>10 sec</span>
               <span>120 sec</span>
             </div>
@@ -283,28 +283,28 @@ export default function KeyyoConfigPage() {
           <div className={`rounded-xl px-4 py-3 border text-sm ${
             config.lastTestSuccess
               ? "bg-green-50 border-green-200 text-green-800"
-              : "bg-red-50 border-red-200 text-red-800"
+              : "bg-rose-50 border-rose-200 text-red-800"
           }`}>
             <p className="font-medium mb-0.5">
               {config.lastTestSuccess ? "✅ Dernier test réussi" : "❌ Dernier test échoué"}
             </p>
-            <p className={`text-xs ${config.lastTestSuccess ? "text-green-600" : "text-red-600"}`}>
+            <p className={`text-xs ${config.lastTestSuccess ? "text-emerald-600" : "text-rose-600"}`}>
               {config.lastTestMessage}
             </p>
-            <p className="text-xs text-gray-400 mt-1">
+            <p className="text-xs text-slate-400 mt-1">
               Testé le {new Date(config.lastTestedAt).toLocaleString("fr-FR")}
             </p>
           </div>
         )}
 
         {error && (
-          <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">
+          <div className="bg-rose-50 border border-rose-200 rounded-xl px-4 py-3 text-sm text-rose-700">
             {error}
           </div>
         )}
 
         {saved && (
-          <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3 text-sm text-green-700">
+          <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3 text-sm text-emerald-700">
             ✅ Configuration sauvegardée avec succès.
           </div>
         )}

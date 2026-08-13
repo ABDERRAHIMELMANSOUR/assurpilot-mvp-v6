@@ -68,7 +68,7 @@ export default function UsersTable({ users, targetRole, currentUserRole, onRefre
     <>
       {/* Toolbar */}
       <div className="flex items-center justify-between mb-3">
-        <p className="text-sm text-gray-500">
+        <p className="text-sm text-slate-500">
           {users.length} {uiLabel.toLowerCase()}{users.length > 1 ? "s" : ""}
           {" · "}{users.filter(u => u.isActive).length} actif{users.filter(u => u.isActive).length > 1 ? "s" : ""}
         </p>
@@ -83,19 +83,19 @@ export default function UsersTable({ users, targetRole, currentUserRole, onRefre
       </div>
 
       {delError && (
-        <div className="mb-3 bg-red-50 border border-red-200 rounded-lg px-4 py-2 text-sm text-red-700">
+        <div className="mb-3 bg-rose-50 border border-rose-200 rounded-lg px-4 py-2 text-sm text-rose-700">
           {delError}
         </div>
       )}
 
       {users.length === 0 ? (
-        <div className="card p-10 text-center text-gray-400 text-sm">Aucun utilisateur à afficher.</div>
+        <div className="card p-10 text-center text-slate-400 text-sm">Aucun utilisateur à afficher.</div>
       ) : (
         /* Outer card — overflow-hidden clips rounded corners; inner div scrolls */
         <div className="card overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full" style={{ minWidth: isConseiller ? "780px" : "600px" }}>
-              <thead className="bg-gray-50 border-b border-gray-100">
+              <thead className="bg-slate-50/70 border-b border-slate-100">
                 <tr>
                   {/* Fixed-width avatar + name col */}
                   <th className="table-th" style={{ minWidth: "160px" }}>Nom</th>
@@ -107,67 +107,67 @@ export default function UsersTable({ users, targetRole, currentUserRole, onRefre
                   <th className="table-th" style={{ minWidth: "70px"  }}>Statut</th>
                   {/* Sticky actions column */}
                   <th
-                    className="table-th text-right bg-gray-50"
-                    style={{ minWidth: "150px", position: "sticky", right: 0, boxShadow: "-1px 0 0 #f3f4f6" }}
+                    className="table-th text-right bg-slate-50/70"
+                    style={{ minWidth: "150px", position: "sticky", right: 0, boxShadow: "-1px 0 0 #e2e8f0" }}
                   >
                     Actions
                   </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-50">
+              <tbody className="divide-y divide-slate-100">
                 {users.map((u) => (
                   <tr
                     key={u.id}
-                    className={`hover:bg-gray-50 transition-colors ${!u.isActive ? "opacity-55" : ""}`}
+                    className={`transition-colors hover:bg-slate-50/80 ${!u.isActive ? "opacity-55" : ""}`}
                   >
                     <td className="table-td">
                       <div className="flex items-center gap-2">
                         <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold flex-shrink-0 ${
-                          u.isActive ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-500"
+                          u.isActive ? "bg-brand-50 text-brand-700" : "bg-slate-100 text-slate-500"
                         }`}>
                           {u.prenom[0]}{u.nom[0]}
                         </div>
                         {detailBasePath ? (
                           <Link
                             href={`${detailBasePath}/${u.id}`}
-                            className="text-sm font-medium text-blue-700 hover:underline truncate max-w-[110px]"
+                            className="text-sm font-medium text-brand-700 hover:underline truncate max-w-[110px]"
                             title={`Voir les appels de ${u.prenom} ${u.nom}`}
                           >
                             {u.prenom} {u.nom}
                           </Link>
                         ) : (
-                          <span className="text-sm font-medium text-gray-900 truncate max-w-[110px]" title={`${u.prenom} ${u.nom}`}>
+                          <span className="text-sm font-medium text-slate-900 truncate max-w-[110px]" title={`${u.prenom} ${u.nom}`}>
                             {u.prenom} {u.nom}
                           </span>
                         )}
                       </div>
                     </td>
                     <td className="table-td">
-                      <span className="font-mono text-sm text-gray-800 whitespace-nowrap">
-                        {u.phoneNumber || <span className="text-gray-300 italic not-italic">—</span>}
+                      <span className="font-mono text-sm text-slate-800 whitespace-nowrap">
+                        {u.phoneNumber || <span className="text-slate-300 italic not-italic">—</span>}
                       </span>
                     </td>
                     <td className="table-td">
-                      <span className="text-xs text-gray-400 truncate block max-w-[170px]" title={u.email}>
+                      <span className="text-xs text-slate-400 truncate block max-w-[170px]" title={u.email}>
                         {u.email}
                       </span>
                     </td>
                     {isConseiller && (
-                      <td className="table-td text-xs text-gray-600 whitespace-nowrap">
+                      <td className="table-td text-xs text-slate-600 whitespace-nowrap">
                         {u.superviseur
                           ? `${u.superviseur.prenom} ${u.superviseur.nom}`
-                          : <span className="text-gray-300">—</span>}
+                          : <span className="text-slate-300">—</span>}
                       </td>
                     )}
                     {isConseiller && (
-                      <td className="table-td text-xs text-gray-500 whitespace-nowrap">
-                        {u.team?.nom ?? <span className="text-gray-300">—</span>}
+                      <td className="table-td text-xs text-slate-500 whitespace-nowrap">
+                        {u.team?.nom ?? <span className="text-slate-300">—</span>}
                       </td>
                     )}
-                    <td className="table-td text-xs text-gray-500 whitespace-nowrap">
+                    <td className="table-td text-xs text-slate-500 whitespace-nowrap">
                       {u.lastLoginAt
                         ? <span title={new Date(u.lastLoginAt).toLocaleString("fr-FR")}>{timeAgo(u.lastLoginAt)}</span>
-                        : <span className="text-gray-300 italic">Jamais</span>}
+                        : <span className="text-slate-300 italic">Jamais</span>}
                     </td>
                     <td className="table-td">
                       <span className={`badge ${u.isActive ? "badge-green" : "badge-gray"}`}>
@@ -177,7 +177,7 @@ export default function UsersTable({ users, targetRole, currentUserRole, onRefre
                     {/* Sticky actions */}
                     <td
                       className="table-td bg-white"
-                      style={{ position: "sticky", right: 0, boxShadow: "-1px 0 0 #f3f4f6" }}
+                      style={{ position: "sticky", right: 0, boxShadow: "-1px 0 0 #e2e8f0" }}
                     >
                       <div className="flex items-center justify-end gap-1.5">
                         <button

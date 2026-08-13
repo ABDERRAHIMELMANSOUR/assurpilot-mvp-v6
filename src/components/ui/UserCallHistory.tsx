@@ -83,18 +83,18 @@ export default function UserCallHistory({
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
-      <Link href={backHref} className="text-xs text-blue-600 hover:underline">← {backLabel}</Link>
+      <Link href={backHref} className="text-xs text-brand-600 hover:underline">← {backLabel}</Link>
 
       <div className="mt-3 mb-5 flex items-start justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-sm font-semibold">
+          <div className="w-11 h-11 rounded-full bg-brand-50 text-brand-700 flex items-center justify-center text-sm font-semibold">
             {profile ? `${profile.prenom[0]}${profile.nom[0]}` : "…"}
           </div>
           <div>
-            <h1 className="text-xl font-semibold text-gray-900">
+            <h1 className="text-xl font-semibold text-slate-900">
               {profile ? `${profile.prenom} ${profile.nom}` : "Chargement..."}
             </h1>
-            <p className="text-sm text-gray-500 mt-0.5">
+            <p className="text-sm text-slate-500 mt-0.5">
               {profile && (
                 <>
                   {ROLE_LABEL[profile.role] ?? profile.role}
@@ -110,17 +110,17 @@ export default function UserCallHistory({
       </div>
 
       <div className="grid grid-cols-3 gap-3 mb-5">
-        <div className="card p-4"><p className="text-xs text-gray-500">Appels</p><p className="text-2xl font-semibold">{calls.length}</p></div>
-        <div className="card p-4"><p className="text-xs text-gray-500">Répondus</p><p className="text-2xl font-semibold">{answered}</p></div>
-        <div className="card p-4"><p className="text-xs text-gray-500">Devis</p><p className="text-2xl font-semibold text-green-600">{devis}</p></div>
+        <div className="card p-4"><p className="text-xs text-slate-500">Appels</p><p className="text-2xl font-semibold">{calls.length}</p></div>
+        <div className="card p-4"><p className="text-xs text-slate-500">Répondus</p><p className="text-2xl font-semibold">{answered}</p></div>
+        <div className="card p-4"><p className="text-xs text-slate-500">Devis</p><p className="text-2xl font-semibold text-emerald-600">{devis}</p></div>
       </div>
 
       {error && (
-        <div className="mb-3 bg-red-50 border border-red-200 rounded-xl px-4 py-2.5 text-sm text-red-700">{error}</div>
+        <div className="mb-3 bg-rose-50 border border-rose-200 rounded-xl px-4 py-2.5 text-sm text-rose-700">{error}</div>
       )}
 
       {loading
-        ? <div className="card p-8 text-center text-gray-400 animate-pulse">Chargement...</div>
+        ? <div className="card p-8 text-center text-slate-400 animate-pulse">Chargement...</div>
         : <CallsTable
             calls={calls}
             showAgent

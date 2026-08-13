@@ -112,8 +112,8 @@ export default function EntityWorkspacePage({ params }: { params: { entity: stri
     <div className="p-6 max-w-6xl mx-auto">
       <div className="mb-5 flex items-start justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl font-semibold text-gray-900">Équipe {entity}</h1>
-          <p className="text-sm text-gray-500 mt-0.5">
+          <h1 className="text-xl font-semibold text-slate-900">Équipe {entity}</h1>
+          <p className="text-sm text-slate-500 mt-0.5">
             {coaches.length} coach{coaches.length > 1 ? "s" : ""} ·{" "}
             {conseillers.length} conseiller{conseillers.length > 1 ? "s" : ""} ·{" "}
             {calls.length} appel{calls.length > 1 ? "s" : ""}
@@ -127,11 +127,11 @@ export default function EntityWorkspacePage({ params }: { params: { entity: stri
 
       {/* Sub-team + coach filters */}
       <div className="flex flex-wrap items-center gap-2 mb-4">
-        <div className="flex gap-1 bg-gray-100 rounded-lg p-0.5">
+        <div className="flex gap-1 bg-slate-100 rounded-lg p-0.5">
           {SUB_TEAMS.map((s) => (
             <button key={s.key} onClick={() => setSubTeam(s.key)}
               className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-                subTeam === s.key ? "bg-white shadow-sm text-gray-900" : "text-gray-500 hover:text-gray-700"
+                subTeam === s.key ? "bg-white shadow-sm text-slate-900" : "text-slate-500 hover:text-slate-700"
               }`}>
               {s.label}
             </button>
@@ -141,7 +141,7 @@ export default function EntityWorkspacePage({ params }: { params: { entity: stri
         <select
           value={coachId}
           onChange={(e) => setCoachId(e.target.value)}
-          className="px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-brand-400"
         >
           <option value="">Tous les coachs</option>
           {coaches.map((c) => (
@@ -153,30 +153,30 @@ export default function EntityWorkspacePage({ params }: { params: { entity: stri
       {/* Roster */}
       <div className="grid md:grid-cols-2 gap-3 mb-5">
         <div className="card p-4">
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Coachs</p>
-          {coaches.length === 0 ? <p className="text-sm text-gray-400">Aucun coach.</p> : (
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Coachs</p>
+          {coaches.length === 0 ? <p className="text-sm text-slate-400">Aucun coach.</p> : (
             <ul className="space-y-1">
               {coaches.map((c) => (
                 <li key={c.id} className="text-sm">
-                  <Link href={`/admin/utilisateurs/${c.id}`} className="text-blue-700 hover:underline">
+                  <Link href={`/admin/utilisateurs/${c.id}`} className="text-brand-700 hover:underline">
                     {c.prenom} {c.nom}
                   </Link>
-                  <span className="text-gray-400 text-xs"> · {c.team?.nom}</span>
+                  <span className="text-slate-400 text-xs"> · {c.team?.nom}</span>
                 </li>
               ))}
             </ul>
           )}
         </div>
         <div className="card p-4">
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Conseillers</p>
-          {conseillers.length === 0 ? <p className="text-sm text-gray-400">Aucun conseiller.</p> : (
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Conseillers</p>
+          {conseillers.length === 0 ? <p className="text-sm text-slate-400">Aucun conseiller.</p> : (
             <ul className="space-y-1 max-h-40 overflow-y-auto">
               {conseillers.map((c) => (
                 <li key={c.id} className="text-sm">
-                  <Link href={`/admin/utilisateurs/${c.id}`} className="text-blue-700 hover:underline">
+                  <Link href={`/admin/utilisateurs/${c.id}`} className="text-brand-700 hover:underline">
                     {c.prenom} {c.nom}
                   </Link>
-                  <span className="text-gray-400 text-xs">
+                  <span className="text-slate-400 text-xs">
                     {c.team?.nom ? ` · ${c.team.nom}` : ""}
                     {c.superviseur ? ` · ${c.superviseur.prenom} ${c.superviseur.nom}` : ""}
                   </span>
@@ -188,11 +188,11 @@ export default function EntityWorkspacePage({ params }: { params: { entity: stri
       </div>
 
       {error && (
-        <div className="mb-3 bg-red-50 border border-red-200 rounded-xl px-4 py-2.5 text-sm text-red-700">{error}</div>
+        <div className="mb-3 bg-rose-50 border border-rose-200 rounded-xl px-4 py-2.5 text-sm text-rose-700">{error}</div>
       )}
 
       {loading
-        ? <div className="card p-8 text-center text-gray-400 animate-pulse">Chargement...</div>
+        ? <div className="card p-8 text-center text-slate-400 animate-pulse">Chargement...</div>
         : <CallsTable calls={calls} showAgent showNotes allowResult isAdmin allowTransfer onRefresh={fetchCalls} />
       }
     </div>

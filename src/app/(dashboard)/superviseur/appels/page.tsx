@@ -61,8 +61,8 @@ export default function SuperviseurAppelsPage() {
     <div className="p-6 max-w-6xl mx-auto">
       <div className="mb-5 flex items-start justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl font-semibold text-gray-900">Appels de l&apos;équipe</h1>
-          <p className="text-sm text-gray-500 mt-0.5">
+          <h1 className="text-xl font-semibold text-slate-900">Appels de l&apos;équipe</h1>
+          <p className="text-sm text-slate-500 mt-0.5">
             {visible.length} appel{visible.length > 1 ? "s" : ""}
           </p>
         </div>
@@ -79,13 +79,13 @@ export default function SuperviseurAppelsPage() {
       </div>
 
       {error && (
-        <div className="mb-3 bg-red-50 border border-red-200 rounded-xl px-4 py-2.5 text-sm text-red-700">
+        <div className="mb-3 bg-rose-50 border border-rose-200 rounded-xl px-4 py-2.5 text-sm text-rose-700">
           {error}
         </div>
       )}
 
       {loading
-        ? <div className="card p-8 text-center text-gray-400 animate-pulse">Chargement...</div>
+        ? <div className="card p-8 text-center text-slate-400 animate-pulse">Chargement...</div>
         : <CallsTable
             calls={visible}
             showAgent

@@ -113,8 +113,8 @@ export default function ImportAppelsPage() {
       <div className="mb-6 flex items-center gap-3">
         <Link href="/admin/appels" className="btn btn-secondary text-xs py-1 px-2.5">← Retour</Link>
         <div>
-          <h1 className="text-xl font-semibold text-gray-900">Import d'appels</h1>
-          <p className="text-sm text-gray-500 mt-0.5">
+          <h1 className="text-xl font-semibold text-slate-900">Import d'appels</h1>
+          <p className="text-sm text-slate-500 mt-0.5">
             Importez un fichier Excel ou CSV exporté depuis Keyyo ou votre opérateur VoIP
           </p>
         </div>
@@ -125,38 +125,38 @@ export default function ImportAppelsPage() {
         <div className="mb-6 card p-6">
           <div className="flex items-start gap-4">
             <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
-              <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
               </svg>
             </div>
             <div className="flex-1">
-              <h2 className="text-base font-semibold text-gray-900 mb-3">Import terminé</h2>
+              <h2 className="text-base font-semibold text-slate-900 mb-3">Import terminé</h2>
               <div className="grid grid-cols-4 gap-3 mb-4">
-                <div className="bg-gray-50 rounded-lg p-3 text-center">
-                  <p className="text-xl font-semibold text-gray-900">{result.totalRows}</p>
-                  <p className="text-xs text-gray-500">Lignes totales</p>
+                <div className="bg-slate-50 rounded-lg p-3 text-center">
+                  <p className="text-xl font-semibold text-slate-900">{result.totalRows}</p>
+                  <p className="text-xs text-slate-500">Lignes totales</p>
                 </div>
                 <div className="bg-green-50 rounded-lg p-3 text-center">
-                  <p className="text-xl font-semibold text-green-700">{result.importedRows}</p>
-                  <p className="text-xs text-green-600">Importées</p>
+                  <p className="text-xl font-semibold text-emerald-700">{result.importedRows}</p>
+                  <p className="text-xs text-emerald-600">Importées</p>
                 </div>
                 <div className="bg-amber-50 rounded-lg p-3 text-center">
                   <p className="text-xl font-semibold text-amber-700">{result.duplicateRows}</p>
                   <p className="text-xs text-amber-600">Doublons ignorés</p>
                 </div>
-                <div className="bg-red-50 rounded-lg p-3 text-center">
-                  <p className="text-xl font-semibold text-red-700">{result.skippedRows}</p>
-                  <p className="text-xs text-red-600">Invalides ignorées</p>
+                <div className="bg-rose-50 rounded-lg p-3 text-center">
+                  <p className="text-xl font-semibold text-rose-700">{result.skippedRows}</p>
+                  <p className="text-xs text-rose-600">Invalides ignorées</p>
                 </div>
               </div>
               {result.errors.length > 0 && (
                 <div>
-                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
                     Lignes invalides ({result.errors.length})
                   </p>
-                  <div className="bg-red-50 rounded-lg p-3 space-y-1 max-h-40 overflow-y-auto">
+                  <div className="bg-rose-50 rounded-lg p-3 space-y-1 max-h-40 overflow-y-auto">
                     {result.errors.map((e, i) => (
-                      <p key={i} className="text-xs text-red-700">
+                      <p key={i} className="text-xs text-rose-700">
                         Ligne {e.row} · <span className="font-mono">{e.numero || "—"}</span> — {e.error}
                       </p>
                     ))}
@@ -181,32 +181,32 @@ export default function ImportAppelsPage() {
             onDrop={handleDrop}
             onClick={() => fileRef.current?.click()}
             className={`card p-8 text-center cursor-pointer transition-all mb-5 ${
-              dragging         ? "border-blue-400 bg-blue-50 border-2" :
+              dragging         ? "border-blue-400 bg-brand-50 border-2" :
               file && validExt ? "border-green-300 bg-green-50 border-2" :
-              "border-dashed border-gray-300 hover:border-blue-300 hover:bg-blue-50/30"
+              "border-dashed border-slate-300 hover:border-blue-300 hover:bg-brand-50/30"
             }`}
           >
             <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleFileChange} />
             {file ? (
               <div className="flex flex-col items-center gap-2">
                 <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
-                  <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
                 </div>
-                <p className="text-sm font-medium text-gray-900">{file.name}</p>
-                <p className="text-xs text-gray-500">{(file.size / 1024).toFixed(1)} Ko · cliquez pour changer</p>
+                <p className="text-sm font-medium text-slate-900">{file.name}</p>
+                <p className="text-xs text-slate-500">{(file.size / 1024).toFixed(1)} Ko · cliquez pour changer</p>
               </div>
             ) : (
               <div className="flex flex-col items-center gap-3">
-                <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center">
-                  <svg className="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center">
+                  <svg className="w-6 h-6 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                   </svg>
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-gray-700">Glissez votre fichier ici</p>
-                  <p className="text-xs text-gray-400 mt-0.5">ou cliquez pour parcourir</p>
+                  <p className="text-sm font-medium text-slate-700">Glissez votre fichier ici</p>
+                  <p className="text-xs text-slate-400 mt-0.5">ou cliquez pour parcourir</p>
                 </div>
                 <div className="flex gap-2">
                   {[".xlsx", ".xls", ".csv"].map((f) => (
@@ -219,7 +219,7 @@ export default function ImportAppelsPage() {
 
           {/* Column mapping reference */}
           <div className="card p-4 mb-5">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
               Correspondance des colonnes
             </p>
             <div className="grid grid-cols-2 gap-2">
@@ -232,17 +232,17 @@ export default function ImportAppelsPage() {
                 { col: "Destination / Site", role: "Stockés en métadonnées" },
               ].map((r) => (
                 <div key={r.col} className="flex gap-2 text-xs items-start">
-                  <span className={`font-mono px-1.5 py-0.5 rounded flex-shrink-0 ${r.highlight ? "bg-blue-100 text-blue-800" : "bg-gray-100 text-gray-700"}`}>
+                  <span className={`font-mono px-1.5 py-0.5 rounded flex-shrink-0 ${r.highlight ? "bg-brand-50 text-brand-800" : "bg-slate-100 text-slate-700"}`}>
                     {r.col}
                   </span>
-                  <span className="text-gray-500">{r.role}</span>
+                  <span className="text-slate-500">{r.role}</span>
                 </div>
               ))}
             </div>
           </div>
 
           {error && (
-            <div className="mb-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">{error}</div>
+            <div className="mb-4 bg-rose-50 border border-rose-200 rounded-xl px-4 py-3 text-sm text-rose-700">{error}</div>
           )}
 
           {/* Analyse button */}
@@ -262,20 +262,20 @@ export default function ImportAppelsPage() {
               {/* Summary stats */}
               <div className="grid grid-cols-4 gap-3">
                 <div className="stat-card text-center">
-                  <p className="text-2xl font-semibold text-gray-900">{preview.totalRows}</p>
-                  <p className="text-xs text-gray-500 mt-1">Lignes totales</p>
+                  <p className="text-2xl font-semibold text-slate-900">{preview.totalRows}</p>
+                  <p className="text-xs text-slate-500 mt-1">Lignes totales</p>
                 </div>
                 <div className="stat-card text-center">
-                  <p className="text-2xl font-semibold text-green-600">{preview.validRows}</p>
-                  <p className="text-xs text-green-600 mt-1">Lignes valides</p>
+                  <p className="text-2xl font-semibold text-emerald-600">{preview.validRows}</p>
+                  <p className="text-xs text-emerald-600 mt-1">Lignes valides</p>
                 </div>
                 <div className="stat-card text-center">
                   <p className="text-2xl font-semibold text-amber-600">{preview.duplicateRows}</p>
                   <p className="text-xs text-amber-600 mt-1">Doublons</p>
                 </div>
                 <div className="stat-card text-center">
-                  <p className="text-2xl font-semibold text-red-500">{preview.invalidRows}</p>
-                  <p className="text-xs text-red-500 mt-1">Invalides</p>
+                  <p className="text-2xl font-semibold text-rose-500">{preview.invalidRows}</p>
+                  <p className="text-xs text-rose-500 mt-1">Invalides</p>
                 </div>
               </div>
 
@@ -299,11 +299,11 @@ export default function ImportAppelsPage() {
 
               {/* Preview table */}
               <div className="card overflow-hidden">
-                <div className="px-4 py-3 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
-                  <p className="text-sm font-semibold text-gray-700">
+                <div className="px-4 py-3 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
+                  <p className="text-sm font-semibold text-slate-700">
                     Aperçu ({Math.min(preview.preview.length, 100)} lignes)
                   </p>
-                  <div className="flex gap-3 text-xs text-gray-500">
+                  <div className="flex gap-3 text-xs text-slate-500">
                     <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-400 inline-block" />Valide</span>
                     <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-400 inline-block" />Doublon</span>
                     <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-400 inline-block" />Invalide</span>
@@ -311,7 +311,7 @@ export default function ImportAppelsPage() {
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full">
-                    <thead className="bg-gray-50 border-b border-gray-100">
+                    <thead className="bg-slate-50 border-b border-slate-100">
                       <tr>
                         <th className="table-th w-12">Ligne</th>
                         <th className="table-th">N° client</th>
@@ -323,27 +323,27 @@ export default function ImportAppelsPage() {
                         <th className="table-th">État</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-50">
+                    <tbody className="divide-y divide-slate-100">
                       {preview.preview.map((row) => {
                         const rowClass =
                           row.isDuplicate ? "bg-amber-50/60" :
-                          row.error       ? "bg-red-50/50"   :
-                          "hover:bg-gray-50";
+                          row.error       ? "bg-rose-50/50"   :
+                          "hover:bg-slate-50";
                         return (
                           <tr key={row.rowIndex} className={`transition-colors ${rowClass}`}>
-                            <td className="table-td text-xs text-gray-400">{row.rowIndex}</td>
-                            <td className="table-td font-mono text-sm text-gray-800">
+                            <td className="table-td text-xs text-slate-400">{row.rowIndex}</td>
+                            <td className="table-td font-mono text-sm text-slate-800">
                               {row.callerNumber || "—"}
                             </td>
-                            <td className="table-td font-mono text-xs text-gray-500">
+                            <td className="table-td font-mono text-xs text-slate-500">
                               {row.numeroAppele || "—"}
                             </td>
                             <td className="table-td text-sm">
                               {row.conseiller
-                                ? <span className="text-gray-900">{row.conseiller}</span>
-                                : <span className="text-red-500 text-xs font-medium">Non trouvé</span>}
+                                ? <span className="text-slate-900">{row.conseiller}</span>
+                                : <span className="text-rose-500 text-xs font-medium">Non trouvé</span>}
                             </td>
-                            <td className="table-td text-xs text-gray-500 whitespace-nowrap">
+                            <td className="table-td text-xs text-slate-500 whitespace-nowrap">
                               {formatDate(row.startedAt)}
                             </td>
                             <td className="table-td font-mono text-sm">
@@ -358,7 +358,7 @@ export default function ImportAppelsPage() {
                               {row.isDuplicate ? (
                                 <span className="badge badge-yellow">Doublon</span>
                               ) : row.error ? (
-                                <span className="text-xs text-red-600">{row.error}</span>
+                                <span className="text-xs text-rose-600">{row.error}</span>
                               ) : (
                                 <span className="badge badge-green text-xs">OK</span>
                               )}
