@@ -55,7 +55,12 @@ export async function GET(_req: NextRequest, { params }: RouteContext) {
       select: USER_SELECT,
     });
     if (!user) throw notFound("Utilisateur introuvable");
-    assertCanManage(currentUser, { role: user.role, superviseurId: user.superviseurId });
+    // Reading your own record is always allowed — a coach is not their own
+    // direct report, so assertCanManage would otherwise refuse them their own
+    // profile (which they can already read via /api/profile anyway).
+    if (user.id !== currentUser.userId) {
+      assertCanManage(currentUser, { role: user.role, superviseurId: user.superviseurId });
+    }
     return NextResponse.json(user);
   } catch (error) {
     return handleApiError(error, `GET /api/users/${params.id}`);

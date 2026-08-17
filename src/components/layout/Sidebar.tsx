@@ -67,8 +67,9 @@ export default function Sidebar() {
         {role === "SUPERVISEUR" && (
           <>
             <SectionLabel label="Tableau de bord" />
-            <NavLink href="/superviseur"         label="Vue d'ensemble" />
-            <NavLink href="/superviseur/appels"  label="Appels équipe" />
+            <NavLink href="/superviseur"            label="Vue d'ensemble" />
+            <NavLink href="/superviseur/mes-appels" label="Mes appels" />
+            <NavLink href="/superviseur/appels"     label="Appels équipe" />
             <SectionLabel label="Équipe" />
             <NavLink href="/superviseur/equipe"   label="Mon équipe" />
             <NavLink href="/superviseur/activite" label="Activité" />

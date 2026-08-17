@@ -114,7 +114,11 @@ export default function CallsTable({
     <>
       <div className="card overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full" style={{ minWidth: hasActions ? "820px" : "620px" }}>
+          {/* The min width has to cover what the columns actually need. Set too low,
+                the browser compresses to fit the container and starves the Notes
+                column instead of overflowing — and overflowing is the intent
+                here, which is why the Actions column is sticky. */}
+            <table className="w-full" style={{ minWidth: hasActions ? "1200px" : "700px" }}>
             <thead className="bg-slate-50/70 border-b border-slate-100">
               <tr>
                 <th className="table-th" style={{ minWidth: "140px" }}>Appelant</th>
@@ -220,15 +224,16 @@ export default function CallsTable({
 
                     {/* Notes */}
                     {showNotes && (
-                      <td className="table-td overflow-hidden">
-                        {/* Sized to the column (w-full) rather than a fixed
-                            width: the column is squeezed when many columns
-                            compete, and a fixed width would bleed under the
-                            sticky Actions cell instead of ellipsising. */}
+                      <td className="table-td">
+                        {/* max-width, not w-full: a w-full block has zero
+                            intrinsic width, so auto table layout starves the
+                            column and the note collapses to a couple of
+                            characters. A capped width lets the column bid for
+                            space and `truncate` ellipsises what does not fit. */}
                         {call.result?.notes
                           ? (
                             <span
-                              className="block w-full truncate text-xs text-slate-600"
+                              className="block max-w-[200px] truncate text-xs text-slate-600"
                               title={call.result.notes}
                             >
                               {call.result.notes}

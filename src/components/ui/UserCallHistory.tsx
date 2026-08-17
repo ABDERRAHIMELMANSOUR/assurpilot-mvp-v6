@@ -2,6 +2,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import CallsTable from "./CallsTable";
+import StatCard from "./StatCard";
 import DateFilter, { DateFilterState, buildQueryString } from "./DateFilter";
 import { errorMessage, fetchJsonOr } from "@/lib/fetchJson";
 
@@ -25,9 +26,13 @@ const ROLE_LABEL: Record<string, string> = {
 
 interface Props {
   userId: string;
-  /** Where the "back" link points. */
-  backHref: string;
-  backLabel: string;
+  /** Where the "back" link points. Omit when used as a top-level page. */
+  backHref?: string;
+  backLabel?: string;
+  /** Overrides the person's name as the page title (e.g. "Mes appels directs"). */
+  heading?: string;
+  /** Extra line under the heading. */
+  subtitle?: string;
   /** Viewer's own id, so transfer badges read correctly. */
   currentUserId?: string;
   allowTransfer?: boolean;
@@ -39,7 +44,8 @@ interface Props {
  * coach's view of a conseiller, since both need exactly the same thing.
  */
 export default function UserCallHistory({
-  userId, backHref, backLabel, currentUserId, allowTransfer = false, isAdmin = false,
+  userId, backHref, backLabel, heading, subtitle,
+  currentUserId, allowTransfer = false, isAdmin = false,
 }: Props) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [calls,   setCalls]   = useState<any[]>([]);
@@ -83,7 +89,9 @@ export default function UserCallHistory({
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
-      <Link href={backHref} className="text-xs text-brand-600 hover:underline">← {backLabel}</Link>
+      {backHref && (
+        <Link href={backHref} className="text-xs text-brand-600 hover:underline">← {backLabel}</Link>
+      )}
 
       <div className="mt-3 mb-5 flex items-start justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
@@ -92,8 +100,9 @@ export default function UserCallHistory({
           </div>
           <div>
             <h1 className="text-xl font-semibold text-slate-900">
-              {profile ? `${profile.prenom} ${profile.nom}` : "Chargement..."}
+              {heading ?? (profile ? `${profile.prenom} ${profile.nom}` : "Chargement...")}
             </h1>
+            {subtitle && <p className="text-sm text-slate-500 mt-0.5">{subtitle}</p>}
             <p className="text-sm text-slate-500 mt-0.5">
               {profile && (
                 <>
@@ -109,10 +118,10 @@ export default function UserCallHistory({
         <DateFilter value={filter} onChange={setFilter} />
       </div>
 
-      <div className="grid grid-cols-3 gap-3 mb-5">
-        <div className="card p-4"><p className="text-xs text-slate-500">Appels</p><p className="text-2xl font-semibold">{calls.length}</p></div>
-        <div className="card p-4"><p className="text-xs text-slate-500">Répondus</p><p className="text-2xl font-semibold">{answered}</p></div>
-        <div className="card p-4"><p className="text-xs text-slate-500">Devis</p><p className="text-2xl font-semibold text-emerald-600">{devis}</p></div>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
+        <StatCard label="Total appels" value={calls.length} tone="brand" />
+        <StatCard label="Répondus"     value={answered}    tone="emerald" />
+        <StatCard label="Devis"        value={devis}        tone="indigo" />
       </div>
 
       {error && (
