@@ -1,6 +1,8 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
 import DateFilter, { DateFilterState, buildQueryString } from "@/components/ui/DateFilter";
+import ScopeFilter, { EMPTY_SCOPE, ScopeFilterState, withScope } from "@/components/ui/ScopeFilter";
+import { errorMessage } from "@/lib/fetchJson";
 
 const EMPTY: DateFilterState = { period: "month", dateFrom: "", dateTo: "" };
 
@@ -8,13 +10,29 @@ export default function ClassementPage() {
   const [stats,   setStats]   = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [filter,  setFilter]  = useState<DateFilterState>(EMPTY);
+  const [scope,   setScope]   = useState<ScopeFilterState>(EMPTY_SCOPE);
+  const [error,   setError]   = useState("");
+
+  // Date range and entity/line scope travel as one query string, so the ranking
+  // is always computed from the full filter set.
+  const query = withScope(buildQueryString(filter), scope);
 
   const fetchStats = useCallback(async () => {
-    setLoading(true);
-    const res  = await fetch("/api/analytics" + buildQueryString(filter));
-    setStats(await res.json());
-    setLoading(false);
-  }, [filter]);
+    setLoading(true); setError("");
+    try {
+      const res = await fetch("/api/analytics" + query);
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error ?? `Erreur ${res.status}`);
+      }
+      setStats(await res.json());
+    } catch (err) {
+      setStats(null);
+      setError(errorMessage(err, "Impossible de charger le classement."));
+    } finally {
+      setLoading(false);
+    }
+  }, [query]);
 
   useEffect(() => { fetchStats(); }, [fetchStats]);
 
@@ -27,8 +45,17 @@ export default function ClassementPage() {
           <h1 className="text-xl font-semibold text-slate-900">Classement des conseillers</h1>
           <p className="text-sm text-slate-500 mt-0.5">Classé par taux de conversion sur appels répondus</p>
         </div>
-        <DateFilter value={filter} onChange={setFilter} />
+        <div className="flex flex-wrap items-center gap-2">
+          <ScopeFilter value={scope} onChange={setScope} />
+          <DateFilter value={filter} onChange={setFilter} />
+        </div>
       </div>
+
+      {error && (
+        <div className="mb-4 bg-rose-50 border border-rose-200 rounded-xl px-4 py-2.5 text-sm text-rose-700">
+          {error}
+        </div>
+      )}
 
       {loading ? (
         <div className="card p-8 animate-pulse text-center text-slate-400">Chargement...</div>
@@ -48,7 +75,7 @@ export default function ClassementPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {stats.leaderboard.map((agent: any, i: number) => {
+              {(stats.leaderboard ?? []).map((agent: any, i: number) => {
                 const pct = agent.tauxConversion;
                 return (
                   <tr key={agent.id} className={`hover:bg-slate-50 ${i === 0 ? "bg-amber-50/40" : ""}`}>
@@ -86,8 +113,12 @@ export default function ClassementPage() {
               })}
             </tbody>
           </table>
-          {stats.leaderboard.length === 0 && (
-            <p className="p-8 text-center text-sm text-slate-400">Aucun appel sur cette période.</p>
+          {(stats.leaderboard ?? []).length === 0 && (
+            <p className="p-8 text-center text-sm text-slate-400">
+              {scope.entity || scope.lineType
+                ? "Aucun conseiller dans ce périmètre sur cette période."
+                : "Aucun appel sur cette période."}
+            </p>
           )}
         </div>
       )}
