@@ -2,7 +2,9 @@
 import { useEffect, useState, useCallback } from "react";
 import StatCard from "@/components/ui/StatCard";
 import DateFilter, { DateFilterState, buildQueryString } from "@/components/ui/DateFilter";
+import ScopeFilter, { EMPTY_SCOPE, ScopeFilterState, withScope } from "@/components/ui/ScopeFilter";
 import Link from "next/link";
+import { errorMessage } from "@/lib/fetchJson";
 
 const EMPTY: DateFilterState = { period: "month", dateFrom: "", dateTo: "" };
 
@@ -10,12 +12,29 @@ export default function AdminPage() {
   const [stats,   setStats]   = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [filter,  setFilter]  = useState<DateFilterState>(EMPTY);
+  const [scope,   setScope]   = useState<ScopeFilterState>(EMPTY_SCOPE);
+  const [error,   setError]   = useState("");
+
+  // Date range and scope are combined into one query string, so the metric
+  // cards and the leaderboard are always computed from the same filter set.
+  const query = withScope(buildQueryString(filter), scope);
 
   const fetchStats = useCallback(async () => {
-    setLoading(true);
-    setStats(await fetch("/api/analytics" + buildQueryString(filter)).then((r) => r.json()));
-    setLoading(false);
-  }, [filter]);
+    setLoading(true); setError("");
+    try {
+      const res = await fetch("/api/analytics" + query);
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error ?? `Erreur ${res.status}`);
+      }
+      setStats(await res.json());
+    } catch (err) {
+      setStats(null);
+      setError(errorMessage(err, "Impossible de charger les statistiques."));
+    } finally {
+      setLoading(false);
+    }
+  }, [query]);
 
   useEffect(() => { fetchStats(); }, [fetchStats]);
 
@@ -32,11 +51,18 @@ export default function AdminPage() {
           <p className="text-sm text-slate-500 mt-0.5">Statistiques de toute la plateforme</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <ScopeFilter value={scope} onChange={setScope} />
           <DateFilter value={filter} onChange={setFilter} />
           <Link href="/admin/appels/import" className="btn btn-secondary text-xs">↑ Importer</Link>
           <Link href="/admin/appels/nouveau" className="btn btn-primary text-xs">+ Appel manuel</Link>
         </div>
       </div>
+
+      {error && (
+        <div className="mb-4 bg-rose-50 border border-rose-200 rounded-xl px-4 py-2.5 text-sm text-rose-700">
+          {error}
+        </div>
+      )}
 
       {loading ? (
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6 animate-pulse">
@@ -59,6 +85,11 @@ export default function AdminPage() {
               <Link href="/admin/classement" className="text-xs text-brand-600 hover:underline">Voir tout →</Link>
             </div>
             <div className="divide-y divide-slate-100">
+              {(stats.leaderboard ?? []).length === 0 && (
+                <p className="px-5 py-8 text-center text-sm text-slate-400">
+                  Aucun conseiller dans ce périmètre.
+                </p>
+              )}
               {(stats.leaderboard ?? []).slice(0, 5).map((agent: any, i: number) => {
                 const pct = agent.tauxConversion;
                 return (

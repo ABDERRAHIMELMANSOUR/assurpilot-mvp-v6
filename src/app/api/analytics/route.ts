@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { handleApiError, requireUser } from "@/lib/api";
 import { buildDateRange } from "@/lib/dates";
 import { directReportsWhere } from "@/lib/scope";
+import { parseEntity, parseSubTeam, userScopeWhere } from "@/lib/entity";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,8 +32,19 @@ function tally(calls: CallWithResult[]) {
 export async function GET(req: NextRequest) {
   try {
     const user = await requireUser();
-    const range = buildDateRange(new URL(req.url).searchParams);
+    const params = new URL(req.url).searchParams;
+    const range = buildDateRange(params);
     const startedAtWhere: Prisma.CallWhereInput = range ? { startedAt: range } : {};
+
+    // Entity (CPA/ALM) and line (Auto/Santé) narrow WHICH CONSEILLERS are
+    // counted, via the team they belong to. Scoping the people rather than the
+    // calls keeps the summary cards equal to the sum of the leaderboard rows
+    // shown beneath them — the two are read together, so they must agree.
+    // `lineType` is the UI's name for it; `subTeam` is accepted as an alias for
+    // consistency with /api/calls.
+    const entity = parseEntity(params.get("entity"));
+    const subTeam = parseSubTeam(params.get("lineType") ?? params.get("subTeam"));
+    const scopeWhere = userScopeWhere(entity, subTeam);
 
     if (user.role === "CONSEILLER") {
       const calls = await prisma.call.findMany({
@@ -55,8 +67,13 @@ export async function GET(req: NextRequest) {
 
     const isSuperviseur = user.role === "SUPERVISEUR";
     const agents = await prisma.user.findMany({
-      // Coach metrics cover only their own conseillers.
-      where: isSuperviseur ? directReportsWhere(user.userId) : { role: "CONSEILLER" },
+      where: {
+        AND: [
+          // Coach metrics cover only their own conseillers.
+          isSuperviseur ? directReportsWhere(user.userId) : { role: "CONSEILLER" },
+          scopeWhere,
+        ],
+      },
       select: {
         id: true,
         nom: true,
@@ -89,10 +106,12 @@ export async function GET(req: NextRequest) {
       totalManques: leaderboard.reduce((sum, a) => sum + a.manques, 0),
     };
 
+    const applied = { entity, lineType: subTeam };
+
     return NextResponse.json(
       isSuperviseur
-        ? { ...totals, leaderboard }
-        : { ...totals, totalAgents: agents.length, leaderboard }
+        ? { ...totals, leaderboard, applied }
+        : { ...totals, totalAgents: agents.length, leaderboard, applied }
     );
   } catch (error) {
     return handleApiError(error, "GET /api/analytics");

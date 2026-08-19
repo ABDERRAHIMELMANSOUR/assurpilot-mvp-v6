@@ -53,11 +53,13 @@ export const SUB_TEAM_LABEL: Record<SubTeam, string> = {
   SANTE: "Santé",
 };
 
-/** Matches team names belonging to an entity, optionally narrowed to a sub-team. */
-function teamNameFilter(entity: Entity, subTeam?: SubTeam | null): Prisma.TeamWhereInput {
-  const clauses: Prisma.TeamWhereInput[] = [
-    { nom: { contains: entity, mode: "insensitive" } },
-  ];
+/**
+ * Matches team names by entity and/or sub-team. Either half may be omitted, so
+ * "all entities + Auto only" and "CPA + all lines" are both expressible.
+ */
+function teamNameFilter(entity: Entity | null, subTeam?: SubTeam | null): Prisma.TeamWhereInput {
+  const clauses: Prisma.TeamWhereInput[] = [];
+  if (entity) clauses.push({ nom: { contains: entity, mode: "insensitive" } });
   if (subTeam === "AUTO") clauses.push({ nom: { contains: "auto", mode: "insensitive" } });
   // "sante" matches "Santé" too: Postgres ILIKE is accent-sensitive, so cover
   // both spellings rather than assuming how the team was typed.
@@ -75,6 +77,38 @@ function teamNameFilter(entity: Entity, subTeam?: SubTeam | null): Prisma.TeamWh
 /** Users belonging to an entity, via their team. */
 export function userEntityWhere(entity: Entity, subTeam?: SubTeam | null): Prisma.UserWhereInput {
   return { team: teamNameFilter(entity, subTeam) };
+}
+
+/**
+ * Users narrowed by entity and/or sub-team. Returns an empty clause when
+ * neither is set, so it can always be AND-ed into a wider query.
+ */
+export function userScopeWhere(
+  entity: Entity | null,
+  subTeam: SubTeam | null
+): Prisma.UserWhereInput {
+  if (!entity && !subTeam) return {};
+  return { team: teamNameFilter(entity, subTeam) };
+}
+
+/**
+ * Reads the "line / product" dropdown. The UI labels it Auto / Santé, so accept
+ * those spellings (accented or not, any case) alongside the canonical values,
+ * and `subTeam` as an alias for consistency with /api/calls.
+ */
+export function parseSubTeam(raw: string | null | undefined): SubTeam | null {
+  if (!raw) return null;
+  const folded = fold(raw).trim();
+  if (folded === "AUTO") return "AUTO";
+  if (folded === "SANTE") return "SANTE";
+  return null;
+}
+
+/** Reads the entity dropdown; returns null for "all entities". */
+export function parseEntity(raw: string | null | undefined): Entity | null {
+  if (!raw) return null;
+  const folded = fold(raw).trim();
+  return folded === "CPA" ? "CPA" : folded === "ALM" ? "ALM" : null;
 }
 
 /**
