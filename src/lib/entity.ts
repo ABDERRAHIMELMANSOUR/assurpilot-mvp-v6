@@ -122,3 +122,12 @@ export function callEntityWhere(entity: Entity, subTeam?: SubTeam | null): Prism
   const team = teamNameFilter(entity, subTeam);
   return { OR: [{ team }, { phoneLine: { team } }] };
 }
+
+/**
+ * Calls on one line/product across every entity — "all the Auto calls".
+ * Same team-then-line fallback as `callEntityWhere`.
+ */
+export function callSubTeamWhere(subTeam: SubTeam): Prisma.CallWhereInput {
+  const team = teamNameFilter(null, subTeam);
+  return { OR: [{ team }, { phoneLine: { team } }] };
+}

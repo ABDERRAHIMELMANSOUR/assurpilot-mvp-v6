@@ -200,7 +200,68 @@ et partagent les helpers de `src/lib/api.ts` :
 | `/api/phone-lines`               | GET                | authentifié                  |
 | `/api/call-result-options`       | GET, POST          | GET authentifié · POST admin |
 | `/api/call-result-options/[id]`  | PUT, DELETE        | admin                        |
+| `/api/calls/export`              | GET                | authentifié (selon rôle)     |
 | `/api/config/keyyo`              | GET, PUT, POST     | admin                        |
+
+### Visibilité des appels par rôle
+
+Trois règles s'appliquent **côté serveur**, dans le `where` de chaque requête —
+elles ne peuvent pas être contournées par un paramètre d'URL forgé.
+
+**Profondeur d'historique** (`src/lib/retention.ts`) : un conseiller voit les
+appels des **3 derniers jours**, un coach des **5 derniers jours**, un
+administrateur tout l'historique. La borne est le début du jour J−N, pas
+« maintenant moins N×24 h », pour que la fenêtre ne glisse pas en cours de
+journée. Un `?dateFrom=` plus ancien réduit la fenêtre, il ne l'élargit jamais.
+
+**Masquage du numéro appelant** (`src/lib/mask.ts`) : appliqué dans la réponse
+JSON, pas dans le JSX — masquer à l'affichage laisserait le numéro complet dans
+le payload. Couvre donc aussi l'export Excel.
+
+| Rôle             | Affichage      |
+|------------------|----------------|
+| `ADMINISTRATEUR` | `33602020009`  |
+| `SUPERVISEUR`    | `336****0009`  |
+| `CONSEILLER`     | `********009`  |
+
+**Périmètre** (`src/lib/scope.ts`) : un conseiller ne voit que ses appels, un
+coach ceux de ses rattachés directs (`superviseurId`) plus les siens.
+
+### Regroupement des doublons
+
+`GET /api/calls?group=1` renvoie une ligne par numéro appelant (normalisé, donc
+`+33687814485`, `0687814485` et `33687814485` sont le même prospect) au lieu
+d'une ligne par appel. La ligne porte le **dernier** appel — son statut et sa
+qualification sont donc ceux en cours — plus `attemptCount`, `firstAttemptAt`,
+`firstContactBy` et `alreadyContacted`.
+
+`firstContactBy` est cherché **hors périmètre** du lecteur : c'est tout l'intérêt
+du badge « Déjà contacté par », puisqu'un conseiller ne voit que ses propres
+appels et ignorerait donc qu'un collègue travaille déjà ce numéro. La recherche
+reste bornée à la fenêtre d'historique du rôle.
+
+Sans `group=1` la réponse est inchangée (une ligne par appel) — l'export Excel
+l'utilise, pour conserver chaque tentative.
+
+### Filtres partagés
+
+`/api/calls` et `/api/calls/export` construisent leur `where` avec les mêmes
+helpers, dans le même ordre : le classeur ne peut pas diverger de l'écran.
+Paramètres communs : `entity` (CPA/ALM), `lineType` (alias `pole`, `subTeam`),
+`teamId`, `lineId`, `statut`, `coachId`, `userId` (alias `conseillerId`), et
+`period` ou `dateFrom`/`dateTo` (alias `startDate`/`endDate`).
+
+### Contrats signés
+
+Le classement (`/admin/classement`, `/api/analytics`) est ordonné par
+**contrats signés**, avec les devis puis le taux de conversion en départage ;
+`?sort=conversion` rétablit l'ordre précédent.
+
+« Contrat signé » est une **donnée**, pas un changement de schéma : c'est une
+ligne de `call_result_options` (`CONTRAT_SIGNE`). Sur une base déjà en service,
+appliquer `prisma/sql/004-contrat-signe.sql` — idempotent, sans migration ni
+reclassement des appels existants, qui resteront donc à 0 contrat tant que
+l'option n'est pas utilisée.
 
 ### Import de fichiers d'appels
 

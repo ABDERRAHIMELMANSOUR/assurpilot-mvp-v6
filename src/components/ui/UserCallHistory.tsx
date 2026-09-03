@@ -5,6 +5,7 @@ import CallsTable from "./CallsTable";
 import StatCard from "./StatCard";
 import DateFilter, { DateFilterState, buildQueryString } from "./DateFilter";
 import { errorMessage, fetchJsonOr } from "@/lib/fetchJson";
+import { isContractResult } from "@/lib/contracts";
 
 type Profile = {
   id: string;
@@ -84,8 +85,10 @@ export default function UserCallHistory({
 
   useEffect(() => { fetchCalls(); }, [fetchCalls]);
 
+  // Ungrouped list, so one row is one call and these counts are exact.
   const answered = calls.filter((c) => !c.isMissed).length;
   const devis = calls.filter((c) => c.result?.resultat === "DEVIS_REALISE").length;
+  const contrats = calls.filter((c) => isContractResult(c.result?.resultat)).length;
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
@@ -118,9 +121,10 @@ export default function UserCallHistory({
         <DateFilter value={filter} onChange={setFilter} />
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
         <StatCard label="Total appels" value={calls.length} tone="brand" />
-        <StatCard label="Répondus"     value={answered}    tone="emerald" />
+        <StatCard label="Répondus"     value={answered}     tone="brand" />
+        <StatCard label="Contrats"     value={contrats}     tone="emerald" />
         <StatCard label="Devis"        value={devis}        tone="indigo" />
       </div>
 

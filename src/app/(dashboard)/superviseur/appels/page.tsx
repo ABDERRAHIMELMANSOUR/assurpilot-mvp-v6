@@ -3,7 +3,9 @@ import { useEffect, useState, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import CallsTable from "@/components/ui/CallsTable";
 import DateFilter, { DateFilterState, buildQueryString } from "@/components/ui/DateFilter";
+import GroupToggle from "@/components/ui/GroupToggle";
 import { errorMessage } from "@/lib/fetchJson";
+import { withGroup } from "@/lib/query";
 
 const EMPTY: DateFilterState = { period: "", dateFrom: "", dateTo: "" };
 
@@ -17,12 +19,13 @@ export default function SuperviseurAppelsPage() {
   const [loading, setLoading] = useState(true);
   const [filter,  setFilter]  = useState<DateFilterState>(EMPTY);
   const [scope,   setScope]   = useState<Scope>("all");
+  const [grouped, setGrouped] = useState(true);
   const [error,   setError]   = useState("");
 
   const fetchCalls = useCallback(async () => {
     setLoading(true); setError("");
     try {
-      const res = await fetch("/api/calls" + buildQueryString(filter));
+      const res = await fetch("/api/calls" + withGroup(buildQueryString(filter), grouped));
       if (!res.ok) {
         const body = await res.json().catch(() => null);
         throw new Error(body?.error ?? `Erreur ${res.status}`);
@@ -35,7 +38,7 @@ export default function SuperviseurAppelsPage() {
     } finally {
       setLoading(false);
     }
-  }, [filter]);
+  }, [filter, grouped]);
 
   useEffect(() => { fetchCalls(); }, [fetchCalls]);
 
@@ -63,10 +66,15 @@ export default function SuperviseurAppelsPage() {
         <div>
           <h1 className="text-xl font-semibold text-slate-900">Appels de l&apos;équipe</h1>
           <p className="text-sm text-slate-500 mt-0.5">
-            {visible.length} appel{visible.length > 1 ? "s" : ""}
+            {grouped
+              ? `${visible.length} numéro${visible.length > 1 ? "s" : ""}`
+              : `${visible.length} appel${visible.length > 1 ? "s" : ""}`}
           </p>
         </div>
-        <DateFilter value={filter} onChange={setFilter} />
+        <div className="flex flex-wrap items-center gap-3">
+          <GroupToggle value={grouped} onChange={setGrouped} />
+          <DateFilter value={filter} onChange={setFilter} />
+        </div>
       </div>
 
       <div className="flex gap-1.5 mb-4 flex-wrap">

@@ -4,8 +4,24 @@
 // always contains exactly the rows the screen is showing.
 import type { Prisma } from "@prisma/client";
 import { buildDateRange } from "@/lib/dates";
-import { callEntityWhere, isEntity, isSubTeam } from "@/lib/entity";
+import { callEntityWhere, callSubTeamWhere, isEntity, parseSubTeam } from "@/lib/entity";
 import { badRequest } from "@/lib/api";
+
+/**
+ * Reads the line / product dropdown under any of the spellings in use:
+ * `lineType` is what ScopeFilter sends, `subTeam` is what /api/calls was first
+ * written against, `pole` is what the export links use. Reading only one of
+ * them silently dropped the filter — an export that ignored the line while the
+ * screen applied it.
+ */
+function readSubTeam(params: URLSearchParams) {
+  const raw =
+    params.get("lineType") ?? params.get("subTeam") ?? params.get("pole");
+  if (!raw) return null;
+  const parsed = parseSubTeam(raw);
+  if (!parsed) throw badRequest(`Pôle inconnu : ${raw}`);
+  return parsed;
+}
 
 /** Builds the optional `where` clauses from query params (no auth scoping). */
 export function callFilterClauses(params: URLSearchParams): Prisma.CallWhereInput[] {
@@ -15,11 +31,14 @@ export function callFilterClauses(params: URLSearchParams): Prisma.CallWhereInpu
   if (range) clauses.push({ startedAt: range });
 
   const entity = params.get("entity");
+  const subTeam = readSubTeam(params);
+
   if (entity) {
     if (!isEntity(entity)) throw badRequest(`Entité inconnue : ${entity}`);
-    const subTeam = params.get("subTeam");
-    if (subTeam && !isSubTeam(subTeam)) throw badRequest(`Pôle inconnu : ${subTeam}`);
-    clauses.push(callEntityWhere(entity, isSubTeam(subTeam) ? subTeam : null));
+    clauses.push(callEntityWhere(entity, subTeam));
+  } else if (subTeam) {
+    // A line filter with no entity still narrows: "Auto across both entities".
+    clauses.push(callSubTeamWhere(subTeam));
   }
 
   const teamId = params.get("teamId");

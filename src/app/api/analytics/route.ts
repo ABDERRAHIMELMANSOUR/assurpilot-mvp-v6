@@ -7,6 +7,8 @@ import { handleApiError, requireUser } from "@/lib/api";
 import { buildDateRange } from "@/lib/dates";
 import { directReportsWhere } from "@/lib/scope";
 import { parseEntity, parseSubTeam, userScopeWhere } from "@/lib/entity";
+import { isContractResult } from "@/lib/contracts";
+import { retentionClause } from "@/lib/retention";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,13 +22,41 @@ function tally(calls: CallWithResult[]) {
   const manques = calls.filter((c) => c.isMissed).length;
   const repondus = total - manques;
   const devis = calls.filter((c) => c.result?.resultat === DEVIS).length;
+  // Signed contracts are the commercial outcome the ranking is built on; devis
+  // stays alongside it because the conversion rate is still read from it.
+  const contrats = calls.filter((c) => isContractResult(c.result?.resultat)).length;
   return {
     total,
     manques,
     repondus,
     devis,
+    contrats,
     tauxConversion: repondus > 0 ? Math.round((devis / repondus) * 100) : 0,
+    // Share of answered calls that ended in a signature.
+    tauxContrat: repondus > 0 ? Math.round((contrats / repondus) * 100) : 0,
   };
+}
+
+type LeaderboardRow = ReturnType<typeof tally> & { nom: string; prenom: string };
+
+/**
+ * How the leaderboard is ordered. Contracts signed is the default — that is the
+ * number the business is judged on — with quotes and conversion rate as
+ * tie-breakers so two agents on zero contracts still rank sensibly.
+ * `?sort=conversion` restores the previous ordering for anything that relied
+ * on it.
+ */
+function rank<T extends LeaderboardRow>(rows: T[], sort: string | null): T[] {
+  if (sort === "conversion") {
+    return [...rows].sort((a, b) => b.tauxConversion - a.tauxConversion);
+  }
+  return [...rows].sort(
+    (a, b) =>
+      b.contrats - a.contrats ||
+      b.devis - a.devis ||
+      b.tauxConversion - a.tauxConversion ||
+      `${a.prenom} ${a.nom}`.localeCompare(`${b.prenom} ${b.nom}`, "fr")
+  );
 }
 
 export async function GET(req: NextRequest) {
@@ -34,7 +64,12 @@ export async function GET(req: NextRequest) {
     const user = await requireUser();
     const params = new URL(req.url).searchParams;
     const range = buildDateRange(params);
-    const startedAtWhere: Prisma.CallWhereInput = range ? { startedAt: range } : {};
+    // The role's history floor applies to the figures exactly as it applies to
+    // the lists: a coach's dashboard must not total up calls their call log
+    // will not show them.
+    const startedAtWhere: Prisma.CallWhereInput = {
+      AND: [range ? { startedAt: range } : {}, retentionClause(user.role)],
+    };
 
     // Entity (CPA/ALM) and line (Auto/Santé) narrow WHICH CONSEILLERS are
     // counted, via the team they belong to. Scoping the people rather than the
@@ -90,23 +125,29 @@ export async function GET(req: NextRequest) {
       },
     });
 
-    const leaderboard = agents
-      .map((agent) => ({
+    const leaderboard = rank(
+      agents.map((agent) => ({
         id: agent.id,
         nom: agent.nom,
         prenom: agent.prenom,
         team: agent.team?.nom ?? "—",
         ...tally(agent.assignedCalls),
-      }))
-      .sort((a, b) => b.tauxConversion - a.tauxConversion);
+      })),
+      params.get("sort")
+    );
 
     const totals = {
       totalAppels: leaderboard.reduce((sum, a) => sum + a.total, 0),
       totalDevis: leaderboard.reduce((sum, a) => sum + a.devis, 0),
+      totalContrats: leaderboard.reduce((sum, a) => sum + a.contrats, 0),
       totalManques: leaderboard.reduce((sum, a) => sum + a.manques, 0),
     };
 
-    const applied = { entity, lineType: subTeam };
+    const applied = {
+      entity,
+      lineType: subTeam,
+      sort: params.get("sort") === "conversion" ? "conversion" : "contrats",
+    };
 
     return NextResponse.json(
       isSuperviseur

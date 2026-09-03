@@ -3,6 +3,7 @@ import { useEffect, useState, useCallback } from "react";
 import DateFilter, { DateFilterState, buildQueryString } from "@/components/ui/DateFilter";
 import ScopeFilter, { EMPTY_SCOPE, ScopeFilterState, withScope } from "@/components/ui/ScopeFilter";
 import { errorMessage } from "@/lib/fetchJson";
+import { withParam } from "@/lib/query";
 
 const EMPTY: DateFilterState = { period: "month", dateFrom: "", dateTo: "" };
 
@@ -11,11 +12,15 @@ export default function ClassementPage() {
   const [loading, setLoading] = useState(true);
   const [filter,  setFilter]  = useState<DateFilterState>(EMPTY);
   const [scope,   setScope]   = useState<ScopeFilterState>(EMPTY_SCOPE);
+  // Contracts signed is the ranking the business reads; conversion rate stays
+  // available because it answers a different question (quality of the calls
+  // answered, independent of volume).
+  const [sort,    setSort]    = useState<"contrats" | "conversion">("contrats");
   const [error,   setError]   = useState("");
 
-  // Date range and entity/line scope travel as one query string, so the ranking
-  // is always computed from the full filter set.
-  const query = withScope(buildQueryString(filter), scope);
+  // Date range, entity/line scope and the ranking key travel as one query
+  // string, so the ranking is always computed from the full filter set.
+  const query = withParam(withScope(buildQueryString(filter), scope), "sort", sort);
 
   const fetchStats = useCallback(async () => {
     setLoading(true); setError("");
@@ -43,9 +48,22 @@ export default function ClassementPage() {
       <div className="mb-5 flex items-start justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-semibold text-slate-900">Classement des conseillers</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Classé par taux de conversion sur appels répondus</p>
+          <p className="text-sm text-slate-500 mt-0.5">
+            {sort === "contrats"
+              ? "Classé par contrats signés"
+              : "Classé par taux de conversion sur appels répondus"}
+          </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <select
+            aria-label="Critère de classement"
+            value={sort}
+            onChange={(e) => setSort(e.target.value as "contrats" | "conversion")}
+            className="px-2.5 py-1.5 border border-slate-200 rounded-xl text-xs bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-400 transition-shadow"
+          >
+            <option value="contrats">Par contrats signés</option>
+            <option value="conversion">Par taux de conversion</option>
+          </select>
           <ScopeFilter value={scope} onChange={setScope} />
           <DateFilter value={filter} onChange={setFilter} />
         </div>
@@ -71,6 +89,7 @@ export default function ClassementPage() {
                 <th className="table-th text-right">Répondus</th>
                 <th className="table-th text-right">Manqués</th>
                 <th className="table-th text-right">Devis</th>
+                <th className="table-th text-right">Contrats</th>
                 <th className="table-th text-right">Taux</th>
               </tr>
             </thead>
@@ -96,7 +115,10 @@ export default function ClassementPage() {
                     <td className="table-td text-right text-sm">{agent.total}</td>
                     <td className="table-td text-right text-sm text-emerald-600">{agent.repondus}</td>
                     <td className="table-td text-right text-sm text-rose-500">{agent.manques}</td>
-                    <td className="table-td text-right text-sm font-medium">{agent.devis}</td>
+                    <td className="table-td text-right text-sm">{agent.devis}</td>
+                    <td className="table-td text-right text-sm font-semibold text-slate-900">
+                      {agent.contrats ?? 0}
+                    </td>
                     <td className="table-td text-right">
                       <div className="flex items-center justify-end gap-2">
                         <div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden">

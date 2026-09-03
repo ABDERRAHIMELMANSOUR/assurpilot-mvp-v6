@@ -24,6 +24,14 @@ type Call = {
   transferredAt?: string | null;
   team?:          { id: string; nom: string } | null;
   result?:        { resultat: string; notes?: string | null } | null;
+  // Present only when the list was fetched with `?group=1`. The row then stands
+  // for every call from that number, not just one.
+  attemptCount?:  number;
+  /** Timestamp of the group's FIRST call; `startedAt` is the latest. */
+  firstAttemptAt?: string;
+  firstContactBy?: { id?: string; nom: string; prenom: string } | null;
+  /** A later attempt reached someone other than `firstContactBy`. */
+  alreadyContacted?: boolean;
 };
 
 const statutConfig: Record<string, { label: string; cls: string }> = {
@@ -147,6 +155,7 @@ export default function CallsTable({
                 // records the outcome against the original missed call.
                 const needsResult = !call.result && allowResult;
                 const canManage   = isAdmin && call.isManual;
+                const attempts    = call.attemptCount ?? 1;
 
                 return (
                   <tr
@@ -159,12 +168,36 @@ export default function CallsTable({
                         <span className="font-mono text-sm text-slate-800 whitespace-nowrap">
                           {call.callerNumber || "—"}
                         </span>
+                        {/* Repeat caller: one lead, N attempts. */}
+                        {attempts > 1 && (
+                          <span
+                            className="badge badge-blue whitespace-nowrap"
+                            style={{ fontSize: "10px", padding: "1px 5px" }}
+                            title={
+                              call.firstAttemptAt
+                                ? `${attempts} appels — premier le ${new Date(call.firstAttemptAt).toLocaleString("fr-FR")}`
+                                : `${attempts} appels`
+                            }
+                          >
+                            ({attempts})
+                          </span>
+                        )}
                         {call.isManual && (
                           <span className="badge badge-gray" style={{ fontSize: "10px", padding: "1px 5px" }}>
                             Import
                           </span>
                         )}
                       </div>
+                      {/* The lead is attributed to whoever answered first; this
+                          warns the second conseiller before they call back. */}
+                      {call.alreadyContacted && call.firstContactBy && (
+                        <span
+                          className="badge badge-yellow mt-1 inline-block whitespace-nowrap"
+                          style={{ fontSize: "10px", padding: "1px 5px" }}
+                        >
+                          Déjà contacté par : {call.firstContactBy.prenom} {call.firstContactBy.nom}
+                        </span>
+                      )}
                     </td>
 
                     {/* Conseiller */}
@@ -198,9 +231,16 @@ export default function CallsTable({
                       <span className="text-xs text-slate-500 whitespace-nowrap">{call.phoneLine.label}</span>
                     </td>
 
-                    {/* Date */}
+                    {/* Date — in grouped mode this is the LATEST attempt, the
+                        one the row's status and result belong to; the first
+                        sits under it. */}
                     <td className="table-td text-slate-500 text-xs whitespace-nowrap">
                       {formatDate(call.startedAt)}
+                      {attempts > 1 && call.firstAttemptAt && (
+                        <span className="block text-[10px] text-slate-400">
+                          1er {formatDate(call.firstAttemptAt)}
+                        </span>
+                      )}
                     </td>
 
                     {/* Durée */}

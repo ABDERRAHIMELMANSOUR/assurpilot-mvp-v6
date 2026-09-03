@@ -35,21 +35,25 @@ export default function CoachDashboardPage() {
       </div>
 
       {loading ? (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6 animate-pulse">
-          {[...Array(4)].map((_, i) => <div key={i} className="h-24 bg-slate-100 rounded-xl" />)}
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6 animate-pulse">
+          {[...Array(5)].map((_, i) => <div key={i} className="h-24 bg-slate-100 rounded-xl" />)}
         </div>
       ) : stats && (
         <>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
             <StatCard label="Total appels" tone="brand"   value={stats.totalAppels} />
-            <StatCard label="Devis réalisés" tone="emerald" value={stats.totalDevis}   subColor="text-emerald-600" />
+            <StatCard label="Contrats signés" tone="emerald" value={stats.totalContrats ?? 0} subColor="text-emerald-600" />
+            <StatCard label="Devis réalisés" tone="indigo" value={stats.totalDevis}   subColor="text-indigo-600" />
             <StatCard label="Appels manqués" tone="rose" value={stats.totalManques} subColor="text-rose-500" />
             <StatCard label="Taux global" tone="indigo"    value={`${tauxGlobal}%`}  sub="conversion" subColor="text-brand-600" />
           </div>
 
           <div className="card overflow-hidden mb-4">
             <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-slate-700">Performance des conseillers</h2>
+              <h2 className="text-sm font-semibold text-slate-700">
+                Performance des conseillers
+                <span className="ml-2 font-normal text-xs text-slate-400">par contrats signés</span>
+              </h2>
               <Link href="/superviseur/equipe" className="text-xs text-brand-600 hover:underline">
                 Gérer l'équipe →
               </Link>
@@ -67,7 +71,12 @@ export default function CoachDashboardPage() {
                       <p className="text-sm font-medium text-slate-900">{agent.prenom} {agent.nom}</p>
                       <p className="text-xs text-slate-400">{agent.total} appels · {agent.devis} devis · {agent.manques} manqués</p>
                     </div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-4">
+                      <div className="text-right">
+                        <p className="text-sm font-semibold text-emerald-600 leading-none">{agent.contrats ?? 0}</p>
+                        <p className="text-[10px] text-slate-400 mt-0.5">contrats</p>
+                      </div>
+                      <div className="hidden sm:flex items-center gap-3">
                       <div className="w-24 h-2 bg-slate-100 rounded-full overflow-hidden">
                         <div className={`h-full rounded-full ${pct >= 40 ? "bg-emerald-500" : pct >= 20 ? "bg-amber-400" : "bg-red-400"}`}
                           style={{ width: `${pct}%` }} />
@@ -75,6 +84,7 @@ export default function CoachDashboardPage() {
                       <span className={`text-sm font-semibold min-w-[3rem] text-right ${pct >= 40 ? "text-emerald-600" : pct >= 20 ? "text-amber-600" : "text-rose-500"}`}>
                         {pct}%
                       </span>
+                      </div>
                     </div>
                   </div>
                 );

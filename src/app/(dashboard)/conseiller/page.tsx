@@ -4,6 +4,8 @@ import { useSession } from "next-auth/react";
 import CallsTable from "@/components/ui/CallsTable";
 import StatCard from "@/components/ui/StatCard";
 import DateFilter, { DateFilterState, buildQueryString } from "@/components/ui/DateFilter";
+import GroupToggle from "@/components/ui/GroupToggle";
+import { withGroup } from "@/lib/query";
 
 const EMPTY_FILTER: DateFilterState = { period: "", dateFrom: "", dateTo: "" };
 
@@ -14,18 +16,23 @@ export default function ConseillerPage() {
   const [stats,   setStats]   = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [filter,  setFilter]  = useState<DateFilterState>(EMPTY_FILTER);
+  const [grouped, setGrouped] = useState(true);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     const qs = buildQueryString(filter);
     const [callsRes, statsRes] = await Promise.all([
-      fetch("/api/calls" + qs),
+      fetch("/api/calls" + withGroup(qs, grouped)),
       fetch("/api/analytics" + qs),
     ]);
-    setCalls(await callsRes.json());
-    setStats(await statsRes.json());
+    const callsBody = await callsRes.json().catch(() => null);
+    const statsBody = await statsRes.json().catch(() => null);
+    // A failed request returns `{ error: ... }`; assigning that to `calls`
+    // makes every `.filter` below throw, so the shape is checked here.
+    setCalls(Array.isArray(callsBody) ? callsBody : []);
+    setStats(statsRes.ok ? statsBody : null);
     setLoading(false);
-  }, [filter]);
+  }, [filter, grouped]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -56,17 +63,19 @@ export default function ConseillerPage() {
       )}
 
       {loading ? (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6 animate-pulse">
-          {[...Array(4)].map((_, i) => <div key={i} className="h-24 bg-slate-100 rounded-xl" />)}
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6 animate-pulse">
+          {[...Array(5)].map((_, i) => <div key={i} className="h-24 bg-slate-100 rounded-xl" />)}
         </div>
       ) : stats && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
           <StatCard label="Total appels" tone="brand"  value={stats.total}    sub={`${stats.repondus} répondus`} />
+          <StatCard label="Contrats signés" tone="emerald" value={stats.contrats ?? 0}
+            sub={`Taux ${stats.tauxContrat ?? 0}%`} subColor="text-emerald-600" />
           <StatCard label="Appels manqués" tone="rose" value={stats.manques}
             sub={stats.total > 0 ? `${Math.round((stats.manques / stats.total) * 100)}% du total` : "0%"}
             subColor={stats.manques > 0 ? "text-rose-500" : "text-slate-400"} />
-          <StatCard label="Devis réalisés" tone="emerald" value={stats.devis}
-            sub={`Taux ${stats.tauxConversion}%`} subColor="text-emerald-600" />
+          <StatCard label="Devis réalisés" tone="indigo" value={stats.devis}
+            sub={`Taux ${stats.tauxConversion}%`} subColor="text-indigo-600" />
           <StatCard label="Durée moyenne" tone="amber"
             value={`${Math.floor(stats.dureeMoyenne / 60)}:${(stats.dureeMoyenne % 60).toString().padStart(2, "0")}`}
             sub="min:sec par appel" />
@@ -75,7 +84,14 @@ export default function ConseillerPage() {
 
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-sm font-semibold text-slate-700">Mes appels</h2>
-        <span className="text-xs text-slate-400">{calls.length} appel{calls.length > 1 ? "s" : ""}</span>
+        <div className="flex items-center gap-3">
+          <GroupToggle value={grouped} onChange={setGrouped} />
+          <span className="text-xs text-slate-400">
+            {grouped
+              ? `${calls.length} numéro${calls.length > 1 ? "s" : ""}`
+              : `${calls.length} appel${calls.length > 1 ? "s" : ""}`}
+          </span>
+        </div>
       </div>
 
       {loading

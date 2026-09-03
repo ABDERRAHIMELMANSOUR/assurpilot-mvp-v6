@@ -15,8 +15,11 @@ function parseIsoDate(raw: string, label: string): Date {
  */
 export function buildDateRange(searchParams: URLSearchParams): DateRange | undefined {
   const period = searchParams.get("period");
-  const dateFrom = searchParams.get("dateFrom");
-  const dateTo = searchParams.get("dateTo");
+  // `startDate`/`endDate` are accepted as aliases: the export links and the
+  // dashboards were built against both spellings, and a silently ignored
+  // parameter would hand back an unfiltered workbook.
+  const dateFrom = searchParams.get("dateFrom") ?? searchParams.get("startDate");
+  const dateTo = searchParams.get("dateTo") ?? searchParams.get("endDate");
 
   let startDate: Date | undefined;
   let endDate: Date | undefined;

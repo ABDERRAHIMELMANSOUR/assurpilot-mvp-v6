@@ -70,9 +70,10 @@ export default function AdminPage() {
         </div>
       ) : stats && (
         <>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mb-6">
             <StatCard label="Total appels" tone="brand"   value={stats.totalAppels} />
-            <StatCard label="Devis réalisés" tone="emerald" value={stats.totalDevis}   subColor="text-emerald-600" />
+            <StatCard label="Contrats signés" tone="emerald" value={stats.totalContrats ?? 0} subColor="text-emerald-600" />
+            <StatCard label="Devis réalisés" tone="indigo" value={stats.totalDevis}   subColor="text-indigo-600" />
             <StatCard label="Appels manqués" tone="rose" value={stats.totalManques} subColor="text-rose-500" />
             <StatCard label="Conseillers" tone="indigo"    value={stats.totalAgents}  sub="actifs" />
             <StatCard label="Taux global" tone="indigo"    value={`${tauxGlobal}%`}
@@ -81,7 +82,10 @@ export default function AdminPage() {
 
           <div className="card overflow-hidden">
             <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-slate-700">Classement des conseillers</h2>
+              <h2 className="text-sm font-semibold text-slate-700">
+                Classement des conseillers
+                <span className="ml-2 font-normal text-xs text-slate-400">par contrats signés</span>
+              </h2>
               <Link href="/admin/classement" className="text-xs text-brand-600 hover:underline">Voir tout →</Link>
             </div>
             <div className="divide-y divide-slate-100">
@@ -104,14 +108,24 @@ export default function AdminPage() {
                       <p className="text-sm font-medium text-slate-900">{agent.prenom} {agent.nom}</p>
                       <p className="text-xs text-slate-400">{agent.team} · {agent.total} appels · {agent.devis} devis</p>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <div className="w-28 h-2 bg-slate-100 rounded-full overflow-hidden">
-                        <div className={`h-full rounded-full ${pct>=40?"bg-emerald-500":pct>=20?"bg-amber-400":"bg-red-400"}`}
-                          style={{ width: `${pct}%` }} />
+                    <div className="flex items-center gap-4">
+                      {/* The ranking key gets the prominent number; the
+                          conversion bar stays as secondary context. */}
+                      <div className="text-right">
+                        <p className="text-sm font-semibold text-emerald-600 leading-none">
+                          {agent.contrats ?? 0}
+                        </p>
+                        <p className="text-[10px] text-slate-400 mt-0.5">contrats</p>
                       </div>
-                      <span className={`text-sm font-semibold min-w-[3rem] text-right ${pct>=40?"text-emerald-600":pct>=20?"text-amber-600":"text-rose-500"}`}>
-                        {pct}%
-                      </span>
+                      <div className="hidden sm:flex items-center gap-2">
+                        <div className="w-20 h-2 bg-slate-100 rounded-full overflow-hidden">
+                          <div className={`h-full rounded-full ${pct>=40?"bg-emerald-500":pct>=20?"bg-amber-400":"bg-red-400"}`}
+                            style={{ width: `${pct}%` }} />
+                        </div>
+                        <span className={`text-xs font-semibold min-w-[2.5rem] text-right ${pct>=40?"text-emerald-600":pct>=20?"text-amber-600":"text-rose-500"}`}>
+                          {pct}%
+                        </span>
+                      </div>
                     </div>
                   </div>
                 );

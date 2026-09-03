@@ -7,9 +7,10 @@ import type { NextRequest } from "next/server";
 import type { Prisma } from "@prisma/client";
 import * as XLSX from "xlsx";
 import { prisma } from "@/lib/prisma";
-import { forbidden, handleApiError, notFound, requireUser, type SessionUser } from "@/lib/api";
-import { coachScopeFor, isDirectReport } from "@/lib/scope";
+import { handleApiError, requireUser } from "@/lib/api";
+import { callScopeFor, filterForCoach, filterForUser } from "@/lib/scope";
 import { callFilterClauses } from "@/lib/callFilters";
+import { retentionClause } from "@/lib/retention";
 import { callerNumberFor } from "@/lib/mask";
 
 export const runtime = "nodejs";
@@ -24,13 +25,6 @@ const STATUT_LABEL: Record<string, string> = {
   MANQUE: "Manqué",
   EN_COURS: "En cours",
 };
-
-/** Same scope rules as GET /api/calls. */
-function scopeFor(user: SessionUser): Prisma.CallWhereInput {
-  if (user.role === "ADMINISTRATEUR") return {};
-  if (user.role === "SUPERVISEUR") return coachScopeFor(user);
-  return { assignedUserId: user.userId };
-}
 
 /** "JJ/MM/AAAA HH:mm", written as text so Excel cannot re-interpret the order. */
 function formatDateTime(date: Date): string {
@@ -52,30 +46,22 @@ export async function GET(req: NextRequest) {
     const user = await requireUser();
     const params = new URL(req.url).searchParams;
 
-    const clauses: Prisma.CallWhereInput[] = [scopeFor(user)];
+    // Exactly the clause stack GET /api/calls builds, in the same order, from
+    // the same helpers — the workbook cannot disagree with the screen because
+    // there is no second interpretation of the filters.
+    const clauses: Prisma.CallWhereInput[] = [
+      callScopeFor(user),
+      retentionClause(user.role),
+    ];
 
     const targetId = params.get("userId") ?? params.get("conseillerId");
-    if (targetId) {
-      const target = await prisma.user.findUnique({
-        where: { id: targetId },
-        select: { id: true, role: true, superviseurId: true },
-      });
-      if (!target) throw notFound("Utilisateur introuvable");
-      if (user.role === "CONSEILLER" && target.id !== user.userId) throw forbidden();
-      if (
-        user.role === "SUPERVISEUR" &&
-        target.id !== user.userId &&
-        !isDirectReport(user.userId, target)
-      ) {
-        throw forbidden();
-      }
-      clauses.push(
-        target.role === "SUPERVISEUR"
-          ? { OR: [{ assignedUserId: target.id }, { transferredById: target.id }] }
-          : { assignedUserId: target.id }
-      );
-    }
+    if (targetId) clauses.push(await filterForUser(user, targetId));
 
+    const coachId = params.get("coachId");
+    if (coachId) clauses.push(await filterForCoach(user, coachId));
+
+    // entity, lineType / pole / subTeam, teamId, lineId, statut,
+    // period or dateFrom/dateTo (aliased startDate/endDate).
     clauses.push(...callFilterClauses(params));
 
     const calls = await prisma.call.findMany({

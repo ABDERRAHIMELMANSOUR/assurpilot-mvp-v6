@@ -3,7 +3,9 @@ import { useEffect, useState, useCallback } from "react";
 import CallsTable from "@/components/ui/CallsTable";
 import DateFilter, { DateFilterState, buildQueryString } from "@/components/ui/DateFilter";
 import ExportCallsButton from "@/components/ui/ExportCallsButton";
+import GroupToggle from "@/components/ui/GroupToggle";
 import { errorMessage } from "@/lib/fetchJson";
+import { withGroup } from "@/lib/query";
 import Link from "next/link";
 
 // "Tout" by default: this list is the record of every call, so a default period
@@ -16,6 +18,7 @@ export default function AdminAppelsPage() {
   const [loading, setLoading] = useState(true);
   const [filter,  setFilter]  = useState<DateFilterState>(EMPTY);
   const [statut,  setStatut]  = useState("all");
+  const [grouped, setGrouped] = useState(true);
   const [error,   setError]   = useState("");
   const [truncated, setTruncated] = useState<{ shown: number; total: number } | null>(null);
 
@@ -24,7 +27,7 @@ export default function AdminAppelsPage() {
     try {
       // A failed request used to fall through to an empty array, which rendered
       // as "Aucun appel pour cette période" — indistinguishable from no data.
-      const res = await fetch("/api/calls" + buildQueryString(filter));
+      const res = await fetch("/api/calls" + withGroup(buildQueryString(filter), grouped));
       if (!res.ok) {
         const body = await res.json().catch(() => null);
         throw new Error(body?.error ?? `Erreur ${res.status}`);
@@ -43,7 +46,7 @@ export default function AdminAppelsPage() {
     } finally {
       setLoading(false);
     }
-  }, [filter]);
+  }, [filter, grouped]);
 
   useEffect(() => { fetchCalls(); }, [fetchCalls]);
 
@@ -54,16 +57,26 @@ export default function AdminAppelsPage() {
     statut === "manual"   ? calls.filter((c) => c.isManual) :
     calls;
 
+  // In grouped mode each row stands for several calls, so the headline has to
+  // report both numbers or it contradicts the dashboard totals.
+  const totalAttempts = filtered.reduce((sum, c) => sum + (c.attemptCount ?? 1), 0);
+
   return (
     <div className="p-6 max-w-full mx-auto">
       <div className="mb-5 flex items-start justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-semibold text-slate-900">Tous les appels</h1>
-          <p className="text-sm text-slate-500 mt-0.5">{filtered.length} appel{filtered.length > 1 ? "s" : ""}</p>
+          <p className="text-sm text-slate-500 mt-0.5">
+            {grouped
+              ? `${filtered.length} numéro${filtered.length > 1 ? "s" : ""} · ${totalAttempts} appel${totalAttempts > 1 ? "s" : ""}`
+              : `${filtered.length} appel${filtered.length > 1 ? "s" : ""}`}
+          </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <GroupToggle value={grouped} onChange={setGrouped} />
           <DateFilter value={filter} onChange={setFilter} />
-          {/* Exports exactly what the filters above select. */}
+          {/* Exports exactly what the filters above select — one row per call,
+              never the grouped view, so the workbook keeps every attempt. */}
           <ExportCallsButton query={buildQueryString(filter)} />
           <Link href="/admin/appels/import" className="btn btn-secondary text-xs">
             ↑ Importer

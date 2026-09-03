@@ -21,12 +21,16 @@ async function main() {
   // ── Configurable result options ──────────────────────────────────────────────
   await prisma.callResultOption.createMany({
     data: [
-      { label: "Devis réalisé",  value: "DEVIS_REALISE",  color: "green",  isActive: true, order: 0 },
-      { label: "Information",    value: "INFORMATION",    color: "blue",   isActive: true, order: 1 },
-      { label: "Non intéressé",  value: "NON_INTERESSE",  color: "red",    isActive: true, order: 2 },
+      // Signed contract is the outcome the leaderboard ranks on — see
+      // src/lib/contracts.ts and prisma/sql/004-contrat-signe.sql, which adds
+      // the same row to an already-populated database without a migration.
+      { label: "Contrat signé",  value: "CONTRAT_SIGNE",  color: "green",  isActive: true, order: 0 },
+      { label: "Devis réalisé",  value: "DEVIS_REALISE",  color: "blue",   isActive: true, order: 1 },
+      { label: "Devis envoyé",   value: "DEVIS_ENVOYE",   color: "purple", isActive: true, order: 2 },
       { label: "Rappel prévu",   value: "RAPPEL_PREVU",   color: "yellow", isActive: true, order: 3 },
-      { label: "Devis envoyé",   value: "DEVIS_ENVOYE",   color: "purple", isActive: true, order: 4 },
-      { label: "Faux numéro",    value: "FAUX_NUMERO",    color: "gray",   isActive: true, order: 5 },
+      { label: "Information",    value: "INFORMATION",    color: "gray",   isActive: true, order: 4 },
+      { label: "Non intéressé",  value: "NON_INTERESSE",  color: "red",    isActive: true, order: 5 },
+      { label: "Faux numéro",    value: "FAUX_NUMERO",    color: "gray",   isActive: true, order: 6 },
     ],
   });
 
