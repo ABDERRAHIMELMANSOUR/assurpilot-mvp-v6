@@ -5,7 +5,9 @@ import Link from "next/link";
 import CallsTable from "@/components/ui/CallsTable";
 import DateFilter, { DateFilterState, buildQueryString } from "@/components/ui/DateFilter";
 import ExportCallsButton from "@/components/ui/ExportCallsButton";
+import GroupToggle from "@/components/ui/GroupToggle";
 import { errorMessage, fetchJsonOr } from "@/lib/fetchJson";
+import { withGroup } from "@/lib/query";
 
 type Person = {
   id: string; prenom: string; nom: string; role: string; isActive: boolean;
@@ -46,6 +48,9 @@ export default function EntityWorkspacePage({ params }: { params: { entity: stri
   const [filter,  setFilter]  = useState<DateFilterState>({ period: "", dateFrom: "", dateTo: "" });
   const [subTeam, setSubTeam] = useState<string>("");
   const [coachId, setCoachId] = useState<string>("");
+  // Repeat callers are folded into one lead by default here as everywhere
+  // else; unchecking shows the raw call history.
+  const [grouped, setGrouped] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState("");
 
@@ -91,7 +96,8 @@ export default function EntityWorkspacePage({ params }: { params: { entity: stri
   const fetchCalls = useCallback(async () => {
     setLoading(true); setError("");
     try {
-      const res = await fetch("/api/calls" + query);
+      // `group` is added only for the table; the export keeps one row per call.
+      const res = await fetch("/api/calls" + withGroup(query, grouped));
       if (!res.ok) {
         const body = await res.json().catch(() => null);
         throw new Error(body?.error ?? `Erreur ${res.status}`);
@@ -104,9 +110,13 @@ export default function EntityWorkspacePage({ params }: { params: { entity: stri
     } finally {
       setLoading(false);
     }
-  }, [query]);
+  }, [query, grouped]);
 
   useEffect(() => { fetchCalls(); }, [fetchCalls]);
+
+  // Grouped rows each stand for several calls, so the header reports both
+  // numbers rather than letting the count contradict the dashboard totals.
+  const totalAttempts = calls.reduce((sum, c) => sum + (c.attemptCount ?? 1), 0);
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
@@ -116,7 +126,9 @@ export default function EntityWorkspacePage({ params }: { params: { entity: stri
           <p className="text-sm text-slate-500 mt-0.5">
             {coaches.length} coach{coaches.length > 1 ? "s" : ""} ·{" "}
             {conseillers.length} conseiller{conseillers.length > 1 ? "s" : ""} ·{" "}
-            {calls.length} appel{calls.length > 1 ? "s" : ""}
+            {grouped
+              ? `${calls.length} numéro${calls.length > 1 ? "s" : ""} · ${totalAttempts} appel${totalAttempts > 1 ? "s" : ""}`
+              : `${calls.length} appel${calls.length > 1 ? "s" : ""}`}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -148,6 +160,8 @@ export default function EntityWorkspacePage({ params }: { params: { entity: stri
             <option key={c.id} value={c.id}>{c.prenom} {c.nom}</option>
           ))}
         </select>
+
+        <GroupToggle value={grouped} onChange={setGrouped} />
       </div>
 
       {/* Roster */}
