@@ -231,9 +231,23 @@ coach ceux de ses rattachés directs (`superviseurId`) plus les siens.
 
 `GET /api/calls?group=1` renvoie une ligne par numéro appelant (normalisé, donc
 `+33687814485`, `0687814485` et `33687814485` sont le même prospect) au lieu
-d'une ligne par appel. La ligne porte le **dernier** appel — son statut et sa
-qualification sont donc ceux en cours — plus `attemptCount`, `firstAttemptAt`,
-`firstContactBy` et `alreadyContacted`.
+d'une ligne par appel. Champs ajoutés : `attemptCount`, `groupedCallIds`,
+`firstAttemptAt`, `lastAttemptAt`, `firstContactBy` et `alreadyContacted`.
+
+La ligne affichée est l'appel **le plus long** du groupe, le plus récent
+départageant une égalité exacte. Une conversation de 2:47 est celle qui a
+réellement eu lieu ; un appel de 0:15 sur le même numéro est une sonnerie ou un
+raccroché, et le laisser porter la ligne attribuerait le lead au conseiller que
+le standard a joint en dernier. C'est donc aussi ce choix qui détermine dans
+quel espace de travail le lead apparaît.
+
+Le badge « Déjà contacté par » répond à une autre question — qui travaille déjà
+ce lead — et nomme le **premier** conseiller à avoir reçu le numéro. Il est
+masqué quand ce premier conseiller est celui de la ligne : se voir signaler
+soi-même n'apprend rien. À horodatage identique (un standard qui fait sonner
+plusieurs postes à la même minute), c'est là encore l'appel le plus long qui
+compte comme premier contact, sinon le conseiller qui a laissé sonner quinze
+secondes s'entendrait dire qu'il était le premier.
 
 `firstContactBy` est cherché **hors périmètre** du lecteur : c'est tout l'intérêt
 du badge « Déjà contacté par », puisqu'un conseiller ne voit que ses propres

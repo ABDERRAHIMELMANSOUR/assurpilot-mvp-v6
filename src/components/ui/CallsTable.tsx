@@ -27,8 +27,9 @@ type Call = {
   // Present only when the list was fetched with `?group=1`. The row then stands
   // for every call from that number, not just one.
   attemptCount?:  number;
-  /** Timestamp of the group's FIRST call; `startedAt` is the latest. */
+  /** Bounds of the group; `startedAt` is the LONGEST call, often neither. */
   firstAttemptAt?: string;
+  lastAttemptAt?:  string;
   firstContactBy?: { id?: string; nom: string; prenom: string } | null;
   /** A later attempt reached someone other than `firstContactBy`. */
   alreadyContacted?: boolean;
@@ -48,6 +49,12 @@ const COLOR_BADGE: Record<string, string> = {
   purple: "bg-purple-100 text-purple-800",
   gray:   "badge-gray",
 };
+
+/** Identity of a person in a call payload; id when present, name otherwise. */
+function personKey(p?: { id?: string; nom: string; prenom: string } | null) {
+  if (!p) return null;
+  return p.id ?? `${p.prenom} ${p.nom}`;
+}
 
 function formatDuration(s: number) {
   if (!s) return "—";
@@ -156,6 +163,10 @@ export default function CallsTable({
                 const needsResult = !call.result && allowResult;
                 const canManage   = isAdmin && call.isManual;
                 const attempts    = call.attemptCount ?? 1;
+                const showPriorContact =
+                  !!call.alreadyContacted &&
+                  !!call.firstContactBy &&
+                  personKey(call.firstContactBy) !== personKey(call.assignedUser);
 
                 return (
                   <tr
@@ -174,8 +185,10 @@ export default function CallsTable({
                             className="badge badge-blue whitespace-nowrap"
                             style={{ fontSize: "10px", padding: "1px 5px" }}
                             title={
-                              call.firstAttemptAt
-                                ? `${attempts} appels — premier le ${new Date(call.firstAttemptAt).toLocaleString("fr-FR")}`
+                              call.firstAttemptAt && call.lastAttemptAt
+                                ? `${attempts} appels — du ${new Date(call.firstAttemptAt).toLocaleString("fr-FR")} ` +
+                                  `au ${new Date(call.lastAttemptAt).toLocaleString("fr-FR")}. ` +
+                                  `La ligne affiche le plus long.`
                                 : `${attempts} appels`
                             }
                           >
@@ -188,9 +201,12 @@ export default function CallsTable({
                           </span>
                         )}
                       </div>
-                      {/* The lead is attributed to whoever answered first; this
-                          warns the second conseiller before they call back. */}
-                      {call.alreadyContacted && call.firstContactBy && (
+                      {/* Warns the conseiller that someone else got to this
+                          lead first. Suppressed when the row's own conseiller
+                          IS that person — "déjà contacté par vous-même" tells
+                          them nothing, and the (n) counter already says the
+                          number called more than once. */}
+                      {showPriorContact && call.firstContactBy && (
                         <span
                           className="badge badge-yellow mt-1 inline-block whitespace-nowrap"
                           style={{ fontSize: "10px", padding: "1px 5px" }}
@@ -231,20 +247,24 @@ export default function CallsTable({
                       <span className="text-xs text-slate-500 whitespace-nowrap">{call.phoneLine.label}</span>
                     </td>
 
-                    {/* Date — in grouped mode this is the LATEST attempt, the
-                        one the row's status and result belong to; the first
-                        sits under it. */}
+                    {/* Date — in grouped mode this is the LONGEST call, which
+                        need not be the group's last, so the most recent
+                        attempt is spelled out underneath rather than left to
+                        be inferred from the row. */}
                     <td className="table-td text-slate-500 text-xs whitespace-nowrap">
                       {formatDate(call.startedAt)}
-                      {attempts > 1 && call.firstAttemptAt && (
+                      {attempts > 1 && call.lastAttemptAt && call.lastAttemptAt !== call.startedAt && (
                         <span className="block text-[10px] text-slate-400">
-                          1er {formatDate(call.firstAttemptAt)}
+                          dern. {formatDate(call.lastAttemptAt)}
                         </span>
                       )}
                     </td>
 
-                    {/* Durée */}
-                    <td className="table-td font-mono text-sm whitespace-nowrap">
+                    {/* Durée — the longest of the group when rows are grouped. */}
+                    <td
+                      className="table-td font-mono text-sm whitespace-nowrap"
+                      title={attempts > 1 ? `Appel le plus long des ${attempts}` : undefined}
+                    >
                       {formatDuration(call.durationSeconds)}
                     </td>
 

@@ -8,8 +8,16 @@
 // (`?group=1`) so the ungrouped payload stays exactly what it was for every
 // caller that has not asked for it.
 //
-// Attribution rule: the group belongs to the FIRST conseiller who received the
-// number. Later attempts, whoever they land on, do not take the lead away.
+// Master-row rule: the row shown is the LONGEST call of the group, with the
+// most recent call breaking a tie. A two-minute conversation is the one that
+// actually happened; a fifteen-second call on the same number is a ring-through
+// or a hang-up, and letting it own the row hands the lead to whoever the phone
+// system happened to reach last. Choosing by duration therefore also settles
+// which conseiller's workspace the lead sits in.
+//
+// Attribution rule: the "Déjà contacté par" badge still names the FIRST
+// conseiller to receive the number — that is a different question (who is
+// already working this lead) from who had the substantive conversation.
 import { normalizePhone } from "@/lib/phone";
 
 /** A person as the call payload carries them. */
@@ -20,6 +28,7 @@ export type GroupableCall = {
   id: string;
   callerNumber: string;
   startedAt: Date | string;
+  durationSeconds: number;
   assignedUser?: Person;
 };
 
@@ -34,6 +43,7 @@ export type GroupableCall = {
  */
 export type PriorContact = {
   startedAt: Date;
+  durationSeconds: number;
   user: { id?: string; nom: string; prenom: string } | null;
 };
 
@@ -43,8 +53,12 @@ export type GroupMeta = {
   attemptCount: number;
   /** Ids of every call folded into this row, newest first. */
   groupedCallIds: string[];
-  /** Timestamp of the FIRST attempt; the row itself carries the latest. */
+  /**
+   * First and last attempt of the group. Both are needed because the row
+   * itself carries the LONGEST call, which is usually neither.
+   */
   firstAttemptAt: string;
+  lastAttemptAt: string;
   /** The conseiller the lead is attributed to — the first one to receive it. */
   firstContactBy: { id?: string; nom: string; prenom: string } | null;
   /**
@@ -72,8 +86,9 @@ function toDate(value: Date | string): Date {
  * treat them as two leads. Numbers that normalise to nothing (blank / withheld)
  * are never grouped with each other — "unknown" is not one caller.
  *
- * `calls` must be ordered newest-first; the result keeps that order, ranked by
- * each group's most recent attempt.
+ * The returned rows are ranked by each group's most recent attempt, so the list
+ * still reads newest-activity-first even though the row itself is the longest
+ * call rather than the latest one.
  */
 export function groupCallsByCaller<T extends GroupableCall>(
   calls: T[],
@@ -96,18 +111,26 @@ export function groupCallsByCaller<T extends GroupableCall>(
   const rows: Array<T & GroupMeta> = [];
 
   for (const [key, bucket] of groups.entries()) {
-    // Newest first on the way in, so the last entry is the earliest attempt.
+    // Newest first, so the last entry is the earliest attempt. Among calls
+    // sharing a timestamp the shortest sorts first, which makes that last
+    // entry the LONGEST of the earliest ones — the same tie-break
+    // `isEarlierContact` applies, so the badge and the row agree.
     const sorted = [...bucket].sort(
-      (a, b) => toDate(b.startedAt).getTime() - toDate(a.startedAt).getTime()
+      (a, b) =>
+        toDate(b.startedAt).getTime() - toDate(a.startedAt).getTime() ||
+        a.durationSeconds - b.durationSeconds
     );
     const newest = sorted[0];
     const oldest = sorted[sorted.length - 1];
 
     // The lead belongs to whoever answered first anywhere, which may be
     // someone whose calls this viewer cannot see.
+    // Same tie-break as the map itself: an out-of-scope call at the identical
+    // timestamp still counts as the prior contact when it is the longer one.
+    // Without that, the conseiller who let the call ring for fifteen seconds
+    // would be told they were first — the one person the badge must warn.
     const prior = priorContacts?.get(key);
-    const priorIsEarlier =
-      prior !== undefined && prior.startedAt.getTime() < toDate(oldest.startedAt).getTime();
+    const priorIsEarlier = prior !== undefined && isEarlierContact(prior, oldest);
 
     const firstContactBy = priorIsEarlier
       ? prior.user
@@ -127,18 +150,22 @@ export function groupCallsByCaller<T extends GroupableCall>(
         return owner !== null && owner !== firstOwner;
       });
 
-    // The master row is the LATEST call: it holds the group's current state —
-    // its status, its qualification — and its id is what the Résultat and
-    // Transférer buttons act on, so what the row shows is what the button
-    // edits. Building the row from the earliest call instead would have shown
-    // "À qualifier" on a lead whose most recent call was already a signed
-    // contract. Attribution to the first conseiller is carried separately, by
-    // `firstContactBy` and the "Déjà contacté par" badge.
+    // The master row is the LONGEST call of the group — the conversation that
+    // actually took place — with the most recent call breaking an exact tie.
+    // `sorted` is already newest-first, so a stable max over it picks the
+    // longest and, among equals, the most recent without a second comparison.
+    // Its id is what the Résultat and Transférer buttons act on, and its
+    // `assignedUser` is the conseiller whose workspace the lead belongs to.
+    const master = sorted.reduce((best, call) =>
+      call.durationSeconds > best.durationSeconds ? call : best
+    );
+
     rows.push({
-      ...newest,
+      ...master,
       attemptCount: sorted.length,
       groupedCallIds: sorted.map((c) => c.id),
       firstAttemptAt: toDate(oldest.startedAt).toISOString(),
+      lastAttemptAt: toDate(newest.startedAt).toISOString(),
       firstContactBy,
       alreadyContacted,
     });
@@ -150,6 +177,7 @@ export function groupCallsByCaller<T extends GroupableCall>(
       attemptCount: 1,
       groupedCallIds: [call.id],
       firstAttemptAt: toDate(call.startedAt).toISOString(),
+      lastAttemptAt: toDate(call.startedAt).toISOString(),
       firstContactBy: call.assignedUser
         ? { id: call.assignedUser.id, nom: call.assignedUser.nom, prenom: call.assignedUser.prenom }
         : null,
@@ -157,7 +185,11 @@ export function groupCallsByCaller<T extends GroupableCall>(
     });
   }
 
-  rows.sort((a, b) => toDate(b.startedAt).getTime() - toDate(a.startedAt).getTime());
+  // Ranked by last activity, not by the master call's own timestamp — the
+  // master is the longest call, which may well be the oldest of its group.
+  rows.sort(
+    (a, b) => new Date(b.lastAttemptAt).getTime() - new Date(a.lastAttemptAt).getTime()
+  );
   return rows;
 }
 
@@ -168,17 +200,25 @@ export function groupCallsByCaller<T extends GroupableCall>(
  * assigned user's name — for the window being displayed.
  */
 export function buildPriorContactMap(
-  calls: Array<{ callerNumber: string; startedAt: Date; assignedUser?: Person }>
+  calls: Array<{
+    callerNumber: string;
+    startedAt: Date;
+    durationSeconds: number;
+    assignedUser?: Person;
+  }>
 ): Map<string, PriorContact> {
   const map = new Map<string, PriorContact>();
 
   for (const call of calls) {
     const key = normalizePhone(call.callerNumber);
     if (!key) continue;
+
     const current = map.get(key);
-    if (current && current.startedAt.getTime() <= call.startedAt.getTime()) continue;
+    if (current && !isEarlierContact(call, current)) continue;
+
     map.set(key, {
       startedAt: call.startedAt,
+      durationSeconds: call.durationSeconds,
       user: call.assignedUser
         ? { id: call.assignedUser.id, nom: call.assignedUser.nom, prenom: call.assignedUser.prenom }
         : null,
@@ -186,6 +226,25 @@ export function buildPriorContactMap(
   }
 
   return map;
+}
+
+/**
+ * Whether `candidate` is a better "first contact" than the one already held.
+ *
+ * Earlier wins; on an EXACT tie the longer call wins. Simultaneous timestamps
+ * are not a corner case here — a switchboard ringing several advisers at once
+ * stamps them to the same minute — and resolving that by row order would name
+ * whichever adviser happened to be inserted first, including the one who let it
+ * ring for fifteen seconds. The longer call is the real contact, which is the
+ * same judgement the master-row rule makes.
+ */
+function isEarlierContact(
+  candidate: { startedAt: Date | string; durationSeconds: number },
+  current: { startedAt: Date | string; durationSeconds: number }
+): boolean {
+  const delta = toDate(candidate.startedAt).getTime() - toDate(current.startedAt).getTime();
+  if (delta !== 0) return delta < 0;
+  return candidate.durationSeconds > current.durationSeconds;
 }
 
 /** True when the caller asked for grouped rows. */

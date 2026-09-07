@@ -112,6 +112,8 @@ export async function GET(req: NextRequest) {
           select: {
             callerNumber: true,
             startedAt: true,
+            // Needed to break a same-timestamp tie the way the master row does.
+            durationSeconds: true,
             assignedUser: { select: { id: true, nom: true, prenom: true } },
           },
           orderBy: { startedAt: "asc" },
