@@ -304,24 +304,30 @@ export default function ImportAppelsPage() {
                 </div>
               )}
 
-              {/* States the rule plainly, before the user commits: one number,
-                  one record, and the repeats are discarded rather than stored. */}
-              <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 flex items-start gap-2.5">
-                <svg className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              {/* States the rule plainly, before the user commits. Only an
+                  exact re-import of the same call is refused; a prospect
+                  ringing back is a separate record, folded together when
+                  reading via "Regrouper les doublons". */}
+              <div className="bg-brand-50 border border-brand-200 rounded-xl px-4 py-3 flex items-start gap-2.5">
+                <svg className="w-4 h-4 text-brand-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-                <p className="text-xs text-emerald-800">
-                  <strong>Aucun doublon ne sera créé.</strong>{" "}
-                  Un numéro client = un seul enregistrement. Seul le premier appel de
-                  chaque numéro est importé ; tout numéro déjà présent en base, ou
-                  répété plus bas dans ce fichier, est marqué <strong>Doublon</strong> et
-                  entièrement ignoré.
+                <p className="text-xs text-brand-800">
+                  <strong>Tous les appels valides sont importés.</strong>{" "}
+                  Un même numéro peut revenir plusieurs fois : chaque rappel est un
+                  appel distinct. Seule une ligne <strong>strictement identique</strong>{" "}
+                  à un appel déjà en base — même numéro, même horodatage à la seconde
+                  et même durée — est marquée <strong>Doublon</strong> et ignorée, pour
+                  qu&apos;un fichier re-déposé ne crée pas de doublons. Le regroupement
+                  des rappels se fait à la lecture, via{" "}
+                  <strong>Regrouper les doublons</strong>.
                   {preview.duplicateRows > 0 && (
                     <>
                       {" "}
                       <span className="text-amber-800">
                         {preview.duplicateRows} ligne{preview.duplicateRows > 1 ? "s" : ""} sur{" "}
-                        {preview.totalRows} {preview.duplicateRows > 1 ? "seront ignorées" : "sera ignorée"}.
+                        {preview.totalRows} déjà présente{preview.duplicateRows > 1 ? "s" : ""}{" "}
+                        {preview.duplicateRows > 1 ? "seront ignorées" : "sera ignorée"}.
                       </span>
                     </>
                   )}

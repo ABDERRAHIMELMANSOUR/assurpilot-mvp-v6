@@ -153,22 +153,42 @@ type ParsedRow = {
 };
 
 /**
- * Identity of a call for duplicate detection: the CALLER NUMBER, and nothing
- * else. One number, one record — a number already in the database, or already
- * kept earlier in the same file, is refused outright.
+ * Identity of a call for duplicate detection: caller number, exact start time
+ * and exact duration must ALL match before a row is skipped.
  *
- * This is a deliberate narrowing, requested after the previous rule (number +
- * exact timestamp + exact duration) let genuine repeat calls in. It makes the
- * import lossy on purpose: a prospect's second and third calls are discarded at
- * the door and never reach the database, so the attempt counters, the Doublons
- * dashboard card and the "Déjà contacté par" badge have nothing left to count
- * for data arriving this way.
+ * Keying on the number alone was tried and reverted. It blocked 85 of 104 rows
+ * in a real export, because a prospect ringing back is the normal case: the
+ * same number appeared at 18:14:37 for 18:25 and at 18:14:13 for 7 seconds,
+ * two plainly different calls, and only the first survived. De-duplication
+ * belongs in the reading of the data — the "Regrouper les doublons" toggle —
+ * not at the door, where the discarded calls cannot be recovered.
  *
- * The number is normalised, so "+33687814485", "33687814485" and "0687814485"
- * are one prospect rather than three.
+ * Nor is there a tolerance on the timestamp. A ±60 s window made the number
+ * and the duration do all the work: a prospect who rang twice inside a minute,
+ * or twice for the same number of seconds — and every missed call is 0 seconds
+ * — had the second row dropped silently.
+ *
+ * Seconds, not milliseconds: `parseDate` builds whole-second timestamps from
+ * every format it reads, so a sub-second difference can only come from
+ * round-tripping, never from two genuinely different calls.
+ *
+ * The conseiller is part of the key as a fourth field. Their exports do carry
+ * several rows for one number at one timestamp, one per desk the switchboard
+ * rang; keying without the adviser would merge those into one and drop the
+ * others. It can only ever make the rule skip FEWER rows.
+ *
+ * The number is normalised so a re-export in another format ("+33687814485"
+ * vs "0687814485") still recognises its own rows. With the timestamp and the
+ * duration both exact, that cannot collide two different calls.
  */
-function duplicateKey(callerNumber: string): string {
-  return normalizePhone(callerNumber) || callerNumber.trim().toLowerCase();
+function duplicateKey(
+  conseillerId: string,
+  callerNumber: string,
+  startedAt: Date,
+  duration: number
+): string {
+  const second = Math.floor(startedAt.getTime() / 1000);
+  return `${conseillerId}|${normalizePhone(callerNumber)}|${second}|${duration}`;
 }
 
 export async function POST(req: NextRequest) {
@@ -345,43 +365,65 @@ export async function POST(req: NextRequest) {
     });
 
     // ── Duplicate detection ───────────────────────────────────────────────────
-    // One caller number, one record. A row is refused when its number is
-    // already in the database, or when an earlier row of this same file has
-    // already claimed it. Nothing but the number is considered.
+    // A row is skipped only when caller number, exact timestamp and exact
+    // duration all match a call already in the database (see `duplicateKey`).
+    // Two calls from the same number at different times, or at the same time
+    // with different durations, are different calls and both import — grouping
+    // them is the reader's job, via "Regrouper les doublons".
+    //
+    // Fetch every candidate in ONE query instead of one per row: a per-row
+    // findFirst is what makes large imports time out on a serverless function.
     const candidates = parsed.filter((row) => !row.error && row.conseiller && row.startedAt);
 
     if (candidates.length) {
-      // Every caller number already on record. `distinct` keeps this to one
-      // short column per number rather than per call — and under this rule the
-      // table cannot hold more rows than it holds distinct numbers, so the set
-      // stays bounded by construction.
+      const timestamps = candidates.map((row) => row.startedAt!.getTime());
+      const conseillerIds = [...new Set(candidates.map((row) => row.conseiller!.id))];
+
       const existing = await prisma.call.findMany({
-        select: { callerNumber: true },
-        distinct: ["callerNumber"],
+        where: {
+          assignedUserId: { in: conseillerIds },
+          // Exactly the span the file covers: with exact timestamps nothing
+          // outside it can possibly match.
+          startedAt: {
+            gte: new Date(Math.min(...timestamps)),
+            lte: new Date(Math.max(...timestamps)),
+          },
+        },
+        select: {
+          assignedUserId: true,
+          callerNumber: true,
+          durationSeconds: true,
+          startedAt: true,
+        },
       });
 
       const seen = new Set<string>();
-      for (const call of existing) seen.add(duplicateKey(call.callerNumber));
 
-      // "The FIRST valid call attempt" is the earliest one, not whichever row
-      // the export happened to put at the top: these files are often written
-      // newest-first, and keeping the top row would file a prospect's latest
-      // call as their first contact. File order breaks an exact tie.
-      const byFirstAttempt = candidates
-        .map((row, index) => ({ row, index }))
-        .sort(
-          (a, b) =>
-            a.row.startedAt!.getTime() - b.row.startedAt!.getTime() || a.index - b.index
+      for (const call of existing) {
+        if (!call.assignedUserId) continue;
+        seen.add(
+          duplicateKey(
+            call.assignedUserId,
+            call.callerNumber,
+            call.startedAt,
+            call.durationSeconds
+          )
         );
+      }
 
-      for (const { row } of byFirstAttempt) {
-        const key = duplicateKey(row.callerNumber);
+      for (const row of candidates) {
+        const key = duplicateKey(
+          row.conseiller!.id,
+          row.callerNumber,
+          row.startedAt!,
+          row.durationSeconds
+        );
 
         if (seen.has(key)) {
           row.isDuplicate = true;
           row.error = "duplicate";
         } else {
-          // The first keeper claims the number for the rest of the file too.
+          // Also catches rows duplicated inside the uploaded file itself.
           seen.add(key);
         }
       }

@@ -409,26 +409,39 @@ reconnus sans tenir compte de la casse, des accents ni des séparateurs, les CSV
 UTF-8 comme Latin-1 sont décodés correctement, et un numéro de conseiller ayant
 perdu son zéro initial (conversion numérique du tableur) est rattrapé.
 
-**Un numéro client = un seul enregistrement.** Une ligne est refusée dès que
-son numéro est déjà en base, ou qu'une ligne antérieure du même fichier l'a déjà
-pris. Rien d'autre que le numéro n'entre dans la décision : ni l'horodatage, ni
-la durée, ni le conseiller.
+Une ligne n'est écartée comme **doublon** que si le numéro client,
+l'horodatage **exact** et la durée **exacte** correspondent tous les trois à un
+appel déjà en base — ou à une ligne précédente du même fichier. Deux appels du
+même numéro à des heures différentes, ou à la même heure avec des durées
+différentes, sont deux appels et s'importent tous les deux.
 
-Seul le **premier** appel de chaque numéro est conservé, au sens chronologique
-et non au sens de l'ordre du fichier : ces exports sont souvent écrits du plus
-récent au plus ancien, et garder la ligne du haut classerait le dernier appel
-d'un prospect comme son premier contact. L'ordre du fichier ne sert qu'à
-départager une égalité.
+Le regroupement des rappels appartient à la **lecture** (`?group=1`, la case
+« Regrouper les doublons »), pas à l'entrée. Bloquer sur le numéro seul a été
+essayé puis annulé : sur un export réel, 85 lignes sur 104 étaient refusées,
+parce qu'un prospect qui rappelle est le cas normal — le même numéro figurait à
+18:14:37 pour 18:25 et à 18:14:13 pour 7 secondes, deux appels manifestement
+distincts, et seul le premier survivait. Un appel écarté à l'import est perdu ;
+un doublon affiché se replie d'un clic.
 
-Le numéro est normalisé (`normalizePhone`), donc `+33687814485`, `33687814485`
-et `0687814485` sont un seul prospect.
+La tolérance de ±60 s qui a existé faisait porter toute la décision par le
+numéro et la durée : un prospect rappelant dans la minute, ou deux fois pour la
+même durée — et tout appel manqué dure 0 seconde — voyait sa deuxième ligne
+disparaître sans trace.
 
-**Cette règle est volontairement destructrice.** Les rappels d'un prospect sont
-écartés à l'entrée et n'atteignent jamais la base : pour les données arrivant
-par cet import, les compteurs de tentatives `(2)`, la carte « Doublons » du
-tableau de bord et le badge « Déjà contacté par » n'ont plus rien à compter.
-Elle remplace la règle précédente (numéro + horodatage exact + durée exacte),
-qui laissait entrer les rappels réels.
+Deux précisions sur la clé :
+
+- le conseiller en fait partie, en quatrième champ. Les exports de l'opérateur
+  contiennent plusieurs lignes pour un même numéro au même horodatage, une par
+  poste sonné ; sans ce champ elles fusionneraient. Il ne peut qu'écarter
+  **moins** de lignes, jamais plus ;
+- le numéro est normalisé (`normalizePhone`), donc un ré-export écrit
+  `+33611223344` reconnaît ses propres lignes stockées `0611223344`. L'horodatage
+  et la durée étant exacts, cela ne peut pas confondre deux appels distincts.
+
+La comparaison se fait à la seconde : `parseDate` produit des horodatages à la
+seconde entière quel que soit le format lu, donc un écart inférieur à la seconde
+ne peut venir que d'un aller-retour de format, jamais de deux appels réels.
+L'aperçu affiche les secondes, puisque ce sont elles qui décident.
 
 Un fichier dont toutes les lignes sont déjà connues renvoie un succès avec
 `importedRows: 0` plutôt qu'une erreur : re-déposer un export est le cas normal,
