@@ -46,7 +46,11 @@ function formatDate(iso: string | null): string {
   return (
     d.toLocaleDateString("fr-FR", { day: "2-digit", month: "short" }) +
     " " +
-    d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })
+    // Seconds included: a row is a duplicate only when the timestamp matches
+    // exactly, so two rows thirty seconds apart are two calls. Rounded to the
+    // minute they looked identical, and the preview seemed to keep one and
+    // drop the other at random.
+    d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
   );
 }
 

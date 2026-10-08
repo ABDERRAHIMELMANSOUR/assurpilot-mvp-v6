@@ -15,8 +15,6 @@ export const maxDuration = 60;
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB
 const ALLOWED_EXTENSIONS = ["xlsx", "xls", "csv"];
-/** Two calls are the same event if they match on key fields within this window. */
-const DUPLICATE_WINDOW_MS = 60_000;
 
 /** Parse date: DD/MM/YYYY HH:MM:SS, ISO, or Excel serial. */
 function parseDate(raw: unknown): Date | null {
@@ -154,9 +152,37 @@ type ParsedRow = {
   error: string;
 };
 
-/** Key used to bucket calls that could be duplicates of one another. */
-function duplicateKey(conseillerId: string, callerNumber: string, duration: number): string {
-  return `${conseillerId}|${callerNumber}|${duration}`;
+/**
+ * Identity of a call for duplicate detection: caller number, exact start time
+ * and exact duration must ALL match before a row is skipped.
+ *
+ * There used to be a 60-second tolerance on the timestamp, which made the
+ * number and the duration do all the work: a prospect who rang twice inside a
+ * minute, or twice for the same number of seconds — and every missed call is
+ * 0 seconds — had the second row silently dropped as a duplicate. Requiring
+ * the timestamp to match exactly means a repeat call is a repeat call.
+ *
+ * Seconds, not milliseconds: `parseDate` builds whole-second timestamps from
+ * every format it reads, so a sub-second difference can only come from
+ * round-tripping, never from two genuinely different calls.
+ *
+ * The conseiller is part of the key as a fourth field. Their exports do carry
+ * several rows for one number at one timestamp, one per desk the switchboard
+ * rang; keying without the adviser would merge those into one and drop the
+ * others. It can only ever make the rule skip FEWER rows.
+ *
+ * The number is normalised so a re-export in another format ("+33687814485"
+ * vs "0687814485") still recognises its own rows. With the timestamp and the
+ * duration both exact, that cannot collide two different calls.
+ */
+function duplicateKey(
+  conseillerId: string,
+  callerNumber: string,
+  startedAt: Date,
+  duration: number
+): string {
+  const second = Math.floor(startedAt.getTime() / 1000);
+  return `${conseillerId}|${normalizePhone(callerNumber)}|${second}|${duration}`;
 }
 
 export async function POST(req: NextRequest) {
@@ -333,6 +359,11 @@ export async function POST(req: NextRequest) {
     });
 
     // ── Duplicate detection ───────────────────────────────────────────────────
+    // A row is skipped only when caller number, exact timestamp and exact
+    // duration all match a call already in the database (see `duplicateKey`).
+    // Two calls from the same number at different times, or at the same time
+    // with different durations, are different calls and both import.
+    //
     // Fetch every candidate in ONE query instead of one per row: a per-row
     // findFirst is what makes large imports time out on a serverless function.
     const candidates = parsed.filter((row) => !row.error && row.conseiller && row.startedAt);
@@ -344,9 +375,12 @@ export async function POST(req: NextRequest) {
       const existing = await prisma.call.findMany({
         where: {
           assignedUserId: { in: conseillerIds },
+          // Exactly the span the file covers. The window used to be padded by a
+          // minute on each side to feed the old fuzzy match; with exact
+          // timestamps nothing outside the span can possibly match.
           startedAt: {
-            gte: new Date(Math.min(...timestamps) - DUPLICATE_WINDOW_MS),
-            lte: new Date(Math.max(...timestamps) + DUPLICATE_WINDOW_MS),
+            gte: new Date(Math.min(...timestamps)),
+            lte: new Date(Math.max(...timestamps)),
           },
         },
         select: {
@@ -357,34 +391,34 @@ export async function POST(req: NextRequest) {
         },
       });
 
-      const seen = new Map<string, number[]>();
-      const remember = (key: string, time: number) => {
-        const times = seen.get(key);
-        if (times) times.push(time);
-        else seen.set(key, [time]);
-      };
+      const seen = new Set<string>();
 
       for (const call of existing) {
         if (!call.assignedUserId) continue;
-        remember(
-          duplicateKey(call.assignedUserId, call.callerNumber, call.durationSeconds),
-          call.startedAt.getTime()
+        seen.add(
+          duplicateKey(
+            call.assignedUserId,
+            call.callerNumber,
+            call.startedAt,
+            call.durationSeconds
+          )
         );
       }
 
       for (const row of candidates) {
-        const key = duplicateKey(row.conseiller!.id, row.callerNumber, row.durationSeconds);
-        const time = row.startedAt!.getTime();
-        const near = seen
-          .get(key)
-          ?.some((known) => Math.abs(known - time) <= DUPLICATE_WINDOW_MS);
+        const key = duplicateKey(
+          row.conseiller!.id,
+          row.callerNumber,
+          row.startedAt!,
+          row.durationSeconds
+        );
 
-        if (near) {
+        if (seen.has(key)) {
           row.isDuplicate = true;
           row.error = "duplicate";
         } else {
           // Also catches rows duplicated inside the uploaded file itself.
-          remember(key, time);
+          seen.add(key);
         }
       }
     }

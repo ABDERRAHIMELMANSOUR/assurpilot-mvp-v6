@@ -354,6 +354,30 @@ l'option n'est pas utilisée.
 à blanc) accepte `.xlsx`, `.xls` et `.csv` jusqu'à 10 Mo. Les en-têtes sont
 reconnus sans tenir compte de la casse, des accents ni des séparateurs, les CSV
 UTF-8 comme Latin-1 sont décodés correctement, et un numéro de conseiller ayant
-perdu son zéro initial (conversion numérique du tableur) est rattrapé. Les
-doublons sont détectés à ±60 s sur (conseiller, numéro, durée), aussi bien
-vis-à-vis de la base que des lignes répétées à l'intérieur du fichier.
+perdu son zéro initial (conversion numérique du tableur) est rattrapé.
+
+Une ligne n'est écartée comme **doublon** que si le numéro client, l'horodatage
+**exact** et la durée **exacte** correspondent tous les trois à un appel déjà
+en base — ou à une ligne précédente du même fichier. Deux appels du même numéro
+à des heures différentes, ou à la même heure avec des durées différentes, sont
+deux appels et s'importent tous les deux.
+
+La tolérance de ±60 s qui existait auparavant faisait porter toute la décision
+par le numéro et la durée : un prospect rappelant dans la minute, ou deux fois
+pour la même durée — et tout appel manqué dure 0 seconde — voyait sa deuxième
+ligne disparaître sans trace.
+
+Deux précisions sur la clé :
+
+- le conseiller en fait partie, en quatrième champ. Les exports de l'opérateur
+  contiennent plusieurs lignes pour un même numéro au même horodatage, une par
+  poste sonné ; sans ce champ elles fusionneraient. Il ne peut qu'écarter
+  **moins** de lignes, jamais plus ;
+- le numéro est normalisé (`normalizePhone`), donc un ré-export écrit
+  `+33611223344` reconnaît ses propres lignes stockées `0611223344`. L'horodatage
+  et la durée étant exacts, cela ne peut pas confondre deux appels distincts.
+
+La comparaison se fait à la seconde : `parseDate` produit des horodatages à la
+seconde entière quel que soit le format lu, donc un écart inférieur à la seconde
+ne peut venir que d'un aller-retour de format, jamais de deux appels réels.
+L'aperçu affiche les secondes, puisque ce sont elles qui décident.
