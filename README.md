@@ -249,6 +249,37 @@ plusieurs postes à la même minute), c'est là encore l'appel le plus long qui
 compte comme premier contact, sinon le conseiller qui a laissé sonner quinze
 secondes s'entendrait dire qu'il était le premier.
 
+### Badge « Déjà contacté par »
+
+Présent dans **les deux modes**, groupé ou non : `firstContactBy`,
+`firstContactAt` et `alreadyContacted` accompagnent chaque ligne de
+`/api/calls`. Il n'était auparavant calculé qu'en mode groupé, donc décocher
+« Regrouper les doublons » — et toutes les fiches individuelles, qui ne
+groupent jamais — perdaient l'alerte sur les écrans mêmes où un conseiller
+traite un lead isolé.
+
+La recherche ignore délibérément deux limites :
+
+- **le périmètre du lecteur.** Un conseiller ne voit que ses propres appels ;
+  l'appel antérieur d'un collègue lui est donc invisible, et c'est exactement
+  la collision que le badge doit éviter ;
+- **sa fenêtre d'historique.** Le badge nomme un collègue en face d'un numéro
+  déjà affiché, il ne révèle aucun appel que le rôle n'a pas le droit de lire —
+  et un lead décroché il y a cinq semaines est précisément le cas où il faut
+  prévenir.
+
+Elle est bornée non par une fenêtre de dates mais par **les numéros affichés** :
+une requête sur les neuf derniers chiffres (le tronc commun de `0612345678`,
+`+33612345678`, `33612345678`, `0033612345678`). Borner par date aurait fait
+disparaître les numéros dont l'historique sort de la fenêtre ; interroger les
+numéros en main est à la fois plus étroit et complet. Un numéro étranger
+finissant pareil peut être ramené : `buildPriorContactMap` renormalise, la
+ligne surnuméraire se range donc sous une autre clé et reste sans effet.
+
+`alreadyContacted` signifie « quelqu'un d'autre que le titulaire de cette ligne
+a eu ce numéro en premier ». Les tableaux affichent le badge sur ce seul
+drapeau, sans le recalculer — sinon l'un d'eux finirait par en diverger.
+
 `firstContactBy` est cherché **hors périmètre** du lecteur : c'est tout l'intérêt
 du badge « Déjà contacté par », puisqu'un conseiller ne voit que ses propres
 appels et ignorerait donc qu'un collègue travaille déjà ce numéro. La recherche
@@ -318,6 +349,28 @@ Invariant vérifié : `totalProspects` est exactement le nombre de lignes que
 peuvent pas se contredire. Un numéro masqué compte pour un prospect à lui seul,
 des deux côtés : deux appelants anonymes ne sont pas une même personne.
 
+### Section « Statistiques détaillées »
+
+Le tableau de bord `/admin` porte un bloc d'analyse distinct des tableaux
+d'appels : d'un côté « comment allons-nous », de l'autre « que dois-je traiter
+ensuite » — les mélanger est ce qui rend un tableau de bord illisible.
+
+Deux tableaux : par équipe (entité, pôle, effectif, appels, prospects, manqués,
+devis, contrats, avec une ligne de total) et par conseiller (équipe, appels,
+prospects, manqués, devis, contrats, taux de contrat, le nom renvoyant vers sa
+fiche).
+
+Il est alimenté par la **même** réponse `/api/analytics` que les cartes du
+haut — champ `teams` — donc il suit les filtres de date, d'entité et de pôle
+sans seconde requête à maintenir en phase, et ne peut pas les contredire. Un
+sous-titre rappelle le périmètre couvert, pour qu'une vue filtrée ne soit pas
+prise pour la plateforme entière.
+
+`tally` y est appliqué aux appels de l'équipe **mis en commun**, et non à la
+somme des chiffres de ses membres : les prospects sont des numéros distincts, et
+un prospect ayant joint deux conseillers d'une même équipe est un prospect pour
+cette équipe.
+
 ### Vider l'historique d'appels
 
 ```bash
@@ -356,28 +409,27 @@ reconnus sans tenir compte de la casse, des accents ni des séparateurs, les CSV
 UTF-8 comme Latin-1 sont décodés correctement, et un numéro de conseiller ayant
 perdu son zéro initial (conversion numérique du tableur) est rattrapé.
 
-Une ligne n'est écartée comme **doublon** que si le numéro client, l'horodatage
-**exact** et la durée **exacte** correspondent tous les trois à un appel déjà
-en base — ou à une ligne précédente du même fichier. Deux appels du même numéro
-à des heures différentes, ou à la même heure avec des durées différentes, sont
-deux appels et s'importent tous les deux.
+**Un numéro client = un seul enregistrement.** Une ligne est refusée dès que
+son numéro est déjà en base, ou qu'une ligne antérieure du même fichier l'a déjà
+pris. Rien d'autre que le numéro n'entre dans la décision : ni l'horodatage, ni
+la durée, ni le conseiller.
 
-La tolérance de ±60 s qui existait auparavant faisait porter toute la décision
-par le numéro et la durée : un prospect rappelant dans la minute, ou deux fois
-pour la même durée — et tout appel manqué dure 0 seconde — voyait sa deuxième
-ligne disparaître sans trace.
+Seul le **premier** appel de chaque numéro est conservé, au sens chronologique
+et non au sens de l'ordre du fichier : ces exports sont souvent écrits du plus
+récent au plus ancien, et garder la ligne du haut classerait le dernier appel
+d'un prospect comme son premier contact. L'ordre du fichier ne sert qu'à
+départager une égalité.
 
-Deux précisions sur la clé :
+Le numéro est normalisé (`normalizePhone`), donc `+33687814485`, `33687814485`
+et `0687814485` sont un seul prospect.
 
-- le conseiller en fait partie, en quatrième champ. Les exports de l'opérateur
-  contiennent plusieurs lignes pour un même numéro au même horodatage, une par
-  poste sonné ; sans ce champ elles fusionneraient. Il ne peut qu'écarter
-  **moins** de lignes, jamais plus ;
-- le numéro est normalisé (`normalizePhone`), donc un ré-export écrit
-  `+33611223344` reconnaît ses propres lignes stockées `0611223344`. L'horodatage
-  et la durée étant exacts, cela ne peut pas confondre deux appels distincts.
+**Cette règle est volontairement destructrice.** Les rappels d'un prospect sont
+écartés à l'entrée et n'atteignent jamais la base : pour les données arrivant
+par cet import, les compteurs de tentatives `(2)`, la carte « Doublons » du
+tableau de bord et le badge « Déjà contacté par » n'ont plus rien à compter.
+Elle remplace la règle précédente (numéro + horodatage exact + durée exacte),
+qui laissait entrer les rappels réels.
 
-La comparaison se fait à la seconde : `parseDate` produit des horodatages à la
-seconde entière quel que soit le format lu, donc un écart inférieur à la seconde
-ne peut venir que d'un aller-retour de format, jamais de deux appels réels.
-L'aperçu affiche les secondes, puisque ce sont elles qui décident.
+Un fichier dont toutes les lignes sont déjà connues renvoie un succès avec
+`importedRows: 0` plutôt qu'une erreur : re-déposer un export est le cas normal,
+pas un échec.

@@ -3,6 +3,7 @@ import { useEffect, useState, useCallback } from "react";
 import StatCard from "@/components/ui/StatCard";
 import DateFilter, { DateFilterState, buildQueryString } from "@/components/ui/DateFilter";
 import ScopeFilter, { EMPTY_SCOPE, ScopeFilterState, withScope } from "@/components/ui/ScopeFilter";
+import StatsSection from "@/components/ui/StatsSection";
 import Link from "next/link";
 import { errorMessage } from "@/lib/fetchJson";
 
@@ -42,6 +43,23 @@ export default function AdminPage() {
     ? Math.round((stats.totalDevis / (stats.totalAppels - stats.totalManques)) * 100)
     : 0;
   const medals = ["🥇", "🥈", "🥉"];
+
+  // Spells out what the snapshot covers, so a filtered section is never
+  // mistaken for the whole platform.
+  const PERIOD_LABEL: Record<string, string> = {
+    today: "aujourd'hui",
+    week: "7 derniers jours",
+    month: "ce mois",
+  };
+  const scopeCaption = [
+    scope.entity ? `Entité ${scope.entity}` : "Toutes les entités",
+    scope.lineType === "AUTO" ? "Auto" : scope.lineType === "SANTE" ? "Santé" : "Toutes les lignes",
+    filter.period
+      ? PERIOD_LABEL[filter.period] ?? filter.period
+      : filter.dateFrom || filter.dateTo
+        ? `${filter.dateFrom || "…"} → ${filter.dateTo || "…"}`
+        : "tout l'historique",
+  ].join(" · ");
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
@@ -87,6 +105,15 @@ export default function AdminPage() {
             <StatCard label="Taux global" tone="indigo"    value={`${tauxGlobal}%`}
               sub="conversion" subColor={tauxGlobal >= 25 ? "text-emerald-600" : "text-amber-600"} />
           </div>
+
+          {/* Dedicated statistics snapshot: fed by the same /api/analytics
+              response as the cards, so it follows the date, entity and pôle
+              filters without a second request to keep in step. */}
+          <StatsSection
+            teams={stats.teams ?? []}
+            agents={stats.leaderboard ?? []}
+            caption={scopeCaption}
+          />
 
           <div className="card overflow-hidden">
             <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">

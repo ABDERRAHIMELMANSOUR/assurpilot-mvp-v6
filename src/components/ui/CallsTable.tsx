@@ -30,8 +30,11 @@ type Call = {
   /** Bounds of the group; `startedAt` is the LONGEST call, often neither. */
   firstAttemptAt?: string;
   lastAttemptAt?:  string;
+  // Prior-contact fields, present in BOTH grouped and ungrouped responses:
+  // who first took this number anywhere in the system, and whether that is
+  // somebody other than the person holding this row.
   firstContactBy?: { id?: string; nom: string; prenom: string } | null;
-  /** A later attempt reached someone other than `firstContactBy`. */
+  firstContactAt?: string | null;
   alreadyContacted?: boolean;
 };
 
@@ -49,12 +52,6 @@ const COLOR_BADGE: Record<string, string> = {
   purple: "bg-purple-100 text-purple-800",
   gray:   "badge-gray",
 };
-
-/** Identity of a person in a call payload; id when present, name otherwise. */
-function personKey(p?: { id?: string; nom: string; prenom: string } | null) {
-  if (!p) return null;
-  return p.id ?? `${p.prenom} ${p.nom}`;
-}
 
 function formatDuration(s: number) {
   if (!s) return "—";
@@ -163,10 +160,10 @@ export default function CallsTable({
                 const needsResult = !call.result && allowResult;
                 const canManage   = isAdmin && call.isManual;
                 const attempts    = call.attemptCount ?? 1;
-                const showPriorContact =
-                  !!call.alreadyContacted &&
-                  !!call.firstContactBy &&
-                  personKey(call.firstContactBy) !== personKey(call.assignedUser);
+                // `alreadyContacted` already means "someone other than this
+                // row's owner got there first" — the table does not re-derive
+                // it, so it cannot drift from the API's answer.
+                const showPriorContact = !!call.alreadyContacted && !!call.firstContactBy;
 
                 return (
                   <tr
@@ -201,16 +198,25 @@ export default function CallsTable({
                           </span>
                         )}
                       </div>
-                      {/* Warns the conseiller that someone else got to this
-                          lead first. Suppressed when the row's own conseiller
-                          IS that person — "déjà contacté par vous-même" tells
-                          them nothing, and the (n) counter already says the
-                          number called more than once. */}
+                      {/* Warns the adviser that a colleague reached this number
+                          first — the check runs across every adviser, so it
+                          fires even when the colleague's call is outside this
+                          viewer's own list. Hidden when the row's own adviser
+                          IS that person: "déjà contacté par vous-même" tells
+                          them nothing. */}
                       {showPriorContact && call.firstContactBy && (
                         <span
-                          className="badge badge-yellow mt-1 inline-block whitespace-nowrap"
-                          style={{ fontSize: "10px", padding: "1px 5px" }}
+                          className="badge badge-amber mt-1 inline-flex items-center gap-1 whitespace-nowrap font-semibold"
+                          style={{ fontSize: "10px", padding: "2px 6px" }}
+                          title={
+                            call.firstContactAt
+                              ? `Premier contact le ${new Date(call.firstContactAt).toLocaleString("fr-FR")}`
+                              : undefined
+                          }
                         >
+                          <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth={2.2} viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                          </svg>
                           Déjà contacté par : {call.firstContactBy.prenom} {call.firstContactBy.nom}
                         </span>
                       )}

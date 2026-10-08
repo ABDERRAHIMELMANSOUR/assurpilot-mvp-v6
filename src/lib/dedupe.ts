@@ -47,8 +47,22 @@ export type PriorContact = {
   user: { id?: string; nom: string; prenom: string } | null;
 };
 
+/** What the prior-contact badge needs on a row, grouped or not. */
+export type PriorContactMeta = {
+  /** The conseiller the lead is attributed to — the first one to receive it. */
+  firstContactBy: { id?: string; nom: string; prenom: string } | null;
+  /**
+   * Set when this number reached someone other than its first contact, i.e.
+   * the lead is being worked by more than one person. Drives the
+   * "Déjà contacté par" badge.
+   */
+  alreadyContacted: boolean;
+  /** When that first contact happened, for the badge's tooltip. */
+  firstContactAt: string | null;
+};
+
 /** Fields the grouped payload adds on top of the master call. */
-export type GroupMeta = {
+export type GroupMeta = PriorContactMeta & {
   /** How many calls this row stands for. 1 when the number called once. */
   attemptCount: number;
   /** Ids of every call folded into this row, newest first. */
@@ -59,14 +73,6 @@ export type GroupMeta = {
    */
   firstAttemptAt: string;
   lastAttemptAt: string;
-  /** The conseiller the lead is attributed to — the first one to receive it. */
-  firstContactBy: { id?: string; nom: string; prenom: string } | null;
-  /**
-   * Set when a later attempt reached a conseiller other than the first one,
-   * i.e. the lead is being worked by more than one person. Drives the
-   * "Déjà contacté par" badge.
-   */
-  alreadyContacted: boolean;
 };
 
 function personKey(person: Person): string | null {
@@ -142,13 +148,9 @@ export function groupCallsByCaller<T extends GroupableCall>(
           }
         : null;
 
-    const firstOwner = personKey(firstContactBy);
-    const alreadyContacted =
-      firstOwner !== null &&
-      sorted.some((call) => {
-        const owner = personKey(call.assignedUser);
-        return owner !== null && owner !== firstOwner;
-      });
+    const firstContactAt = toDate(
+      priorIsEarlier ? prior.startedAt : oldest.startedAt
+    ).toISOString();
 
     // The master row is the LONGEST call of the group — the conversation that
     // actually took place — with the most recent call breaking an exact tie.
@@ -167,7 +169,11 @@ export function groupCallsByCaller<T extends GroupableCall>(
       firstAttemptAt: toDate(oldest.startedAt).toISOString(),
       lastAttemptAt: toDate(newest.startedAt).toISOString(),
       firstContactBy,
-      alreadyContacted,
+      firstContactAt,
+      // Someone other than this row's owner got to the number first. That is
+      // the whole question the badge answers, so the flag encodes it rather
+      // than leaving each table to re-derive it (and one of them to forget).
+      alreadyContacted: isPriorContactOther(firstContactBy, master.assignedUser),
     });
   }
 
@@ -181,6 +187,8 @@ export function groupCallsByCaller<T extends GroupableCall>(
       firstContactBy: call.assignedUser
         ? { id: call.assignedUser.id, nom: call.assignedUser.nom, prenom: call.assignedUser.prenom }
         : null,
+      firstContactAt: toDate(call.startedAt).toISOString(),
+      // A withheld number has no history to match against.
       alreadyContacted: false,
     });
   }
@@ -194,10 +202,59 @@ export function groupCallsByCaller<T extends GroupableCall>(
 }
 
 /**
+ * True when the first contact on a number is somebody other than the person
+ * holding this row — the single question the "Déjà contacté par" badge answers.
+ *
+ * An unassigned row counts as "other", so the badge still names who worked the
+ * number before it was left unattributed.
+ */
+function isPriorContactOther(first: Person, owner: Person): boolean {
+  const firstKey = personKey(first);
+  return firstKey !== null && firstKey !== personKey(owner);
+}
+
+/**
+ * Adds the prior-contact fields to an UNGROUPED list, one row per call.
+ *
+ * The badge used to exist only in grouped mode, so switching the toggle off —
+ * and every profile drill-down, which never groups — lost the warning on
+ * exactly the screens where an adviser works a single lead.
+ */
+export function attachPriorContact<T extends GroupableCall>(
+  calls: T[],
+  priorContacts: Map<string, PriorContact>
+): Array<T & PriorContactMeta> {
+  return calls.map((call) => {
+    const key = normalizePhone(call.callerNumber);
+    const prior = key ? priorContacts.get(key) : undefined;
+
+    // Fall back to the row itself when nothing earlier is on record: it IS the
+    // first contact, and the badge then correctly stays hidden.
+    const firstContactBy =
+      prior && isEarlierContact(prior, call)
+        ? prior.user
+        : call.assignedUser
+          ? { id: call.assignedUser.id, nom: call.assignedUser.nom, prenom: call.assignedUser.prenom }
+          : null;
+
+    const firstContactAt = toDate(
+      prior && isEarlierContact(prior, call) ? prior.startedAt : call.startedAt
+    ).toISOString();
+
+    return {
+      ...call,
+      firstContactBy,
+      firstContactAt,
+      alreadyContacted: isPriorContactOther(firstContactBy, call.assignedUser),
+    };
+  });
+}
+
+/**
  * Folds an unscoped list of calls into "who took this number first".
  *
- * Feed it the cheapest possible projection — caller number, start time and the
- * assigned user's name — for the window being displayed.
+ * Feed it the cheapest possible projection — caller number, start time,
+ * duration and the assigned user's name — for the numbers being displayed.
  */
 export function buildPriorContactMap(
   calls: Array<{

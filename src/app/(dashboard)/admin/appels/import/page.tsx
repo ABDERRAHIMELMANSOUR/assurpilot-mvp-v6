@@ -27,7 +27,8 @@ type PreviewResult = {
 
 type ImportResult = {
   success:       boolean;
-  batchId:       string;
+  /** Null when every row was a duplicate: no batch is created for nothing. */
+  batchId:       string | null;
   totalRows:     number;
   importedRows:  number;
   duplicateRows: number;
@@ -277,7 +278,7 @@ export default function ImportAppelsPage() {
                 </div>
                 <div className="stat-card text-center">
                   <p className="text-2xl font-semibold text-amber-600">{preview.duplicateRows}</p>
-                  <p className="text-xs text-amber-600 mt-1">Doublons</p>
+                  <p className="text-xs text-amber-600 mt-1">Doublons ignorés</p>
                 </div>
                 <div className="stat-card text-center">
                   <p className="text-2xl font-semibold text-rose-500">{preview.invalidRows}</p>
@@ -302,6 +303,30 @@ export default function ImportAppelsPage() {
                   </div>
                 </div>
               )}
+
+              {/* States the rule plainly, before the user commits: one number,
+                  one record, and the repeats are discarded rather than stored. */}
+              <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 flex items-start gap-2.5">
+                <svg className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <p className="text-xs text-emerald-800">
+                  <strong>Aucun doublon ne sera créé.</strong>{" "}
+                  Un numéro client = un seul enregistrement. Seul le premier appel de
+                  chaque numéro est importé ; tout numéro déjà présent en base, ou
+                  répété plus bas dans ce fichier, est marqué <strong>Doublon</strong> et
+                  entièrement ignoré.
+                  {preview.duplicateRows > 0 && (
+                    <>
+                      {" "}
+                      <span className="text-amber-800">
+                        {preview.duplicateRows} ligne{preview.duplicateRows > 1 ? "s" : ""} sur{" "}
+                        {preview.totalRows} {preview.duplicateRows > 1 ? "seront ignorées" : "sera ignorée"}.
+                      </span>
+                    </>
+                  )}
+                </p>
+              </div>
 
               {/* Advisers with no Équipe: their calls import, but the entity
                   workspaces are built from the adviser's team, so those rows

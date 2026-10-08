@@ -6,7 +6,13 @@ import { prisma } from "@/lib/prisma";
 import { handleApiError, requireUser } from "@/lib/api";
 import { buildDateRange } from "@/lib/dates";
 import { directReportsWhere } from "@/lib/scope";
-import { parseEntity, parseSubTeam, userScopeWhere } from "@/lib/entity";
+import {
+  entityOfTeamName,
+  parseEntity,
+  parseSubTeam,
+  subTeamOfTeamName,
+  userScopeWhere,
+} from "@/lib/entity";
 import { isContractResult } from "@/lib/contracts";
 import { retentionClause } from "@/lib/retention";
 import { countUniqueCallers } from "@/lib/dedupe";
@@ -175,10 +181,35 @@ export async function GET(req: NextRequest) {
       sort: params.get("sort") === "conversion" ? "conversion" : "contrats",
     };
 
+    // Per-team breakdown for the dashboard's statistics section. Built from the
+    // same `agents` set, so it answers to the same date / entity / pôle filters
+    // and its rows add up to the cards above it.
+    //
+    // `tally` runs over each team's calls POOLED, not over the sum of its
+    // members' figures: prospects are distinct numbers, and a prospect who rang
+    // two advisers of the same team is one prospect for that team.
+    const byTeam = new Map<string, typeof agents>();
+    for (const agent of agents) {
+      const name = agent.team?.nom ?? "—";
+      const bucket = byTeam.get(name);
+      if (bucket) bucket.push(agent);
+      else byTeam.set(name, [agent]);
+    }
+
+    const teams = [...byTeam.entries()]
+      .map(([nom, members]) => ({
+        team: nom,
+        entity: entityOfTeamName(nom),
+        subTeam: subTeamOfTeamName(nom),
+        agents: members.length,
+        ...tally(members.flatMap((m) => m.assignedCalls)),
+      }))
+      .sort((a, b) => b.contrats - a.contrats || b.total - a.total || a.team.localeCompare(b.team, "fr"));
+
     return NextResponse.json(
       isSuperviseur
-        ? { ...totals, leaderboard, applied }
-        : { ...totals, totalAgents: agents.length, leaderboard, applied }
+        ? { ...totals, leaderboard, teams, applied }
+        : { ...totals, totalAgents: agents.length, leaderboard, teams, applied }
     );
   } catch (error) {
     return handleApiError(error, "GET /api/analytics");

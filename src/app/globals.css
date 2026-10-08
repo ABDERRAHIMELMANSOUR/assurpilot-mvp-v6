@@ -53,6 +53,9 @@
   .badge-yellow { @apply bg-amber-50   text-amber-700   border-amber-200;   }
   .badge-blue   { @apply bg-cyan-50    text-cyan-700    border-cyan-200;    }
   .badge-gray   { @apply bg-slate-50   text-slate-600   border-slate-200;   }
+  /* Louder than badge-yellow: used for the "Déjà contacté par" warning, which
+     has to be noticed before an adviser calls a colleague's lead back. */
+  .badge-amber  { @apply bg-amber-100  text-amber-900   border-amber-300;   }
 
   /* ── Surfaces ────────────────────────────────────────────────────────── */
   .card {

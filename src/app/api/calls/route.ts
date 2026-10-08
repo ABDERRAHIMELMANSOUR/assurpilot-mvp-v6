@@ -7,8 +7,14 @@ import { CALL_INCLUDE } from "@/lib/selects";
 import { handleApiError, requireUser } from "@/lib/api";
 import { callScopeFor, filterForCoach, filterForUser } from "@/lib/scope";
 import { callFilterClauses } from "@/lib/callFilters";
-import { retentionClause, retentionFloorFor } from "@/lib/retention";
-import { buildPriorContactMap, groupCallsByCaller, wantsGrouping } from "@/lib/dedupe";
+import { retentionClause } from "@/lib/retention";
+import {
+  attachPriorContact,
+  buildPriorContactMap,
+  groupCallsByCaller,
+  wantsGrouping,
+} from "@/lib/dedupe";
+import { normalizePhone } from "@/lib/phone";
 import { maskCallsFor } from "@/lib/mask";
 
 export const runtime = "nodejs";
@@ -27,33 +33,53 @@ const MAX_ROWS = 500;
  */
 const GROUP_SCAN_ROWS = 4_000;
 
-/** Ceiling on the unscoped "who called this number first" lookup. */
+/** Ceiling on the prior-contact lookup, so one page cannot scan the archive. */
 const PRIOR_SCAN_ROWS = 20_000;
 
 /**
- * How far back the prior-contact lookup reaches when nothing else bounds it.
+ * Who first took each of the numbers on this page, across the WHOLE history.
  *
- * A colleague who spoke to this number last quarter is history, not a
- * collision; 30 days is the window in which "someone is already working this
- * lead" is worth a badge, and it keeps the unscoped scan bounded for an admin
- * looking at the full archive.
+ * Three deliberate properties:
+ *
+ * - It ignores the viewer's scope. A conseiller sees only their own calls, so
+ *   a colleague's earlier attempt on the same number is invisible to them —
+ *   which is precisely the collision the "Déjà contacté par" badge exists to
+ *   prevent.
+ * - It ignores the viewer's retention floor. The badge names a colleague
+ *   against a number already on screen; it discloses no call the role may not
+ *   read, and a lead someone picked up five weeks ago is exactly the case an
+ *   adviser needs warning about.
+ * - It is keyed on the numbers actually displayed rather than on a date
+ *   window. Scanning a window and capping it would have silently dropped the
+ *   numbers whose history sits outside the cap; asking only about the numbers
+ *   in hand is both narrower and complete.
+ *
+ * Matching is on the last nine digits, which every French format shares
+ * ("0612345678", "+33612345678", "33612345678", "0033612345678"). That can
+ * over-fetch a foreign number ending the same way; `buildPriorContactMap`
+ * re-normalises, so an over-fetched row simply keys elsewhere and is ignored.
  */
-const PRIOR_CONTACT_DAYS = 30;
+async function lookupPriorContacts(calls: Array<{ callerNumber: string }>) {
+  const significant = new Set<string>();
+  for (const call of calls) {
+    const key = normalizePhone(call.callerNumber);
+    if (key) significant.add(key.length > 9 ? key.slice(-9) : key);
+  }
+  if (!significant.size) return new Map();
 
-/**
- * Earliest call the prior-contact lookup considers.
- *
- * Deliberately never earlier than the viewer's own retention floor: the badge
- * discloses a colleague's name, and that disclosure stays inside the same
- * window the role is allowed to read. Roles with no floor get the 30 days.
- */
-function priorContactFloor(role: string): Date {
-  const floor = retentionFloorFor(role);
-  if (floor) return floor;
-  const fallback = new Date();
-  fallback.setHours(0, 0, 0, 0);
-  fallback.setDate(fallback.getDate() - PRIOR_CONTACT_DAYS);
-  return fallback;
+  const history = await prisma.call.findMany({
+    where: { OR: [...significant].map((tail) => ({ callerNumber: { endsWith: tail } })) },
+    select: {
+      callerNumber: true,
+      startedAt: true,
+      durationSeconds: true,
+      assignedUser: { select: { id: true, nom: true, prenom: true } },
+    },
+    orderBy: { startedAt: "asc" },
+    take: PRIOR_SCAN_ROWS,
+  });
+
+  return buildPriorContactMap(history);
 }
 
 export async function GET(req: NextRequest) {
@@ -98,30 +124,15 @@ export async function GET(req: NextRequest) {
       }),
     ]);
 
-    let rows: typeof calls | ReturnType<typeof groupCallsByCaller<(typeof calls)[number]>> = calls;
+    // The prior-contact lookup runs in BOTH modes. It used to be tied to
+    // grouping, so turning the toggle off — and every drill-down, which never
+    // groups — lost the warning entirely, on exactly the screens an adviser
+    // works a single lead from.
+    const priorContacts = await lookupPriorContacts(calls);
 
-    if (grouped) {
-      // Who took each number FIRST, ignoring the viewer's scope. Without this
-      // the warning never fires for the person who needs it: a conseiller sees
-      // only their own calls, so a colleague's earlier attempt on the same
-      // number is invisible to them — which is the collision the badge exists
-      // to prevent.
-      const priorContacts = buildPriorContactMap(
-        await prisma.call.findMany({
-          where: { startedAt: { gte: priorContactFloor(user.role) } },
-          select: {
-            callerNumber: true,
-            startedAt: true,
-            // Needed to break a same-timestamp tie the way the master row does.
-            durationSeconds: true,
-            assignedUser: { select: { id: true, nom: true, prenom: true } },
-          },
-          orderBy: { startedAt: "asc" },
-          take: PRIOR_SCAN_ROWS,
-        })
-      );
-      rows = groupCallsByCaller(calls, priorContacts).slice(0, MAX_ROWS);
-    }
+    const rows = grouped
+      ? groupCallsByCaller(calls, priorContacts).slice(0, MAX_ROWS)
+      : attachPriorContact(calls, priorContacts);
 
     // The response stays a bare array for backwards compatibility; the totals
     // ride along in headers so callers can detect truncation.
