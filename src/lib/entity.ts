@@ -5,6 +5,14 @@
 // CPA", "Équipe auto ALM", "Équipe sante ALM". Deriving the entity from the
 // team name keeps the database exactly as it is — no migration, no backfill,
 // no risk to existing rows.
+//
+// A call's entity is the entity of the CONSEILLER who handled it, never of the
+// trunk line it arrived on. Both entities answer calls on shared standard
+// numbers, so the trunk says where a call entered the switchboard, not who
+// owns it: filtering on it put a CPA adviser's work under ALM whenever the
+// call happened to come in on an ALM line. Reading the entity from
+// `assignedUser.team` also means a correction to an adviser's team is
+// reflected across their whole history at once, with no call rows touched.
 import type { Prisma } from "@prisma/client";
 
 export const ENTITIES = ["CPA", "ALM"] as const;
@@ -112,22 +120,28 @@ export function parseEntity(raw: string | null | undefined): Entity | null {
 }
 
 /**
- * Calls belonging to an entity.
+ * Calls belonging to an entity: the ones handled by a conseiller of that
+ * entity's teams.
  *
- * Checks the call's own team first (stamped at import), then falls back to the
- * team that owns its phone line — calls imported before team routing existed
- * have a null teamId but still sit on a routed line.
+ * NOT the call's own `teamId`, and NOT its phone line's team. Both were
+ * stamped from the standard trunk number the call arrived on, which CPA and
+ * ALM share, so a CPA adviser's calls were filed under whichever entity owned
+ * the line. A call with no assigned user belongs to no entity, which is the
+ * honest answer: nobody handled it.
  */
 export function callEntityWhere(entity: Entity, subTeam?: SubTeam | null): Prisma.CallWhereInput {
-  const team = teamNameFilter(entity, subTeam);
-  return { OR: [{ team }, { phoneLine: { team } }] };
+  return { assignedUser: { team: teamNameFilter(entity, subTeam) } };
 }
 
 /**
  * Calls on one line/product across every entity — "all the Auto calls".
- * Same team-then-line fallback as `callEntityWhere`.
+ * Same rule: the conseiller's pôle, not the trunk the call came in on.
  */
 export function callSubTeamWhere(subTeam: SubTeam): Prisma.CallWhereInput {
-  const team = teamNameFilter(null, subTeam);
-  return { OR: [{ team }, { phoneLine: { team } }] };
+  return { assignedUser: { team: teamNameFilter(null, subTeam) } };
+}
+
+/** Calls handled by the members of one specific team. */
+export function callTeamWhere(teamId: string): Prisma.CallWhereInput {
+  return { assignedUser: { teamId } };
 }

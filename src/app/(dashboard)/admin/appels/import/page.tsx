@@ -21,6 +21,8 @@ type PreviewResult = {
   duplicateRows: number;
   preview:       PreviewRow[];
   unmatchedNumbers: string[];
+  /** Advisers matched by phone but with no Équipe on their profile. */
+  advisersWithoutTeam?: string[];
 };
 
 type ImportResult = {
@@ -292,6 +294,27 @@ export default function ImportAppelsPage() {
                   <div className="flex flex-wrap gap-2">
                     {preview.unmatchedNumbers.map((n) => (
                       <span key={n} className="font-mono text-xs bg-amber-100 text-amber-800 px-2 py-0.5 rounded">{n}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Advisers with no Équipe: their calls import, but the entity
+                  workspaces are built from the adviser's team, so those rows
+                  would appear in neither CPA nor ALM. */}
+              {(preview.advisersWithoutTeam?.length ?? 0) > 0 && (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                  <p className="text-sm font-semibold text-amber-800 mb-1">
+                    ⚠ {preview.advisersWithoutTeam!.length} conseiller{preview.advisersWithoutTeam!.length > 1 ? "s" : ""} sans équipe
+                  </p>
+                  <p className="text-xs text-amber-700 mb-2">
+                    Leurs appels seront importés, mais n&apos;apparaîtront ni dans
+                    l&apos;espace CPA ni dans l&apos;espace ALM : l&apos;entité d&apos;un appel vient
+                    de l&apos;équipe du conseiller. Renseignez leur Équipe dans leur profil.
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {preview.advisersWithoutTeam!.map((n) => (
+                      <span key={n} className="text-xs bg-amber-100 text-amber-800 px-2 py-0.5 rounded">{n}</span>
                     ))}
                   </div>
                 </div>

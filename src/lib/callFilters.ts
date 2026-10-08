@@ -4,7 +4,7 @@
 // always contains exactly the rows the screen is showing.
 import type { Prisma } from "@prisma/client";
 import { buildDateRange } from "@/lib/dates";
-import { callEntityWhere, callSubTeamWhere, isEntity, parseSubTeam } from "@/lib/entity";
+import { callEntityWhere, callSubTeamWhere, callTeamWhere, isEntity, parseSubTeam } from "@/lib/entity";
 import { badRequest } from "@/lib/api";
 
 /**
@@ -42,7 +42,9 @@ export function callFilterClauses(params: URLSearchParams): Prisma.CallWhereInpu
   }
 
   const teamId = params.get("teamId");
-  if (teamId) clauses.push({ teamId });
+  // The team that HANDLED the call, read through its conseiller — same rule as
+  // the entity filter, so `?teamId=` and `?entity=` cannot disagree.
+  if (teamId) clauses.push(callTeamWhere(teamId));
 
   const lineId = params.get("lineId") ?? params.get("phoneLineId");
   if (lineId) clauses.push({ phoneLineId: lineId });

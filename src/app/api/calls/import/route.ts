@@ -115,21 +115,30 @@ function parsingOptions(buffer: Buffer, extension: string): XLSX.ParsingOptions 
 }
 
 /** Anyone a call can land on: a conseiller, or a coach with their own line. */
-type CallOwner = { id: string; nom: string; prenom: string; phoneNumber: string; role: string };
+type CallOwner = {
+  id: string;
+  nom: string;
+  prenom: string;
+  phoneNumber: string;
+  role: string;
+  teamId: string | null;
+  team: { nom: string } | null;
+};
 
 type ParsedRow = {
   rowIndex: number;
   // COLUMN MAPPING (as per specification):
   //   "Numéro présenté"  → callerNumber (customer phone, the call record's main number)
-  //   "Numéro appelé"    → numeroAppele (conseiller phone, used to identify the conseiller)
-  //   "Numéro appelant"  → routes the call to its Équipe (and business line),
+  //   "Numéro appelé"    → numeroAppele (conseiller phone, which identifies the
+  //                         conseiller AND, through them, the call's Équipe)
+  //   "Numéro appelant"  → identifies the business line the call arrived on,
   //                         and is kept verbatim in rawMeta
   callerNumber: string;
   numeroAppele: string;
   numeroAppelant: string;
   /** Business line resolved from the routing number, if any. */
   lineId: string | null;
-  /** Team resolved from the routing number, if any. */
+  /** Team INHERITED FROM THE CONSEILLER, not from the line. */
   teamId: string | null;
   teamName: string | null;
   startedAt: Date | null;
@@ -199,7 +208,17 @@ export async function POST(req: NextRequest) {
       // a coach must land in that coach's workspace, not be rejected.
       prisma.user.findMany({
         where: { role: { in: ["CONSEILLER", "SUPERVISEUR"] }, isActive: true },
-        select: { id: true, nom: true, prenom: true, phoneNumber: true, role: true },
+        select: {
+          id: true,
+          nom: true,
+          prenom: true,
+          phoneNumber: true,
+          role: true,
+          // The adviser's team IS the call's Équipe — this is the whole
+          // mapping: adviser phone number -> adviser -> team -> entity.
+          teamId: true,
+          team: { select: { nom: true } },
+        },
       }),
       prisma.phoneLine.findMany({ where: { isActive: true } }),
     ]);
@@ -210,8 +229,11 @@ export async function POST(req: NextRequest) {
       if (normalized) conseillerByPhone.set(normalized, conseiller);
     }
 
-    // Business lines indexed by normalised number, each carrying the team that
-    // answers it. This is what routes an imported row to its Équipe.
+    // Business lines indexed by normalised number. This identifies WHICH TRUNK
+    // a row arrived on — for the "Ligne" column — and nothing more. The call's
+    // Équipe comes from the conseiller who took it (see below), because CPA and
+    // ALM share the standard numbers and the trunk therefore says nothing about
+    // which entity owns the call.
     const lineByPhone = new Map<string, { id: string; teamId: string | null; label: string }>();
     for (const line of phoneLines) {
       const normalized = normalizePhone(line.numeroMasque);
@@ -221,23 +243,16 @@ export async function POST(req: NextRequest) {
     }
     const defaultLineId = phoneLines[0]?.id ?? "";
 
-    // Teams by name, so a line whose team has not been linked yet can still be
-    // routed from the static LINE_ROUTES table.
-    const teamIdByName = new Map<string, string>();
-    for (const team of await prisma.team.findMany({ select: { id: true, nom: true } })) {
-      teamIdByName.set(team.nom.trim().toLowerCase(), team.id);
-    }
-
     /**
-     * Resolve the line + team for a row. "Numéro appelant" is the routing key
-     * per the operator's spec; "Numéro appelé" is the historical fallback so
-     * files produced before that rule still import correctly.
+     * Resolve the business line a row came in on. "Numéro appelant" is the
+     * operator's routing column; "Numéro appelé" is the historical fallback so
+     * files produced before that rule still identify their line.
+     *
+     * This no longer decides the Équipe. A present-but-unknown routing number
+     * still refuses to fall back to the conseiller line, so the "Ligne" column
+     * stays honest about which trunk was used.
      */
-    function resolveRoute(appelant: string, appele: string) {
-      // "Numéro appelant" is authoritative. Fall back to "Numéro appelé" ONLY
-      // when the routing column is absent — a present-but-unknown number must
-      // stay unrouted rather than inherit the conseiller line's team, which
-      // would silently file the call under the wrong Équipe.
+    function resolveLine(appelant: string, appele: string) {
       const primary = normalizePhone(appelant);
       const candidates = primary ? [primary] : [normalizePhone(appele)];
 
@@ -246,21 +261,16 @@ export async function POST(req: NextRequest) {
 
         const line = lineByPhone.get(normalized);
         const staticRoute = routeForNumber(normalized);
-        // Prefer the team recorded on the line; fall back to the static table.
-        const teamId =
-          line?.teamId ??
-          (staticRoute ? teamIdByName.get(staticRoute.team.toLowerCase()) ?? null : null);
 
-        if (line || teamId) {
+        if (line || staticRoute) {
           return {
             lineId: line?.id ?? null,
-            teamId,
-            teamName: staticRoute?.team ?? null,
+            lineLabel: line?.label ?? staticRoute?.label ?? null,
             matchedOn: primary ? "Numéro appelant" : "Numéro appelé",
           };
         }
       }
-      return { lineId: null, teamId: null, teamName: null, matchedOn: null };
+      return { lineId: null, lineLabel: null, matchedOn: null };
     }
 
     // ── Parse ─────────────────────────────────────────────────────────────────
@@ -290,8 +300,10 @@ export async function POST(req: NextRequest) {
       const normalizedAppele = normalizePhone(numeroAppele);
       const conseiller = normalizedAppele ? conseillerByPhone.get(normalizedAppele) ?? null : null;
 
-      // Team routing keyed on "Numéro appelant" (see resolveRoute).
-      const route = resolveRoute(numeroAppelant, numeroAppele);
+      // The line says which trunk the call came in on. The Équipe comes from
+      // the conseiller it reached, so an adviser's calls stay in their own
+      // entity whichever standard number the customer dialled.
+      const line = resolveLine(numeroAppelant, numeroAppele);
 
       let error = "";
       if (!callerNumber) error = "Numéro présenté manquant";
@@ -304,9 +316,9 @@ export async function POST(req: NextRequest) {
         callerNumber,
         numeroAppele,
         numeroAppelant,
-        lineId: route.lineId,
-        teamId: route.teamId,
-        teamName: route.teamName,
+        lineId: line.lineId,
+        teamId: conseiller?.teamId ?? null,
+        teamName: conseiller?.team?.nom ?? null,
         startedAt,
         durationSeconds,
         isMissed,
@@ -410,13 +422,14 @@ export async function POST(req: NextRequest) {
               .map((row) => row.numeroAppele)
           ),
         ],
-        // Rows that will import but land without an Équipe — usually a line
-        // number missing from the routing table.
-        unroutedNumbers: [
+        // Rows that will import but land without an Équipe — now always
+        // because the adviser they matched has no team on their profile, which
+        // is what keeps their calls out of every entity workspace.
+        advisersWithoutTeam: [
           ...new Set(
             parsed
-              .filter((row) => !row.error && !row.teamId)
-              .map((row) => row.numeroAppelant || row.numeroAppele)
+              .filter((row) => !row.error && row.conseiller && !row.teamId)
+              .map((row) => `${row.conseiller!.prenom} ${row.conseiller!.nom}`)
           ),
         ],
       });
@@ -439,7 +452,8 @@ export async function POST(req: NextRequest) {
     const callsToCreate: Prisma.CallCreateManyInput[] = validRows.map((row) => {
       const startedAt = row.startedAt!;
       return {
-        // Line and team both come from the routing number resolved at parse time.
+        // The line records which trunk the call arrived on; the team comes
+        // from the conseiller, so the entity follows the adviser.
         phoneLineId: row.lineId ?? defaultLineId,
         teamId: row.teamId,
         assignedUserId: row.conseiller!.id,

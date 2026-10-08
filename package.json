@@ -19,6 +19,7 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:seed": "tsx prisma/seed.ts",
+    "db:purge-calls": "tsx scripts/purge-calls.ts",
     "db:studio": "prisma studio",
     "setup": "npm install && npm run db:push && npm run db:seed"
   },

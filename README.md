@@ -265,6 +265,48 @@ Paramètres communs : `entity` (CPA/ALM), `lineType` (alias `pole`, `subTeam`),
 `teamId`, `lineId`, `statut`, `coachId`, `userId` (alias `conseillerId`), et
 `period` ou `dateFrom`/`dateTo` (alias `startDate`/`endDate`).
 
+### Entité d'un appel : l'équipe du conseiller
+
+L'entité (CPA / ALM) et le pôle (Auto / Santé) d'un appel sont ceux du
+**conseiller qui l'a pris**, jamais du numéro standard sur lequel il est
+arrivé. Les deux entités répondent sur des numéros standard partagés : filtrer
+sur la ligne classait le travail d'un conseiller CPA sous ALM dès que l'appel
+entrait par une ligne ALM.
+
+Concrètement, `callEntityWhere` interroge `assignedUser.team`, pas
+`calls.teamId` ni `phone_lines.teamId`. Trois conséquences utiles :
+
+- `/admin/entites/CPA` montre tout le travail des conseillers CPA, quelle que
+  soit la ligne utilisée — et rien d'autre ;
+- corriger l'équipe d'un conseiller reclasse tout son historique d'un coup,
+  sans toucher une seule ligne d'appel ;
+- un appel sans conseiller assigné n'appartient à aucune entité, ce qui est la
+  réponse honnête : personne ne l'a traité.
+
+À l'import, l'appel hérite de l'équipe du conseiller identifié par son numéro
+(`Numéro appelé`). `Numéro appelant` ne sert plus qu'à retrouver la ligne
+affichée dans la colonne « Ligne ». Un conseiller sans équipe est signalé dans
+l'aperçu d'import : ses appels s'importent mais n'apparaîtront dans aucun
+espace d'entité.
+
+### Vider l'historique d'appels
+
+```bash
+npm run db:purge-calls              # aperçu, ne modifie rien
+npm run db:purge-calls -- --yes     # supprime call_results puis calls
+npm run db:purge-calls -- --yes --batches   # vide aussi le journal d'imports
+```
+
+Le script (`scripts/purge-calls.ts`) supprime **uniquement** l'historique
+d'appels, dans une transaction, et compte les tables hors périmètre (users,
+teams, phone_lines, call_result_options, keyyo_config, login_logs) avant et
+après : si l'une d'elles bouge, il échoue au lieu de se taire.
+`call_results` part en premier — c'est une clé étrangère vers `calls`.
+
+Sans accès CLI à la base (Supabase), `prisma/sql/005-purge-calls.sql` fait
+exactement la même chose depuis l'éditeur SQL. L'opération est irréversible :
+sauvegardez avant si les données comptent.
+
 ### Contrats signés
 
 Le classement (`/admin/classement`, `/api/analytics`) est ordonné par
