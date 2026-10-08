@@ -35,13 +35,18 @@ export default function CoachDashboardPage() {
       </div>
 
       {loading ? (
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6 animate-pulse">
-          {[...Array(5)].map((_, i) => <div key={i} className="h-24 bg-slate-100 rounded-xl" />)}
+        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4 mb-6 animate-pulse">
+          {[...Array(6)].map((_, i) => <div key={i} className="h-24 bg-slate-100 rounded-xl" />)}
         </div>
       ) : stats && (
         <>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
-            <StatCard label="Total appels" tone="brand"   value={stats.totalAppels} />
+          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4 mb-6">
+            <StatCard label="Total prospects" tone="brand"
+              value={stats.totalProspects ?? stats.totalAppels}
+              sub={`${stats.totalAppels} appel${stats.totalAppels > 1 ? "s" : ""} au total`} />
+            <StatCard label="Doublons" tone="amber" value={stats.totalDoublons ?? 0}
+              sub="appels répétés"
+              subColor={(stats.totalDoublons ?? 0) > 0 ? "text-amber-600" : "text-slate-400"} />
             <StatCard label="Contrats signés" tone="emerald" value={stats.totalContrats ?? 0} subColor="text-emerald-600" />
             <StatCard label="Devis réalisés" tone="indigo" value={stats.totalDevis}   subColor="text-indigo-600" />
             <StatCard label="Appels manqués" tone="rose" value={stats.totalManques} subColor="text-rose-500" />

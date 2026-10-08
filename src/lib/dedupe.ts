@@ -252,3 +252,29 @@ export function wantsGrouping(params: URLSearchParams): boolean {
   const raw = params.get("group") ?? params.get("dedupe");
   return raw === "1" || raw === "true";
 }
+
+/**
+ * How many distinct prospects a set of calls represents.
+ *
+ * Counts on the NORMALISED number, so the same mobile arriving as
+ * "+33687814485" from the API and "0687814485" from a spreadsheet is one
+ * prospect — a plain `COUNT(DISTINCT caller_number)` in SQL would call those
+ * two, and the dashboard would disagree with the grouped call list.
+ *
+ * A withheld or blank number counts as its own prospect: two anonymous callers
+ * are not one person, and this is exactly what `groupCallsByCaller` does with
+ * them. The two therefore always agree — this returns the number of rows that
+ * grouping would produce for the same calls.
+ */
+export function countUniqueCallers(calls: Array<{ callerNumber: string }>): number {
+  const seen = new Set<string>();
+  let anonymous = 0;
+
+  for (const call of calls) {
+    const key = normalizePhone(call.callerNumber);
+    if (key) seen.add(key);
+    else anonymous++;
+  }
+
+  return seen.size + anonymous;
+}

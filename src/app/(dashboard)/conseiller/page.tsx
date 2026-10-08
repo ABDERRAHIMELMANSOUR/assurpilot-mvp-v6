@@ -63,12 +63,16 @@ export default function ConseillerPage() {
       )}
 
       {loading ? (
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6 animate-pulse">
-          {[...Array(5)].map((_, i) => <div key={i} className="h-24 bg-slate-100 rounded-xl" />)}
+        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4 mb-6 animate-pulse">
+          {[...Array(6)].map((_, i) => <div key={i} className="h-24 bg-slate-100 rounded-xl" />)}
         </div>
       ) : stats && (
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
-          <StatCard label="Total appels" tone="brand"  value={stats.total}    sub={`${stats.repondus} répondus`} />
+        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4 mb-6">
+          <StatCard label="Total prospects" tone="brand" value={stats.prospects ?? stats.total}
+            sub={`${stats.total} appel${stats.total > 1 ? "s" : ""} · ${stats.repondus} répondus`} />
+          <StatCard label="Doublons" tone="amber" value={stats.doublons ?? 0}
+            sub="appels répétés"
+            subColor={(stats.doublons ?? 0) > 0 ? "text-amber-600" : "text-slate-400"} />
           <StatCard label="Contrats signés" tone="emerald" value={stats.contrats ?? 0}
             sub={`Taux ${stats.tauxContrat ?? 0}%`} subColor="text-emerald-600" />
           <StatCard label="Appels manqués" tone="rose" value={stats.manques}

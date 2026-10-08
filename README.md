@@ -289,6 +289,35 @@ affichée dans la colonne « Ligne ». Un conseiller sans équipe est signalé d
 l'aperçu d'import : ses appels s'importent mais n'apparaîtront dans aucun
 espace d'entité.
 
+### Prospects et doublons
+
+La première carte des tableaux de bord compte les **numéros appelants
+distincts**, pas les lignes d'appel : un prospect qui rappelle trois fois est
+un lead, pas trois. Les tentatives répétées ont leur propre carte
+« Doublons », et le volume brut reste en sous-titre, donc les trois chiffres se
+recoupent à l'écran (300 prospects + 71 doublons = 371 appels).
+
+`/api/analytics` renvoie `totalProspects` et `totalDoublons` à côté de
+`totalAppels` (inchangé, toujours le nombre d'appels), et chaque ligne du
+classement porte `prospects` / `doublons`. La carte s'appelle « Total
+prospects » plutôt que « Total appels » parce qu'elle ne compte plus des
+appels ; `totalAppels` reste donc exact pour le taux de conversion.
+
+Deux points de méthode :
+
+- l'unicité porte sur le numéro **normalisé** (`normalizePhone`), comme le
+  regroupement : `+33687814485`, `0687814485` et `33687814485` sont un seul
+  prospect, là où un `COUNT(DISTINCT caller_number)` SQL en compterait trois ;
+- `totalProspects` est calculé sur l'**ensemble** du périmètre filtré, pas en
+  additionnant les prospects de chaque conseiller : un prospect ayant joint
+  deux conseillers serait sinon compté deux fois. Les autres totaux restent la
+  somme des lignes du classement.
+
+Invariant vérifié : `totalProspects` est exactement le nombre de lignes que
+`/api/calls?group=1` renvoie pour les mêmes filtres — la carte et le tableau ne
+peuvent pas se contredire. Un numéro masqué compte pour un prospect à lui seul,
+des deux côtés : deux appelants anonymes ne sont pas une même personne.
+
 ### Vider l'historique d'appels
 
 ```bash

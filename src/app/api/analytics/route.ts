@@ -9,13 +9,27 @@ import { directReportsWhere } from "@/lib/scope";
 import { parseEntity, parseSubTeam, userScopeWhere } from "@/lib/entity";
 import { isContractResult } from "@/lib/contracts";
 import { retentionClause } from "@/lib/retention";
+import { countUniqueCallers } from "@/lib/dedupe";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const DEVIS = "DEVIS_REALISE";
 
-type CallWithResult = { isMissed: boolean; durationSeconds: number; result: { resultat: string } | null };
+type CallWithResult = {
+  callerNumber: string;
+  isMissed: boolean;
+  durationSeconds: number;
+  result: { resultat: string } | null;
+};
+
+/** The projection every tally needs; kept here so the two queries can't drift. */
+const TALLY_SELECT = {
+  callerNumber: true,
+  isMissed: true,
+  durationSeconds: true,
+  result: { select: { resultat: true } },
+} as const;
 
 function tally(calls: CallWithResult[]) {
   const total = calls.length;
@@ -25,8 +39,16 @@ function tally(calls: CallWithResult[]) {
   // Signed contracts are the commercial outcome the ranking is built on; devis
   // stays alongside it because the conversion rate is still read from it.
   const contrats = calls.filter((c) => isContractResult(c.result?.resultat)).length;
+
+  // Distinct prospects behind those calls, and the repeat attempts they hide.
+  // One prospect ringing three times is one lead and two doublons, not three
+  // leads — counting rows overstated reach by exactly the repeat volume.
+  const prospects = countUniqueCallers(calls);
+
   return {
     total,
+    prospects,
+    doublons: total - prospects,
     manques,
     repondus,
     devis,
@@ -84,11 +106,7 @@ export async function GET(req: NextRequest) {
     if (user.role === "CONSEILLER") {
       const calls = await prisma.call.findMany({
         where: { assignedUserId: user.userId, ...startedAtWhere },
-        select: {
-          isMissed: true,
-          durationSeconds: true,
-          result: { select: { resultat: true } },
-        },
+        select: TALLY_SELECT,
       });
 
       const stats = tally(calls);
@@ -116,11 +134,7 @@ export async function GET(req: NextRequest) {
         team: { select: { nom: true } },
         assignedCalls: {
           where: startedAtWhere,
-          select: {
-            isMissed: true,
-            durationSeconds: true,
-            result: { select: { resultat: true } },
-          },
+          select: TALLY_SELECT,
         },
       },
     });
@@ -136,8 +150,20 @@ export async function GET(req: NextRequest) {
       params.get("sort")
     );
 
+    const totalAppels = leaderboard.reduce((sum, a) => sum + a.total, 0);
+
+    // Distinct prospects across the WHOLE filtered set, not the sum of each
+    // agent's uniques: one prospect who rang two different advisers is one
+    // prospect, and summing the rows would count them twice. This is why the
+    // two headline cards cannot be derived from the leaderboard the way the
+    // other totals are.
+    const totalProspects = countUniqueCallers(agents.flatMap((a) => a.assignedCalls));
+
     const totals = {
-      totalAppels: leaderboard.reduce((sum, a) => sum + a.total, 0),
+      totalAppels,
+      totalProspects,
+      // Repeat attempts: 371 calls from 300 numbers = 71 doublons.
+      totalDoublons: totalAppels - totalProspects,
       totalDevis: leaderboard.reduce((sum, a) => sum + a.devis, 0),
       totalContrats: leaderboard.reduce((sum, a) => sum + a.contrats, 0),
       totalManques: leaderboard.reduce((sum, a) => sum + a.manques, 0),
