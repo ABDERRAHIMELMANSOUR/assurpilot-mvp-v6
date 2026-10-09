@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback } from "react";
 import StatCard from "@/components/ui/StatCard";
 import DateFilter, { DateFilterState, buildQueryString } from "@/components/ui/DateFilter";
-import ScopeFilter, { EMPTY_SCOPE, ScopeFilterState, withScope } from "@/components/ui/ScopeFilter";
+import ScopeFilter, { EMPTY_SCOPE, ScopeFilterState, coachName, useCoaches, withScope } from "@/components/ui/ScopeFilter";
 import StatsSection from "@/components/ui/StatsSection";
 import Link from "next/link";
 import { errorMessage } from "@/lib/fetchJson";
@@ -14,6 +14,7 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true);
   const [filter,  setFilter]  = useState<DateFilterState>(EMPTY);
   const [scope,   setScope]   = useState<ScopeFilterState>(EMPTY_SCOPE);
+  const coaches = useCoaches();
   const [error,   setError]   = useState("");
 
   // Date range and scope are combined into one query string, so the metric
@@ -54,6 +55,7 @@ export default function AdminPage() {
   const scopeCaption = [
     scope.entity ? `Entité ${scope.entity}` : "Toutes les entités",
     scope.lineType === "AUTO" ? "Auto" : scope.lineType === "SANTE" ? "Santé" : "Toutes les lignes",
+    scope.coachId ? `Coach ${coachName(coaches, scope.coachId) || "sélectionné"}` : "Tous les coaches",
     filter.period
       ? PERIOD_LABEL[filter.period] ?? filter.period
       : filter.dateFrom || filter.dateTo

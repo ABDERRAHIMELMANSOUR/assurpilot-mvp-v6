@@ -4,6 +4,7 @@ import CallsTable from "@/components/ui/CallsTable";
 import DateFilter, { DateFilterState, buildQueryString } from "@/components/ui/DateFilter";
 import ExportCallsButton from "@/components/ui/ExportCallsButton";
 import GroupToggle from "@/components/ui/GroupToggle";
+import ScopeFilter, { EMPTY_SCOPE, ScopeFilterState, withScope } from "@/components/ui/ScopeFilter";
 import { errorMessage } from "@/lib/fetchJson";
 import { withGroup } from "@/lib/query";
 import Link from "next/link";
@@ -17,17 +18,22 @@ export default function AdminAppelsPage() {
   const [calls,   setCalls]   = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter,  setFilter]  = useState<DateFilterState>(EMPTY);
+  const [scope,   setScope]   = useState<ScopeFilterState>(EMPTY_SCOPE);
   const [statut,  setStatut]  = useState("all");
   const [grouped, setGrouped] = useState(true);
   const [error,   setError]   = useState("");
   const [truncated, setTruncated] = useState<{ shown: number; total: number } | null>(null);
+
+  // Date range + entity / line / coach, as one query string. The export sends
+  // the same thing minus the grouping, so the workbook matches the screen.
+  const query = withScope(buildQueryString(filter), scope);
 
   const fetchCalls = useCallback(async () => {
     setLoading(true); setError(""); setTruncated(null);
     try {
       // A failed request used to fall through to an empty array, which rendered
       // as "Aucun appel pour cette période" — indistinguishable from no data.
-      const res = await fetch("/api/calls" + withGroup(buildQueryString(filter), grouped));
+      const res = await fetch("/api/calls" + withGroup(query, grouped));
       if (!res.ok) {
         const body = await res.json().catch(() => null);
         throw new Error(body?.error ?? `Erreur ${res.status}`);
@@ -46,7 +52,7 @@ export default function AdminAppelsPage() {
     } finally {
       setLoading(false);
     }
-  }, [filter, grouped]);
+  }, [query, grouped]);
 
   useEffect(() => { fetchCalls(); }, [fetchCalls]);
 
@@ -77,7 +83,7 @@ export default function AdminAppelsPage() {
           <DateFilter value={filter} onChange={setFilter} />
           {/* Exports exactly what the filters above select — one row per call,
               never the grouped view, so the workbook keeps every attempt. */}
-          <ExportCallsButton query={buildQueryString(filter)} />
+          <ExportCallsButton query={query} />
           <Link href="/admin/appels/import" className="btn btn-secondary text-xs">
             ↑ Importer
           </Link>
@@ -87,20 +93,25 @@ export default function AdminAppelsPage() {
         </div>
       </div>
 
-      {/* Statut filters */}
-      <div className="flex gap-1.5 mb-4 flex-wrap">
-        {[
-          { key: "all",     label: "Tous" },
-          { key: "manques", label: "Manqués" },
-          { key: "devis",   label: "Devis" },
-          { key: "pending", label: "À qualifier" },
-          { key: "manual",  label: "Importés / Manuels" },
-        ].map((f) => (
-          <button key={f.key} onClick={() => setStatut(f.key)}
-            className={`btn text-xs py-1.5 ${statut === f.key ? "btn-primary" : "btn-secondary"}`}>
-            {f.label}
-          </button>
-        ))}
+      {/* Scope + statut filters on one line: the scope narrows what the server
+          returns, the statut buttons slice what came back. */}
+      <div className="flex flex-wrap items-center gap-3 mb-4">
+        <ScopeFilter value={scope} onChange={setScope} />
+        <div className="h-5 w-px bg-slate-200 hidden sm:block" />
+        <div className="flex gap-1.5 flex-wrap">
+          {[
+            { key: "all",     label: "Tous" },
+            { key: "manques", label: "Manqués" },
+            { key: "devis",   label: "Devis" },
+            { key: "pending", label: "À qualifier" },
+            { key: "manual",  label: "Importés / Manuels" },
+          ].map((f) => (
+            <button key={f.key} onClick={() => setStatut(f.key)}
+              className={`btn text-xs py-1.5 ${statut === f.key ? "btn-primary" : "btn-secondary"}`}>
+              {f.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Admin note for manual calls */}

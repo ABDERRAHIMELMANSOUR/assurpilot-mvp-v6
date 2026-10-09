@@ -296,6 +296,35 @@ Paramètres communs : `entity` (CPA/ALM), `lineType` (alias `pole`, `subTeam`),
 `teamId`, `lineId`, `statut`, `coachId`, `userId` (alias `conseillerId`), et
 `period` ou `dateFrom`/`dateTo` (alias `startDate`/`endDate`).
 
+### Barre de périmètre : entité, ligne, coach
+
+`ScopeFilter` porte les trois menus — entité, ligne/pôle et « Tous les
+coaches » — et `withScope` est le seul endroit qui les traduit en paramètres
+d'URL. Un seul composant pour `/admin`, `/admin/appels` et
+`/admin/classement` : les menus ne peuvent pas diverger d'une page à l'autre,
+et le tableau, les statistiques et l'export Excel lisent les mêmes paramètres.
+
+La liste des coachs vient de `/api/users?role=SUPERVISEUR`. `useCoaches` et
+`coachName` sont exportés pour qu'une page puisse nommer le coach choisi —
+dans le sous-titre des statistiques, par exemple — sans redéfinir ce qu'est la
+liste.
+
+`coachId` ne se comporte pas tout à fait de la même façon des deux côtés, et
+c'est voulu :
+
+- `/api/analytics` sélectionne les **conseillers rattachés** au coach
+  (`superviseurId`). Comme pour l'entité, le filtre porte sur les personnes,
+  donc les cartes restent égales à la somme des lignes en dessous ;
+- `/api/calls` et l'export retiennent tout l'espace de travail du coach — ses
+  propres appels, ceux qu'il a transférés et ceux de ses conseillers — car
+  c'est ce qu'on attend d'une liste d'appels filtrée sur un coach.
+
+Un coach qui consulte son propre tableau de bord est déjà limité à ses
+rattachés ; le paramètre ne lui sert donc que sur lui-même, un administrateur
+pouvant pivoter sur n'importe qui. Un identifiant inconnu est ignoré plutôt que
+refusé — une URL mise en favori avec un coach supprimé ne doit pas casser la
+page — et `applied.coachId` indique ce qui a réellement été appliqué.
+
 ### Entité d'un appel : l'équipe du conseiller
 
 L'entité (CPA / ALM) et le pôle (Auto / Santé) d'un appel sont ceux du

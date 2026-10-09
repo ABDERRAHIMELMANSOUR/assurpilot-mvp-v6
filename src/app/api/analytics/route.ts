@@ -109,6 +109,20 @@ export async function GET(req: NextRequest) {
     const subTeam = parseSubTeam(params.get("lineType") ?? params.get("subTeam"));
     const scopeWhere = userScopeWhere(entity, subTeam);
 
+    // Narrow to one coach's roster. Same idea as the entity filter: it selects
+    // PEOPLE, so the cards stay equal to the sum of the rows beneath them.
+    //
+    // A coach viewing their own dashboard is already limited to their direct
+    // reports, so the parameter is theirs to use only on themselves; an admin
+    // may pivot on anyone. Anything else is ignored rather than refused — a
+    // stale coach id in a bookmarked URL should not break the dashboard.
+    const requestedCoachId = params.get("coachId") ?? "";
+    const isSuperviseur = user.role === "SUPERVISEUR";
+    const coachWhere: Prisma.UserWhereInput =
+      requestedCoachId && (!isSuperviseur || requestedCoachId === user.userId)
+        ? { superviseurId: requestedCoachId }
+        : {};
+
     if (user.role === "CONSEILLER") {
       const calls = await prisma.call.findMany({
         where: { assignedUserId: user.userId, ...startedAtWhere },
@@ -124,13 +138,13 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ ...stats, dureeMoyenne });
     }
 
-    const isSuperviseur = user.role === "SUPERVISEUR";
     const agents = await prisma.user.findMany({
       where: {
         AND: [
           // Coach metrics cover only their own conseillers.
           isSuperviseur ? directReportsWhere(user.userId) : { role: "CONSEILLER" },
           scopeWhere,
+          coachWhere,
         ],
       },
       select: {
@@ -178,6 +192,8 @@ export async function GET(req: NextRequest) {
     const applied = {
       entity,
       lineType: subTeam,
+      // Echoes the coach actually applied, which is "" when the id was ignored.
+      coachId: "superviseurId" in coachWhere ? requestedCoachId : "",
       sort: params.get("sort") === "conversion" ? "conversion" : "contrats",
     };
 
