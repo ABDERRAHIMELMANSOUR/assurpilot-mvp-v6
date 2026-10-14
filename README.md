@@ -528,13 +528,44 @@ Attendu : `advisor_call_settings` — `userId, isActiveForCalls, isBoosted, upda
 updatedById` ; `advisor_call_applied` — `userId, isActiveForCalls, isBoosted,
 appliedAt, appliedById`.
 
-**Migrations, dans l'ordre : `006` puis `007`** (`prisma/sql/`). Le `007` crée
-`advisor_call_applied` et aligne aussi `advisor_call_settings` sur ce que Prisma
-attend (`ON UPDATE CASCADE` sur la clé étrangère, pas de `DEFAULT` sur
-`updatedAt`) : la première version du `006` s'en écartait, sans conséquence sur le
-comportement mais un futur `npm run db:push` l'aurait réécrit en silence. Vérifié
-par `prisma migrate diff` : écart nul à la fois sur une base neuve (`006` corrigé +
-`007`) et sur une base où l'ancien `006` a déjà tourné.
+**Migrations, dans l'ordre : `006` puis `007`** (`prisma/sql/`). Chacun est
+**convergent**, pas seulement idempotent.
+
+Un `CREATE TABLE IF NOT EXISTS` seul saute une table déjà présente *quelle que soit
+sa forme* : une table laissée à moitié construite — un simple `("userId")`, par
+exemple — était acceptée sans rien dire, et l'application échouait ensuite sur les
+colonnes absentes (Prisma `P2022`). C'est exactement ce qui s'est produit en
+production. Les deux fichiers amènent désormais la table à la forme exacte du
+modèle Prisma **depuis n'importe quel point de départ** : création si absente,
+ajout de chaque colonne manquante, valeurs par défaut pour les lignes existantes,
+types / `NOT NULL` / défauts conformes, clé primaire et clé étrangère remplacées
+par celles que Prisma attend (quel que soit le nom des anciennes), RLS activé, puis
+**vérification** de la forme finale — le script échoue, et tout est annulé (une
+seule transaction), si elle n'est pas conforme. Une colonne `userId` d'un mauvais
+type est refusée d'entrée avec un message explicite.
+
+Ils ne touchent qu'à leur table (une table de fonctionnalité que personne n'avait pu
+utiliser). Les seules lignes supprimées sont celles qui ne pourraient jamais servir :
+sans conseiller, doublon pour un même conseiller, ou conseiller disparu. Les
+réglages réels d'un conseiller sont conservés tels quels. Si le SQL editor de
+Supabase demande confirmation à cause des `DELETE` / `DROP CONSTRAINT`, c'est
+attendu.
+
+**Si vous voyez `Colonne manquante en base` ou une erreur Prisma `P2022` : relancez
+`006` puis `007`, même s'ils ont déjà été exécutés.** Pour vérifier l'ensemble de la
+base (toutes les tables, pas seulement celles-ci) contre le schéma Prisma :
+
+```bash
+npm run db:drift    # "-- This is an empty migration." = base conforme
+```
+
+Vérifié sur une base de test par `prisma migrate diff` (écart nul) et par un appel
+réel de l'application (lecture de la page admin, écriture coach, approbation admin),
+depuis 9 états de départ : base neuve ; table réduite à `userId` (le cas réel) ;
+deux tables réduites avec une ligne ; sans clé, avec doublons, id `NULL` et ligne
+orpheline ; colonnes présentes mais nullables et remplies de `NULL` ; clé étrangère
+faite à la main sous un autre nom ; sortie de l'ancien `006` ; réglages réels déjà
+présents (conservés) ; et `userId` de type `uuid` (refusé proprement).
 
 L'état « appliqué » est dans une table **à part**, pas en colonnes de
 `advisor_call_settings`, parce que Prisma écrit toutes les colonnes d'un modèle à

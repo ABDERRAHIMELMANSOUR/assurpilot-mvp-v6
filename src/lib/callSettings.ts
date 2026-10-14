@@ -94,8 +94,9 @@ export function explainDbError(error: unknown): unknown {
     case "P2022":
       return new ApiError(
         503,
-        `Colonne manquante en base${where ? ` (${where})` : ""} : la base n'est pas alignée sur le schéma. ` +
-          "Exécutez prisma/sql/006-advisor-call-settings.sql puis 007-advisor-call-applied.sql."
+        `Colonne manquante en base${where ? ` (${where})` : ""} : une table est incomplète. ` +
+          "Relancez prisma/sql/006-advisor-call-settings.sql puis 007-advisor-call-applied.sql, même s'ils ont " +
+          "déjà été exécutés : ils réparent une table partielle."
       );
     case "P2024":
     case "P2037":
