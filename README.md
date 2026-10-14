@@ -400,6 +400,61 @@ somme des chiffres de ses membres : les prospects sont des numéros distincts, e
 un prospect ayant joint deux conseillers d'une même équipe est un prospect pour
 cette équipe.
 
+### Tableau de bord coach : réglages de réception
+
+`/superviseur` est l'espace du coach (`SUPERVISEUR`) : appels reçus par son
+équipe, puis un tableau « Par conseiller » (appels, prospects, manqués, devis,
+contrats, taux) avec deux commandes par ligne :
+
+- **Appels entrants** — interrupteur : le conseiller est-il éligible à recevoir
+  des appels ?
+- **Booster** — le conseiller est prioritaire dans la distribution.
+
+**Accès.** Réservé au coach, côté serveur : `superviseur/layout.tsx` redirige
+tout autre rôle (administrateur compris) vers son propre accueil, et les routes
+`/api/coach/advisors*` répondent 403. Avant ce garde-fou, le layout parent ne
+vérifiait que l'existence d'une session : un conseiller pouvait ouvrir
+`/superviseur` en tapant l'URL. Un coach n'agit que sur **ses** conseillers
+(rattachement direct `superviseurId`), jamais sur ceux d'un autre coach, ni sur
+un coach ou un administrateur.
+
+**Persistance.** Table `advisor_call_settings`, une ligne optionnelle par
+conseiller (`isActiveForCalls`, `isBoosted`, `updatedById`). **Pas de ligne =
+valeurs par défaut** (appels actifs, pas de boost) : aucun rattrapage à faire et
+aucune ligne existante n'est touchée.
+
+Ces deux réglages sont dans une table à part plutôt qu'en colonnes de `users`
+volontairement : `auth.ts` et une dizaine de routes lisent `users` sans `select`
+explicite, donc une colonne de plus y serait lue immédiatement — et le login
+casserait pour tout le monde tant que le SQL n'aurait pas tourné sur Supabase.
+Avec une table séparée, seul ce tableau de bord dépend de la migration.
+
+**À faire sur Supabase : exécuter `prisma/sql/006-advisor-call-settings.sql`**
+(additif, idempotent, aucune table existante modifiée). Tant que ce n'est pas
+fait, le tableau affiche un bandeau et grise les commandes ; le reste de
+l'application n'est pas affecté.
+
+**Règles** (appliquées par l'API, pas seulement par l'interface) :
+
+- couper les appels entrants retire aussi le boost, en une seule opération ;
+- on ne peut pas booster un conseiller dont les appels sont coupés (409) ;
+- un compte désactivé n'a pas de commandes modifiables (409) ;
+- seuls des booléens stricts sont acceptés — `"false"` est vrai en JavaScript.
+
+L'interface répond immédiatement puis se cale sur ce que le serveur a réellement
+enregistré ; un refus restaure l'état précédent et l'explique dans une
+notification.
+
+**Ce que ces réglages commandent aujourd'hui.** L'application ne distribue pas
+elle-même les appels entrants : l'affectation se fait dans le standard
+(Keyyo) et arrive ici par import. Les réglages sont donc **enregistrés et
+exposés**, mais **rien en production ne les lit encore** — couper les appels
+d'un conseiller ici ne l'empêche pas d'en recevoir tant que le standard ne
+consulte pas cette table. Le seul consommateur dans ce dépôt est le simulateur
+d'appels de développement (`/api/calls/mock`), qui écarte les conseillers coupés
+et favorise les boostés (poids ×3) ; c'est ce qui a permis de vérifier la
+sémantique de bout en bout.
+
 ### Vider l'historique d'appels
 
 ```bash

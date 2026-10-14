@@ -39,12 +39,36 @@ model User {
   transferredCalls Call[]       @relation("CallTransferredBy")
   callResults      CallResult[]
   loginLogs        LoginLog[]
+  // Per-advisor call-distribution switches. A relation field only: it adds no
+  // column to `users`, so every query that reads a user keeps working whether
+  // or not the advisor_call_settings table exists yet.
+  callSettings     AdvisorCallSettings?
 
   @@index([role])
   @@index([teamId])
   @@index([superviseurId])
   @@index([phoneNumber])
   @@map("users")
+}
+
+// What a coach has decided about how incoming calls reach one of their
+// advisers. One optional row per adviser: NO ROW MEANS THE DEFAULTS (taking
+// calls, not boosted), so existing advisers need no backfill and nothing in
+// `users` is touched.
+model AdvisorCallSettings {
+  userId           String   @id
+  // Whether this adviser is currently eligible to receive incoming calls.
+  isActiveForCalls Boolean  @default(true)
+  // Whether the adviser gets priority when calls are distributed. Only
+  // meaningful while isActiveForCalls is true; the API enforces that.
+  isBoosted        Boolean  @default(false)
+  updatedAt        DateTime @updatedAt
+  // The coach who last changed either switch.
+  updatedById      String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("advisor_call_settings")
 }
 
 model Team {

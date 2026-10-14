@@ -4,6 +4,7 @@ import type { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { CALL_USER_SELECT } from "@/lib/selects";
 import { badRequest, forbidden, handleApiError, requireRole } from "@/lib/api";
+import { asMigrationPending } from "@/lib/callSettings";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,6 +20,17 @@ const FAKE_NUMBERS = [
 
 function pick<T>(items: T[]): T {
   return items[Math.floor(Math.random() * items.length)];
+}
+
+/** How many times likelier a boosted adviser is to be picked. */
+const BOOST_WEIGHT = 3;
+
+/** Weighted draw: a boosted adviser appears BOOST_WEIGHT times in the pool. */
+function pickWeighted(agents: Array<{ id: string; callSettings: { isBoosted: boolean } | null }>): string {
+  const pool = agents.flatMap((a) =>
+    Array(a.callSettings?.isBoosted ? BOOST_WEIGHT : 1).fill(a.id)
+  );
+  return pick(pool);
 }
 
 export async function POST(req: NextRequest) {
@@ -38,12 +50,19 @@ export async function POST(req: NextRequest) {
 
     let agentId: string | undefined = userId;
     if (!agentId) {
+      // Honour the coach's switches: skip advisers whose incoming calls are off,
+      // and favour the boosted ones. No settings row means the defaults (taking
+      // calls, not boosted), so NOT(...false) keeps advisers who have no row.
       const agents = await prisma.user.findMany({
-        where: { role: "CONSEILLER", isActive: true },
-        select: { id: true },
+        where: {
+          role: "CONSEILLER",
+          isActive: true,
+          NOT: { callSettings: { is: { isActiveForCalls: false } } },
+        },
+        select: { id: true, callSettings: { select: { isBoosted: true } } },
       });
-      if (!agents.length) throw badRequest("Aucun conseiller actif");
-      agentId = pick(agents).id;
+      if (!agents.length) throw badRequest("Aucun conseiller disponible pour recevoir des appels");
+      agentId = pickWeighted(agents);
     }
 
     const duration = isMissed ? 0 : Math.floor(Math.random() * 480) + 60;
@@ -65,6 +84,6 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ success: true, call }, { status: 201 });
   } catch (error) {
-    return handleApiError(error, "POST /api/calls/mock");
+    return handleApiError(asMigrationPending(error), "POST /api/calls/mock");
   }
 }
