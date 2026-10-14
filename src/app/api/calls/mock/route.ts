@@ -4,7 +4,7 @@ import type { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { CALL_USER_SELECT } from "@/lib/selects";
 import { badRequest, forbidden, handleApiError, requireRole } from "@/lib/api";
-import { asMigrationPending } from "@/lib/callSettings";
+import { explainDbError } from "@/lib/callSettings";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -84,6 +84,6 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ success: true, call }, { status: 201 });
   } catch (error) {
-    return handleApiError(asMigrationPending(error), "POST /api/calls/mock");
+    return handleApiError(explainDbError(error), "POST /api/calls/mock");
   }
 }

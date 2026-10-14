@@ -15,7 +15,7 @@ import type { NextRequest } from "next/server";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { badRequest, handleApiError, readJson, requireRole } from "@/lib/api";
-import { asMigrationPending } from "@/lib/callSettings";
+import { explainDbError } from "@/lib/callSettings";
 import { loadAdviserRows } from "@/lib/adminRouting";
 import { DEFAULT_ROUTING } from "@/lib/routingState";
 
@@ -113,6 +113,6 @@ export async function POST(req: NextRequest) {
     const fresh = await loadAdviserRows(applied.concat(stale));
     return NextResponse.json({ applied, stale, skipped, advisers: fresh });
   } catch (error) {
-    return handleApiError(asMigrationPending(error), "POST /api/admin/call-settings/apply");
+    return handleApiError(explainDbError(error), "POST /api/admin/call-settings/apply");
   }
 }

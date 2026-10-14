@@ -4,7 +4,7 @@
 // been APPLIED on the telephony system, and the gap between the two. ADMIN ONLY.
 import { NextResponse } from "next/server";
 import { handleApiError, requireRole } from "@/lib/api";
-import { asMigrationPending } from "@/lib/callSettings";
+import { explainDbError } from "@/lib/callSettings";
 import { loadAdviserRows } from "@/lib/adminRouting";
 
 export const runtime = "nodejs";
@@ -18,6 +18,6 @@ export async function GET() {
     // browser's clock against server-stamped change times.
     return NextResponse.json({ advisers, serverTime: new Date().toISOString() });
   } catch (error) {
-    return handleApiError(asMigrationPending(error), "GET /api/admin/call-settings");
+    return handleApiError(explainDbError(error), "GET /api/admin/call-settings");
   }
 }

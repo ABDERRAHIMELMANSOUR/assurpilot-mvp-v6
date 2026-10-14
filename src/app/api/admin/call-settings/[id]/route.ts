@@ -10,7 +10,7 @@ import type { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { conflict, handleApiError, notFound, readJson, requireRole } from "@/lib/api";
 import {
-  asMigrationPending,
+  explainDbError,
   parseCallSettingsPatch,
   resolveCallSettings,
 } from "@/lib/callSettings";
@@ -52,6 +52,6 @@ export async function PATCH(req: NextRequest, { params }: RouteContext) {
     const [row] = await loadAdviserRows([target.id]);
     return NextResponse.json({ adviser: row });
   } catch (error) {
-    return handleApiError(asMigrationPending(error), "PATCH /api/admin/call-settings/[id]");
+    return handleApiError(explainDbError(error), "PATCH /api/admin/call-settings/[id]");
   }
 }

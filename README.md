@@ -509,6 +509,25 @@ l'URL (l'API refusait les données, mais les écrans et leurs commandes
 s'affichaient). Les routes `/api/admin/call-settings*` répondent 403 à tout autre
 rôle.
 
+**Diagnostic des erreurs de base.** Les routes de réglages (coach et admin)
+traduisent les erreurs Prisma en messages exploitables au lieu du « Erreur de
+base de données » générique : table absente (`P2021`) → le fichier SQL à exécuter ;
+colonne absente (`P2022`) → la table et la colonne concernées ; pool de connexions
+saturé ou coupé (`P2024` / `P2037` / `P1017`) → la piste `connection_limit` ; tout
+autre code Prisma → affiché avec son code. Seuls des codes et des noms d'objets,
+jamais la requête ni ses valeurs. Pour vérifier d'un coup où en est la base :
+
+```sql
+select table_name, column_name, data_type
+from information_schema.columns
+where table_name in ('advisor_call_settings', 'advisor_call_applied')
+order by table_name, ordinal_position;
+```
+
+Attendu : `advisor_call_settings` — `userId, isActiveForCalls, isBoosted, updatedAt,
+updatedById` ; `advisor_call_applied` — `userId, isActiveForCalls, isBoosted,
+appliedAt, appliedById`.
+
 **Migrations, dans l'ordre : `006` puis `007`** (`prisma/sql/`). Le `007` crée
 `advisor_call_applied` et aligne aussi `advisor_call_settings` sur ce que Prisma
 attend (`ON UPDATE CASCADE` sur la clé étrangère, pas de `DEFAULT` sur

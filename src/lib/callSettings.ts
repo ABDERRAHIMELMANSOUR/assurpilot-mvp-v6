@@ -61,20 +61,56 @@ export function resolveCallSettings(current: CallSettings, patch: CallSettingsPa
 }
 
 /**
- * Two tables back this feature: advisor_call_settings (prisma/sql/006, the
- * coach's requests) and advisor_call_applied (prisma/sql/007, what an admin has
- * applied on the PBX). Until one has been created Prisma raises P2021; name the
- * file that fixes it rather than surfacing a generic 500.
+ * Turns a database failure on the routing endpoints into a message that says
+ * what to do, instead of the shared handler's bare "Erreur de base de données".
+ *
+ * Those endpoints are for coaches and administrators, so naming the Prisma code
+ * and the table or column involved costs nothing and is the difference between
+ * "something is wrong" and a one-line fix. (Codes and object names, never the
+ * query or its values.) Anything that is not a recognised database error is
+ * returned untouched for the shared handler to deal with.
+ *
+ *   P2021  table missing          -> which migration to run
+ *   P2022  column missing         -> the database is out of step with the schema
+ *   P2024 / P2037 / P1017         -> connection pool exhausted or dropped
+ *   other known Prisma errors     -> reported WITH their code
  */
-export function asMigrationPending(error: unknown): unknown {
-  if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2021") {
-    const table = String(error.meta?.table ?? "");
-    return new ApiError(
-      503,
-      table.includes("advisor_call_applied")
-        ? "Cette page nécessite une migration : exécutez prisma/sql/007-advisor-call-applied.sql."
-        : "Les réglages d'appels ne sont pas encore disponibles : exécutez prisma/sql/006-advisor-call-settings.sql."
-    );
+export function explainDbError(error: unknown): unknown {
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError)) return error;
+
+  const meta = error.meta ?? {};
+  const where = [meta.table, meta.column, meta.modelName].filter(Boolean).join(" / ");
+
+  switch (error.code) {
+    case "P2021": {
+      const table = String(meta.table ?? "");
+      return new ApiError(
+        503,
+        table.includes("advisor_call_applied")
+          ? "Cette page nécessite une migration : exécutez prisma/sql/007-advisor-call-applied.sql."
+          : "Les réglages d'appels ne sont pas encore disponibles : exécutez prisma/sql/006-advisor-call-settings.sql."
+      );
+    }
+    case "P2022":
+      return new ApiError(
+        503,
+        `Colonne manquante en base${where ? ` (${where})` : ""} : la base n'est pas alignée sur le schéma. ` +
+          "Exécutez prisma/sql/006-advisor-call-settings.sql puis 007-advisor-call-applied.sql."
+      );
+    case "P2024":
+    case "P2037":
+    case "P1017":
+      return new ApiError(
+        503,
+        `Connexion à la base saturée ou interrompue (Prisma ${error.code}). Réessayez dans un instant ; ` +
+          "si cela persiste, vérifiez la limite de connexions de DATABASE_URL (connection_limit=1 avec le pooler)."
+      );
+    // Codes the shared handler already answers precisely (duplicate, bad reference, not found).
+    case "P2002":
+    case "P2003":
+    case "P2025":
+      return error;
+    default:
+      return new ApiError(500, `Erreur de base de données (Prisma ${error.code}${where ? ` — ${where}` : ""})`);
   }
-  return error;
 }

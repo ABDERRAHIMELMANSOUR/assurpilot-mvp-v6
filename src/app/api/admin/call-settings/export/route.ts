@@ -7,7 +7,7 @@
 import type { NextRequest } from "next/server";
 import * as XLSX from "xlsx";
 import { badRequest, handleApiError, readJson, requireRole } from "@/lib/api";
-import { asMigrationPending } from "@/lib/callSettings";
+import { explainDbError } from "@/lib/callSettings";
 import { loadAdviserRows } from "@/lib/adminRouting";
 import { pendingSummary } from "@/lib/routingState";
 
@@ -93,6 +93,6 @@ export async function POST(req: NextRequest) {
       },
     });
   } catch (error) {
-    return handleApiError(asMigrationPending(error), "POST /api/admin/call-settings/export");
+    return handleApiError(explainDbError(error), "POST /api/admin/call-settings/export");
   }
 }

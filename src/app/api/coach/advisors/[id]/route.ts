@@ -16,7 +16,7 @@ import {
 import { isDirectReport } from "@/lib/scope";
 import {
   DEFAULT_CALL_SETTINGS,
-  asMigrationPending,
+  explainDbError,
   parseCallSettingsPatch,
   resolveCallSettings,
 } from "@/lib/callSettings";
@@ -60,6 +60,6 @@ export async function PATCH(req: NextRequest, { params }: RouteContext) {
     // clears the boost, and the client must show what was actually stored.
     return NextResponse.json({ userId: target.id, ...saved });
   } catch (error) {
-    return handleApiError(asMigrationPending(error), "PATCH /api/coach/advisors/[id]");
+    return handleApiError(explainDbError(error), "PATCH /api/coach/advisors/[id]");
   }
 }

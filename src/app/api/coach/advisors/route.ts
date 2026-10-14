@@ -11,7 +11,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { handleApiError, requireRole } from "@/lib/api";
 import { directReportsWhere } from "@/lib/scope";
-import { DEFAULT_CALL_SETTINGS, asMigrationPending } from "@/lib/callSettings";
+import { DEFAULT_CALL_SETTINGS, explainDbError } from "@/lib/callSettings";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -57,6 +57,6 @@ export async function GET() {
       })),
     });
   } catch (error) {
-    return handleApiError(asMigrationPending(error), "GET /api/coach/advisors");
+    return handleApiError(explainDbError(error), "GET /api/coach/advisors");
   }
 }
