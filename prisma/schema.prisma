@@ -43,6 +43,8 @@ model User {
   // column to `users`, so every query that reads a user keeps working whether
   // or not the advisor_call_settings table exists yet.
   callSettings     AdvisorCallSettings?
+  // What an administrator has applied on the PBX for this adviser — see below.
+  callApplied      AdvisorCallApplied?
 
   @@index([role])
   @@index([teamId])
@@ -63,12 +65,35 @@ model AdvisorCallSettings {
   // meaningful while isActiveForCalls is true; the API enforces that.
   isBoosted        Boolean  @default(false)
   updatedAt        DateTime @updatedAt
-  // The coach who last changed either switch.
+  // The coach (or administrator, on override) who last changed either switch.
   updatedById      String?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("advisor_call_settings")
+}
+
+// What has actually been APPLIED on the telephony system (Keyyo / PBX) for an
+// adviser, as recorded by an administrator. AdvisorCallSettings above is what a
+// coach REQUESTED; an adviser "needs a change on the PBX" exactly when the two
+// differ. Optional row, defaults mirror the requested defaults, so an adviser
+// nobody has touched is in sync and shows nothing to do.
+//
+// A separate table on purpose. Prisma writes every column of a model on INSERT,
+// defaults included, so extra columns on advisor_call_settings would have made
+// the coach's switches depend on this migration; as its own table, the coach
+// path never touches it, and recording an approval never counts as the coach
+// having edited the request.
+model AdvisorCallApplied {
+  userId           String   @id
+  isActiveForCalls Boolean  @default(true)
+  isBoosted        Boolean  @default(false)
+  appliedAt        DateTime @default(now())
+  appliedById      String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("advisor_call_applied")
 }
 
 model Team {

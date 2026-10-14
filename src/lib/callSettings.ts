@@ -61,15 +61,19 @@ export function resolveCallSettings(current: CallSettings, patch: CallSettingsPa
 }
 
 /**
- * The advisor_call_settings table is created by prisma/sql/006. Until that has
- * been run, Prisma raises P2021 ("table does not exist"); say so plainly rather
- * than surfacing a generic 500, since the fix is a single SQL file.
+ * Two tables back this feature: advisor_call_settings (prisma/sql/006, the
+ * coach's requests) and advisor_call_applied (prisma/sql/007, what an admin has
+ * applied on the PBX). Until one has been created Prisma raises P2021; name the
+ * file that fixes it rather than surfacing a generic 500.
  */
 export function asMigrationPending(error: unknown): unknown {
   if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2021") {
+    const table = String(error.meta?.table ?? "");
     return new ApiError(
       503,
-      "Les réglages d'appels ne sont pas encore disponibles : exécutez prisma/sql/006-advisor-call-settings.sql."
+      table.includes("advisor_call_applied")
+        ? "Cette page nécessite une migration : exécutez prisma/sql/007-advisor-call-applied.sql."
+        : "Les réglages d'appels ne sont pas encore disponibles : exécutez prisma/sql/006-advisor-call-settings.sql."
     );
   }
   return error;

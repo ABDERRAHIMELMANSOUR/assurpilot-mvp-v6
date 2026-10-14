@@ -455,6 +455,76 @@ d'appels de développement (`/api/calls/mock`), qui écarte les conseillers coup
 et favorise les boostés (poids ×3) ; c'est ce qui a permis de vérifier la
 sémantique de bout en bout.
 
+### Page admin « Demandes de routage »
+
+`/admin/demandes-routage` (menu Gestion) rassemble ce que les coachs demandent
+pour chaque conseiller et ce qui reste à faire **sur le standard (Keyyo / PBX)**.
+
+**Deux états, pas un.** Les interrupteurs du coach sont une *demande*
+(`advisor_call_settings`). « Il faut activer / couper / booster ce conseiller sur
+le standard » n'est pas une propriété de cette demande : c'est l'**écart** entre
+elle et ce qui est réellement appliqué. L'application ne pilote pas Keyyo, elle ne
+peut donc pas le deviner ; l'administrateur l'enregistre en cliquant
+« Marquer appliqué » (table `advisor_call_applied`). Pas de ligne = valeurs par
+défaut des deux côtés, donc un conseiller que personne n'a touché n'a rien à
+faire. `lib/routingState.ts` est la seule définition de « à appliquer » —
+cartes, filtres, badges et export ne peuvent pas diverger.
+
+Filtres : À appliquer · Appels à activer · Appels à couper · À booster · Boost à
+retirer · Routage actif, plus recherche et coach.
+
+**Actions de l'admin.**
+
+- *Forcer* un réglage (interrupteur / bouton dans le tableau), avec les mêmes
+  règles que pour le coach — appliquées par la **même fonction**, donc
+  l'administrateur ne peut pas créer un état qu'un coach ne pourrait pas créer.
+  Cela modifie la *demande* seulement : le changement apparaît ensuite comme du
+  travail restant à faire.
+- *Marquer appliqué*, un conseiller ou tous ceux affichés. **Compare-and-set** :
+  chaque élément porte l'état que l'admin avait sous les yeux ; il n'est appliqué
+  que s'il est toujours celui en base, sinon il est renvoyé en `stale` et rien
+  n'est écrit. Approuver revient à affirmer que le standard correspond à un état
+  précis ; si le coach vient de changer un interrupteur, l'admin n'a pas fait ce
+  travail-là, et l'enregistrer comme fait laisserait standard et application en
+  désaccord sans que rien ne le signale.
+- *Copier la liste* (TSV, prêt à coller dans un tableur) et *Exporter Excel*. Les
+  deux portent sur les lignes **affichées**. L'export reçoit les identifiants
+  visibles et relit les valeurs en base, sans second jeu de filtres à maintenir
+  côté serveur ; toutes les cellules sont typées texte, de sorte que le zéro
+  initial d'un `0988…` et un libellé commençant par `=` restent tels quels.
+
+**Mise à jour en direct.** Pas de canal poussé : l'application tourne sur des
+fonctions serverless, qui ne peuvent pas garder une connexion ouverte. Les deux
+pages interrogent donc l'API (admin : 5 s, coach : 8 s), seulement quand l'onglet
+est visible, et immédiatement au retour sur l'onglet. Mesuré avec deux navigateurs :
+~5 s dans les deux sens, sans rechargement. Côté admin, une ligne modifiée par
+quelqu'un d'autre est surlignée ; côté coach, un rafraîchissement ne s'applique
+jamais par-dessus un interrupteur en cours d'écriture, et une réponse plus
+ancienne qu'une écriture qui vient d'aboutir est écartée.
+
+**Accès.** `/admin/*` est désormais gardé côté serveur (`admin/layout.tsx`), comme
+`/superviseur` : le layout parent ne vérifiait que l'existence d'une session, un
+coach ou un conseiller pouvait donc ouvrir n'importe quelle page admin en tapant
+l'URL (l'API refusait les données, mais les écrans et leurs commandes
+s'affichaient). Les routes `/api/admin/call-settings*` répondent 403 à tout autre
+rôle.
+
+**Migrations, dans l'ordre : `006` puis `007`** (`prisma/sql/`). Le `007` crée
+`advisor_call_applied` et aligne aussi `advisor_call_settings` sur ce que Prisma
+attend (`ON UPDATE CASCADE` sur la clé étrangère, pas de `DEFAULT` sur
+`updatedAt`) : la première version du `006` s'en écartait, sans conséquence sur le
+comportement mais un futur `npm run db:push` l'aurait réécrit en silence. Vérifié
+par `prisma migrate diff` : écart nul à la fois sur une base neuve (`006` corrigé +
+`007`) et sur une base où l'ancien `006` a déjà tourné.
+
+L'état « appliqué » est dans une table **à part**, pas en colonnes de
+`advisor_call_settings`, parce que Prisma écrit toutes les colonnes d'un modèle à
+l'`INSERT`, valeurs par défaut comprises : des colonnes en plus auraient rendu les
+interrupteurs du coach dépendants de cette migration. Testé : avec le code déployé
+et `advisor_call_applied` absente, login, tableau de bord coach (lecture **et**
+écritures), analytics, utilisateurs et appels répondent normalement ; seule cette
+page renvoie un 503 qui nomme le fichier SQL à exécuter.
+
 ### Vider l'historique d'appels
 
 ```bash

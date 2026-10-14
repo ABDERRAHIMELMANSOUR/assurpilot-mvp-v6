@@ -1,9 +1,10 @@
 "use client";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import StatCard from "@/components/ui/StatCard";
 import DateFilter, { DateFilterState, buildQueryString } from "@/components/ui/DateFilter";
 import CoachAdvisersTable, { AdviserSettings } from "@/components/ui/CoachAdvisersTable";
 import { errorMessage, fetchJson } from "@/lib/fetchJson";
+import { usePolling } from "@/lib/usePolling";
 import Link from "next/link";
 
 const EMPTY: DateFilterState = { period: "month", dateFrom: "", dateTo: "" };
@@ -39,24 +40,37 @@ export default function CoachDashboardPage() {
 
   useEffect(() => { fetchStats(); }, [fetchStats]);
 
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const roster = await fetchJson<Roster>("/api/coach/advisors");
-        if (cancelled) return;
-        setTeam(roster.team);
-        setSettings(Object.fromEntries(roster.advisers.map((a) => [a.id, {
-          isActive: a.isActive,
-          isActiveForCalls: a.isActiveForCalls,
-          isBoosted: a.isBoosted,
-        }])));
-      } catch (err) {
-        if (!cancelled) setActionsError(errorMessage(err, "Les réglages de réception sont indisponibles."));
-      }
-    })();
-    return () => { cancelled = true; };
+  // Loaded on mount, then re-read in the background: an administrator can
+  // override a switch from their own page, and a coach looking at the old value
+  // would both mislead them and re-send it on the next click.
+  const writing = useRef(false);
+  const reading = useRef(false);
+
+  const loadRoster = useCallback(async (silent: boolean) => {
+    if (reading.current) return;
+    reading.current = true;
+    try {
+      const roster = await fetchJson<Roster>("/api/coach/advisors");
+      // A background answer must never land on top of a toggle in flight: it
+      // would flip the row back to the value stored before the click.
+      if (silent && writing.current) return;
+      setTeam(roster.team);
+      setSettings(Object.fromEntries(roster.advisers.map((a) => [a.id, {
+        isActive: a.isActive,
+        isActiveForCalls: a.isActiveForCalls,
+        isBoosted: a.isBoosted,
+      }])));
+      setActionsError("");
+    } catch (err) {
+      // A failed background refresh keeps what is on screen.
+      if (!silent) setActionsError(errorMessage(err, "Les réglages de réception sont indisponibles."));
+    } finally {
+      reading.current = false;
+    }
   }, []);
+
+  useEffect(() => { void loadRoster(false); }, [loadRoster]);
+  usePolling(() => loadRoster(true), 8_000);
 
   const tauxGlobal = stats && (stats.totalAppels - stats.totalManques) > 0
     ? Math.round((stats.totalDevis / (stats.totalAppels - stats.totalManques)) * 100)
@@ -107,6 +121,7 @@ export default function CoachDashboardPage() {
             settings={settings}
             onSettingsChange={(id, next) => setSettings((prev) => ({ ...prev, [id]: next }))}
             actionsUnavailable={actionsError || undefined}
+            onBusyChange={(busy) => { writing.current = busy; }}
           />
 
           <div className="text-right">

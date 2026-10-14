@@ -96,6 +96,7 @@ export default function Sidebar() {
             <NavLink href="/admin/utilisateurs" label="Utilisateurs" />
             <NavLink href="/admin/conseillers"  label="Conseillers" />
             <NavLink href="/admin/coachs"       label="Coachs" />
+            <NavLink href="/admin/demandes-routage" label="Demandes de routage" />
             <NavLink href="/admin/activite"     label="Activité" />
 
             <SectionLabel label="Configuration" />

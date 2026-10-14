@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useToast } from "@/components/ui/Toast";
 import { errorMessage, fetchJson } from "@/lib/fetchJson";
@@ -34,6 +34,12 @@ interface Props {
   onSettingsChange: (id: string, next: AdviserSettings) => void;
   /** Why the switches cannot be used at all (e.g. the migration is pending). */
   actionsUnavailable?: string;
+  /**
+   * Reports whether any write is in flight, so the page can hold off a
+   * background refresh that would otherwise land mid-toggle and flip the row
+   * back to what was stored a moment ago.
+   */
+  onBusyChange?: (busy: boolean) => void;
 }
 
 function Num({ value, tone = "" }: { value: number; tone?: string }) {
@@ -53,11 +59,12 @@ function Num({ value, tone = "" }: { value: number; tone?: string }) {
  * boosted while the database says otherwise. A refusal rolls the row back and
  * says why.
  */
-export default function CoachAdvisersTable({ rows, settings, onSettingsChange, actionsUnavailable }: Props) {
+export default function CoachAdvisersTable({ rows, settings, onSettingsChange, actionsUnavailable, onBusyChange }: Props) {
   const toast = useToast();
   // Ids with a request in flight. A second click on the same adviser is ignored
   // until the first settles, so two overlapping writes cannot race each other.
   const [pending, setPending] = useState<Set<string>>(new Set());
+  useEffect(() => { onBusyChange?.(pending.size > 0); }, [pending, onBusyChange]);
 
   async function update(
     row: AdviserStats,

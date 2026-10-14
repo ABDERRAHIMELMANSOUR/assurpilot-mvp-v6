@@ -17,10 +17,12 @@
 -- instead of as columns on `users`.
 
 CREATE TABLE IF NOT EXISTS advisor_call_settings (
-  "userId"           TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  "userId"           TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE ON UPDATE CASCADE,
   "isActiveForCalls" BOOLEAN       NOT NULL DEFAULT true,
   "isBoosted"        BOOLEAN       NOT NULL DEFAULT false,
-  "updatedAt"        TIMESTAMP(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  -- No DEFAULT, deliberately: Prisma's @updatedAt supplies the value on every
+  -- write and expects the column to have none.
+  "updatedAt"        TIMESTAMP(3)  NOT NULL,
   "updatedById"      TEXT
 );
 
