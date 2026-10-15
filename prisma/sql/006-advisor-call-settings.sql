@@ -64,11 +64,14 @@ UPDATE advisor_call_settings SET "updatedAt"        = CURRENT_TIMESTAMP WHERE "u
 -- 4. Remove rows that could never be used, so the key and the foreign key below
 --    can be established: no adviser, a duplicate of an adviser's row (the first
 --    physical row wins), or an adviser who no longer exists.
-DELETE FROM advisor_call_settings WHERE "userId" IS NULL;
-DELETE FROM advisor_call_settings a
-  USING advisor_call_settings b
-  WHERE a.ctid > b.ctid AND a."userId" = b."userId";
-DELETE FROM advisor_call_settings WHERE "userId" NOT IN (SELECT id FROM users);
+--    In a DO block so that no SQL-editor statement splitter can cut the multi-line
+--    DELETEs apart (Supabase's editor did: "syntax error at or near WHERE").
+DO $$
+BEGIN
+  DELETE FROM advisor_call_settings WHERE "userId" IS NULL;
+  DELETE FROM advisor_call_settings WHERE ctid IN (SELECT d.ctid FROM (SELECT ctid, row_number() OVER (PARTITION BY "userId" ORDER BY ctid) AS rn FROM advisor_call_settings) d WHERE d.rn > 1);
+  DELETE FROM advisor_call_settings WHERE "userId" NOT IN (SELECT id FROM users);
+END $$;
 
 -- 5. Types, nullability and defaults exactly as the Prisma model declares them.
 --    "updatedAt" deliberately has NO default: Prisma's @updatedAt supplies it on

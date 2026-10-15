@@ -85,11 +85,14 @@ UPDATE advisor_call_applied SET "isBoosted"        = false             WHERE "is
 UPDATE advisor_call_applied SET "appliedAt"        = CURRENT_TIMESTAMP WHERE "appliedAt"        IS NULL;
 
 -- 4. Remove rows that could never be used, so the keys below can be established.
-DELETE FROM advisor_call_applied WHERE "userId" IS NULL;
-DELETE FROM advisor_call_applied a
-  USING advisor_call_applied b
-  WHERE a.ctid > b.ctid AND a."userId" = b."userId";
-DELETE FROM advisor_call_applied WHERE "userId" NOT IN (SELECT id FROM users);
+--    In a DO block so that no SQL-editor statement splitter can cut the multi-line
+--    DELETEs apart (Supabase's editor did: "syntax error at or near WHERE").
+DO $$
+BEGIN
+  DELETE FROM advisor_call_applied WHERE "userId" IS NULL;
+  DELETE FROM advisor_call_applied WHERE ctid IN (SELECT d.ctid FROM (SELECT ctid, row_number() OVER (PARTITION BY "userId" ORDER BY ctid) AS rn FROM advisor_call_applied) d WHERE d.rn > 1);
+  DELETE FROM advisor_call_applied WHERE "userId" NOT IN (SELECT id FROM users);
+END $$;
 
 -- 5. Types, nullability and defaults exactly as the Prisma model declares them.
 -- Column TYPES first, converted explicitly: a table made by hand often has
