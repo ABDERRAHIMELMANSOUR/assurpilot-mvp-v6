@@ -25,15 +25,16 @@
 
 BEGIN;
 
--- 0. Refuse early, in plain words, if "userId" already exists with the wrong type:
---    it cannot be reconciled with users.id automatically, and Postgres's own
---    error ("operator does not exist: uuid = text") would not say why.
+-- 0. Refuse early, in plain words, if "userId" already exists as something that
+--    cannot be turned into text (a uuid, say): it cannot be reconciled with
+--    users.id automatically, and Postgres's own error ("operator does not exist:
+--    uuid = text") would not say why. A varchar is fine — step 5 converts it.
 DO $$
 DECLARE t text;
 BEGIN
   SELECT data_type INTO t FROM information_schema.columns
   WHERE table_schema = 'public' AND table_name = 'advisor_call_applied' AND column_name = 'userId';
-  IF t IS NOT NULL AND t <> 'text' THEN
+  IF t IS NOT NULL AND t NOT IN ('text', 'character varying', 'character') THEN
     RAISE EXCEPTION 'advisor_call_applied."userId" est de type %, attendu text : cette table n''est pas celle de l''application. Renommez-la (ALTER TABLE advisor_call_applied RENAME TO advisor_call_applied_old) puis relancez ce fichier.', t;
   END IF;
 END $$;
@@ -46,6 +47,30 @@ CREATE TABLE IF NOT EXISTS advisor_call_applied (
   "appliedAt"        TIMESTAMP(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "appliedById"      TEXT
 );
+
+-- 1b. Recognise columns left under the WRONG NAME by a hand-written "fix" script
+--     (for example "appliedActive" instead of "isActiveForCalls") and RENAME them,
+--     so any values they hold are kept rather than re-created from defaults. Only
+--     when the correctly named column is absent: if both exist, the misnamed one is
+--     left alone (see step 6b) rather than overwriting real data with a stale copy.
+DO $$
+DECLARE pair text[];
+BEGIN
+  FOREACH pair SLICE 1 IN ARRAY ARRAY[
+    ARRAY['appliedActive',         'isActiveForCalls'],
+    ARRAY['appliedActiveForCalls', 'isActiveForCalls'],
+    ARRAY['appliedBoosted',        'isBoosted']
+  ] LOOP
+    IF EXISTS (SELECT 1 FROM information_schema.columns
+               WHERE table_schema = 'public' AND table_name = 'advisor_call_applied' AND column_name = pair[1])
+       AND NOT EXISTS (SELECT 1 FROM information_schema.columns
+               WHERE table_schema = 'public' AND table_name = 'advisor_call_applied' AND column_name = pair[2])
+    THEN
+      EXECUTE format('ALTER TABLE advisor_call_applied RENAME COLUMN %I TO %I', pair[1], pair[2]);
+      RAISE NOTICE 'advisor_call_applied : colonne % renommée en %', pair[1], pair[2];
+    END IF;
+  END LOOP;
+END $$;
 
 -- 2. Add whatever is missing (nullable first, so it works with existing rows).
 ALTER TABLE advisor_call_applied ADD COLUMN IF NOT EXISTS "userId"           TEXT;
@@ -67,6 +92,15 @@ DELETE FROM advisor_call_applied a
 DELETE FROM advisor_call_applied WHERE "userId" NOT IN (SELECT id FROM users);
 
 -- 5. Types, nullability and defaults exactly as the Prisma model declares them.
+-- Column TYPES first, converted explicitly: a table made by hand often has
+-- TIMESTAMP (microseconds) where Prisma uses TIMESTAMP(3), or varchar for text.
+-- A no-op when the column is already right.
+ALTER TABLE advisor_call_applied ALTER COLUMN "userId" TYPE TEXT;
+ALTER TABLE advisor_call_applied ALTER COLUMN "isActiveForCalls" TYPE BOOLEAN;
+ALTER TABLE advisor_call_applied ALTER COLUMN "isBoosted" TYPE BOOLEAN;
+ALTER TABLE advisor_call_applied ALTER COLUMN "appliedAt" TYPE TIMESTAMP(3);
+ALTER TABLE advisor_call_applied ALTER COLUMN "appliedById" TYPE TEXT;
+
 ALTER TABLE advisor_call_applied ALTER COLUMN "userId"           SET NOT NULL;
 ALTER TABLE advisor_call_applied ALTER COLUMN "isActiveForCalls" SET DEFAULT true;
 ALTER TABLE advisor_call_applied ALTER COLUMN "isActiveForCalls" SET NOT NULL;
@@ -94,6 +128,22 @@ ALTER TABLE advisor_call_applied
   ADD CONSTRAINT "advisor_call_applied_userId_fkey"
   FOREIGN KEY ("userId") REFERENCES users(id) ON DELETE CASCADE ON UPDATE CASCADE;
 
+-- 6b. Columns the application does not know about must never be able to block its
+--     inserts. A stray NOT NULL column with no default would make every write
+--     fail, so relax those; they are kept (and reported in step 8), not dropped.
+DO $$
+DECLARE c record;
+BEGIN
+  FOR c IN
+    SELECT column_name FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'advisor_call_applied'
+      AND column_name NOT IN ('userId', 'isActiveForCalls', 'isBoosted', 'appliedAt', 'appliedById')
+      AND is_nullable = 'NO' AND column_default IS NULL
+  LOOP
+    EXECUTE format('ALTER TABLE advisor_call_applied ALTER COLUMN %I DROP NOT NULL', c.column_name);
+  END LOOP;
+END $$;
+
 -- 7. Same reason as 006: a table in Supabase's `public` schema is reachable with
 --    the anon key unless row-level security is on. Enabling it with no policy
 --    denies that route; the app is unaffected because Prisma connects with the
@@ -120,6 +170,15 @@ BEGIN
     ON c.table_schema = 'public' AND c.table_name = 'advisor_call_applied'
    AND c.column_name = e.col AND c.data_type = e.typ AND c.is_nullable = e.nullable
   WHERE c.column_name IS NULL;
+
+  SELECT string_agg(column_name || ' (précision ' || datetime_precision || ', attendu 3)', ', ')
+    INTO extras
+  FROM information_schema.columns
+  WHERE table_schema = 'public' AND table_name = 'advisor_call_applied'
+    AND data_type = 'timestamp without time zone' AND datetime_precision <> 3;
+  IF extras IS NOT NULL THEN
+    problems := coalesce(problems || ', ', '') || extras;
+  END IF;
 
   IF problems IS NOT NULL THEN
     RAISE EXCEPTION 'advisor_call_applied : colonnes incorrectes ou manquantes -> %', problems;

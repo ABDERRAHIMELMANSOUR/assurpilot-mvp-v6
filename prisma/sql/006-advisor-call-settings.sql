@@ -24,15 +24,16 @@
 
 BEGIN;
 
--- 0. Refuse early, in plain words, if "userId" already exists with the wrong type:
---    it cannot be reconciled with users.id automatically, and Postgres's own
---    error ("operator does not exist: uuid = text") would not say why.
+-- 0. Refuse early, in plain words, if "userId" already exists as something that
+--    cannot be turned into text (a uuid, say): it cannot be reconciled with
+--    users.id automatically, and Postgres's own error ("operator does not exist:
+--    uuid = text") would not say why. A varchar is fine — step 5 converts it.
 DO $$
 DECLARE t text;
 BEGIN
   SELECT data_type INTO t FROM information_schema.columns
   WHERE table_schema = 'public' AND table_name = 'advisor_call_settings' AND column_name = 'userId';
-  IF t IS NOT NULL AND t <> 'text' THEN
+  IF t IS NOT NULL AND t NOT IN ('text', 'character varying', 'character') THEN
     RAISE EXCEPTION 'advisor_call_settings."userId" est de type %, attendu text : cette table n''est pas celle de l''application. Renommez-la (ALTER TABLE advisor_call_settings RENAME TO advisor_call_settings_old) puis relancez ce fichier.', t;
   END IF;
 END $$;
@@ -72,6 +73,15 @@ DELETE FROM advisor_call_settings WHERE "userId" NOT IN (SELECT id FROM users);
 -- 5. Types, nullability and defaults exactly as the Prisma model declares them.
 --    "updatedAt" deliberately has NO default: Prisma's @updatedAt supplies it on
 --    every write and expects the column to have none.
+-- Column TYPES first, converted explicitly: a table made by hand often has
+-- TIMESTAMP (microseconds) where Prisma uses TIMESTAMP(3), or varchar for text.
+-- A no-op when the column is already right.
+ALTER TABLE advisor_call_settings ALTER COLUMN "userId" TYPE TEXT;
+ALTER TABLE advisor_call_settings ALTER COLUMN "isActiveForCalls" TYPE BOOLEAN;
+ALTER TABLE advisor_call_settings ALTER COLUMN "isBoosted" TYPE BOOLEAN;
+ALTER TABLE advisor_call_settings ALTER COLUMN "updatedAt" TYPE TIMESTAMP(3);
+ALTER TABLE advisor_call_settings ALTER COLUMN "updatedById" TYPE TEXT;
+
 ALTER TABLE advisor_call_settings ALTER COLUMN "userId"           SET NOT NULL;
 ALTER TABLE advisor_call_settings ALTER COLUMN "isActiveForCalls" SET DEFAULT true;
 ALTER TABLE advisor_call_settings ALTER COLUMN "isActiveForCalls" SET NOT NULL;
@@ -99,6 +109,22 @@ ALTER TABLE advisor_call_settings
 ALTER TABLE advisor_call_settings
   ADD CONSTRAINT "advisor_call_settings_userId_fkey"
   FOREIGN KEY ("userId") REFERENCES users(id) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- 6b. Columns the application does not know about must never be able to block its
+--     inserts. A stray NOT NULL column with no default would make every write
+--     fail, so relax those; they are kept (and reported in step 8), not dropped.
+DO $$
+DECLARE c record;
+BEGIN
+  FOR c IN
+    SELECT column_name FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'advisor_call_settings'
+      AND column_name NOT IN ('userId', 'isActiveForCalls', 'isBoosted', 'updatedAt', 'updatedById')
+      AND is_nullable = 'NO' AND column_default IS NULL
+  LOOP
+    EXECUTE format('ALTER TABLE advisor_call_settings ALTER COLUMN %I DROP NOT NULL', c.column_name);
+  END LOOP;
+END $$;
 
 -- 7. A table created in Supabase's `public` schema is reachable through the REST
 --    API with the anon key unless row-level security is on, and this one controls
@@ -130,6 +156,15 @@ BEGIN
     ON c.table_schema = 'public' AND c.table_name = 'advisor_call_settings'
    AND c.column_name = e.col AND c.data_type = e.typ AND c.is_nullable = e.nullable
   WHERE c.column_name IS NULL;
+
+  SELECT string_agg(column_name || ' (précision ' || datetime_precision || ', attendu 3)', ', ')
+    INTO extras
+  FROM information_schema.columns
+  WHERE table_schema = 'public' AND table_name = 'advisor_call_settings'
+    AND data_type = 'timestamp without time zone' AND datetime_precision <> 3;
+  IF extras IS NOT NULL THEN
+    problems := coalesce(problems || ', ', '') || extras;
+  END IF;
 
   IF problems IS NOT NULL THEN
     RAISE EXCEPTION 'advisor_call_settings : colonnes incorrectes ou manquantes -> %', problems;

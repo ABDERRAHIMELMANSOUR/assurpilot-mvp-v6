@@ -544,6 +544,16 @@ par celles que Prisma attend (quel que soit le nom des anciennes), RLS activé, 
 seule transaction), si elle n'est pas conforme. Une colonne `userId` d'un mauvais
 type est refusée d'entrée avec un message explicite.
 
+Cas d'une table réparée à la main sous d'autres noms : si `advisor_call_applied`
+contient `appliedActive` / `appliedActiveForCalls` / `appliedBoosted` (noms qui
+n'ont **jamais** existé dans ce dépôt, ni dans le schéma Prisma, ni dans le code),
+`007` les **renomme** en `isActiveForCalls` / `isBoosted` quand la colonne
+correcte est absente, ce qui conserve les valeurs. Si les deux existent, la bonne
+colonne fait foi et l'autre est laissée en place (signalée par un `WARNING`). Les
+types sont convertis explicitement (`varchar` → `text`, `timestamp` →
+`timestamp(3)`), et toute colonne inconnue `NOT NULL` sans défaut est rendue
+nullable pour ne jamais bloquer une écriture de l'application.
+
 Ils ne touchent qu'à leur table (une table de fonctionnalité que personne n'avait pu
 utiliser). Les seules lignes supprimées sont celles qui ne pourraient jamais servir :
 sans conseiller, doublon pour un même conseiller, ou conseiller disparu. Les
