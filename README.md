@@ -214,15 +214,11 @@ administrateur tout l'historique. La borne est le début du jour J−N, pas
 « maintenant moins N×24 h », pour que la fenêtre ne glisse pas en cours de
 journée. Un `?dateFrom=` plus ancien réduit la fenêtre, il ne l'élargit jamais.
 
-**Masquage du numéro appelant** (`src/lib/mask.ts`) : appliqué dans la réponse
-JSON, pas dans le JSX — masquer à l'affichage laisserait le numéro complet dans
-le payload. Couvre donc aussi l'export Excel.
-
-| Rôle             | Affichage      |
-|------------------|----------------|
-| `ADMINISTRATEUR` | `33602020009`  |
-| `SUPERVISEUR`    | `336****0009`  |
-| `CONSEILLER`     | `********009`  |
+**Numéro appelant** : affiché **en entier** pour tous les rôles (administrateur,
+coach, conseiller), dans les tableaux, les modales et l'export Excel, pour pouvoir
+rappeler le client directement. Il n'y a plus aucun masquage (`src/lib/mask.ts`
+supprimé). La visibilité reste bornée par le **périmètre** et la **profondeur
+d'historique** ci-dessus : un conseiller ne voit que ses propres appels.
 
 **Périmètre** (`src/lib/scope.ts`) : un conseiller ne voit que ses appels, un
 coach ceux de ses rattachés directs (`superviseurId`) plus les siens.
@@ -375,7 +371,7 @@ Deux points de méthode :
 
 Invariant vérifié : `totalProspects` est exactement le nombre de lignes que
 `/api/calls?group=1` renvoie pour les mêmes filtres — la carte et le tableau ne
-peuvent pas se contredire. Un numéro masqué compte pour un prospect à lui seul,
+peuvent pas se contredire. Un appelant sans numéro compte pour un prospect à lui seul,
 des deux côtés : deux appelants anonymes ne sont pas une même personne.
 
 ### Section « Statistiques détaillées »

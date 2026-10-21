@@ -11,7 +11,6 @@ import { handleApiError, requireUser } from "@/lib/api";
 import { callScopeFor, filterForCoach, filterForUser } from "@/lib/scope";
 import { callFilterClauses } from "@/lib/callFilters";
 import { retentionClause } from "@/lib/retention";
-import { callerNumberFor } from "@/lib/mask";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -84,9 +83,7 @@ export async function GET(req: NextRequest) {
     const labelByValue = new Map(options.map((o) => [o.value, o.label]));
 
     const rows = calls.map((call) => ({
-      // Same masking rule as the on-screen tables: only an admin exports
-      // complete caller numbers.
-      Appelant: callerNumberFor(user.role, call.callerNumber) || "",
+      Appelant: call.callerNumber || "",
       Conseiller: call.assignedUser
         ? `${call.assignedUser.prenom} ${call.assignedUser.nom}`
         : "",

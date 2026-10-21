@@ -15,7 +15,6 @@ import {
   wantsGrouping,
 } from "@/lib/dedupe";
 import { normalizePhone } from "@/lib/phone";
-import { maskCallsFor } from "@/lib/mask";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -136,8 +135,7 @@ export async function GET(req: NextRequest) {
 
     // The response stays a bare array for backwards compatibility; the totals
     // ride along in headers so callers can detect truncation.
-    // Caller numbers are masked for every role except admin, at the source.
-    return NextResponse.json(maskCallsFor(user.role, rows), {
+    return NextResponse.json(rows, {
       headers: {
         "X-Total-Count": String(total),
         "X-Returned-Count": String(rows.length),

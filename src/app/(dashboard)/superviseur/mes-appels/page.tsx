@@ -8,7 +8,7 @@ import UserCallHistory from "@/components/ui/UserCallHistory";
  *
  * Reuses the same drill-down component as /superviseur/equipe/[id], pointed at
  * the coach themselves, so the metrics, date filters, qualification and
- * transfer actions behave identically. Scoping and caller-number masking are
+ * transfer actions behave identically. Scoping is
  * enforced server-side by /api/calls?userId=…, which lets a coach ask about
  * themselves and nobody else outside their roster.
  */
