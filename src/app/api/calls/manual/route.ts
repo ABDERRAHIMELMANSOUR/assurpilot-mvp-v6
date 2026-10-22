@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { scheduleAzzurPush } from "@/lib/azzur";
 import { CALL_USER_SELECT } from "@/lib/selects";
 import { badRequest, handleApiError, readJson, requireRole } from "@/lib/api";
 
@@ -52,8 +53,11 @@ export async function POST(req: NextRequest) {
     // Reject unknown FKs up front so the client gets a 400 rather than a
     // Prisma foreign-key error surfacing as a 500.
     const [conseiller, phoneLine] = await Promise.all([
-      prisma.user.findUnique({ where: { id: assignedUserId }, select: { id: true } }),
-      prisma.phoneLine.findUnique({ where: { id: phoneLineId }, select: { id: true } }),
+      prisma.user.findUnique({
+        where: { id: assignedUserId },
+        select: { id: true, email: true, nom: true, prenom: true },
+      }),
+      prisma.phoneLine.findUnique({ where: { id: phoneLineId }, select: { id: true, label: true } }),
     ]);
     if (!conseiller) throw badRequest("Conseiller introuvable");
     if (!phoneLine) throw badRequest("Ligne téléphonique introuvable");
@@ -88,6 +92,19 @@ export async function POST(req: NextRequest) {
         },
       });
     });
+
+    // Hand the new call to AZZUR AFTER it is safely stored. Returns at once and
+    // can never fail this request (see src/lib/azzur.ts).
+    scheduleAzzurPush([
+      {
+        reference: `call:${call?.id ?? "?"}`,
+        callerNumber: callerNumber.trim(),
+        startedAt: startDate,
+        isMissed: missed,
+        lineLabel: phoneLine.label,
+        conseiller: { email: conseiller.email, nom: conseiller.nom, prenom: conseiller.prenom },
+      },
+    ]);
 
     return NextResponse.json(call, { status: 201 });
   } catch (error) {

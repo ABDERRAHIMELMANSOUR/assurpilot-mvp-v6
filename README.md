@@ -374,6 +374,45 @@ Invariant vérifié : `totalProspects` est exactement le nombre de lignes que
 peuvent pas se contredire. Un appelant sans numéro compte pour un prospect à lui seul,
 des deux côtés : deux appelants anonymes ne sont pas une même personne.
 
+### Envoi des appels vers AZZUR (CRM)
+
+Chaque appel **nouvellement enregistré** (saisie manuelle `POST /api/calls/manual`,
+import de fichier) est transmis au web service « mise en relation » (MER) d'AZZUR,
+pour apparaître dans le dispatch board ou directement chez le conseiller. Code :
+`src/lib/azzur.ts`. **Désactivé par défaut.**
+
+| Variable                    | Rôle                                                                      |
+|-----------------------------|---------------------------------------------------------------------------|
+| `AZZUR_WEBHOOK_ENABLED`     | `true` pour activer                                                       |
+| `AZZUR_MER_URL`             | URL complète du MER (Administration › Provenances › « Voir l'URL »)       |
+| `AZZUR_MER_ID_PROV`         | optionnel : remplace `id_prov` (51 dans l'URL fournie)                    |
+| `AZZUR_MER_METHOD` / `_FORMAT` | `POST` (défaut) ou `GET` ; `form` (défaut) ou `json`                   |
+| `AZZUR_MER_FIELDS`          | JSON : renomme un champ, ou `""` pour ne plus l'envoyer                   |
+| `AZZUR_MER_TIMEOUT_MS`      | délai par tentative (5000)                                                |
+| `AZZUR_MER_MAX_AGE_HOURS`   | les appels plus anciens ne sont pas poussés (48) : pas d'afflux d'historique |
+| `AZZUR_MER_ONLY_ANSWERED`   | `true` = ignorer les appels manqués                                       |
+
+**L'URL contient la clé secrète `cle_ws`** : à saisir uniquement dans Vercel / `.env`,
+jamais dans le dépôt (public), et à régénérer côté AZZUR si elle a fuité. Elle est
+masquée dans tous les logs.
+
+Champs envoyés (noms **par défaut, à confirmer avec la documentation du MER** que
+l'URL ouvre dans AZZUR) : `telephone` (numéro complet, forme nationale `06…`),
+`provenance` (« Appel entrant - Ligne santé CPA »), `date` (`AAAA-MM-JJ HH:MM:SS`,
+heure de Paris), `conseiller` (e-mail) et `conseiller_nom` — ces deux derniers
+omis s'il n'y a pas de conseiller, pour un dispatch manuel.
+
+Garanties : l'envoi est **asynchrone** (la réponse à l'utilisateur ne l'attend pas ;
+`waitUntil` garde la fonction Vercel en vie), **ne peut jamais faire échouer**
+l'enregistrement, tente 3 fois (0,5 s puis 1,5 s) sur délai dépassé / erreur réseau /
+429 / 5xx, ne réessaie pas un 4xx. Chaque résultat est loggé
+(`[azzur] sent|failed|skipped ref=… tel=*****399 status=…` + début de la réponse) ;
+le numéro n'y figure que masqué. `GET /api/admin/azzur` (admin) montre la
+configuration (sans la clé) et les derniers résultats de l'instance. Les doublons
+d'import étant écartés avant l'envoi, ré-importer un fichier ne renvoie rien.
+Limite connue : pas de file persistante, un appel dont les 3 tentatives échouent
+n'est pas renvoyé automatiquement (il est dans les logs).
+
 ### Statistiques des lignes (`/admin/statistiques-lignes`)
 
 Réconciliation des lignes standard **CPA / ALM** avec les conseillers qui ont

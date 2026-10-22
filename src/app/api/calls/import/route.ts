@@ -4,6 +4,7 @@ import type { NextRequest } from "next/server";
 import type { Prisma } from "@prisma/client";
 import * as XLSX from "xlsx";
 import { prisma } from "@/lib/prisma";
+import { scheduleAzzurPush } from "@/lib/azzur";
 import { badRequest, handleApiError, requireRole } from "@/lib/api";
 import { normalizePhone, routeForNumber } from "@/lib/phone";
 
@@ -118,6 +119,7 @@ type CallOwner = {
   nom: string;
   prenom: string;
   phoneNumber: string;
+  email: string;
   role: string;
   teamId: string | null;
   team: { nom: string } | null;
@@ -245,6 +247,7 @@ export async function POST(req: NextRequest) {
           nom: true,
           prenom: true,
           phoneNumber: true,
+          email: true,
           role: true,
           // The adviser's team IS the call's Équipe — this is the whole
           // mapping: adviser phone number -> adviser -> team -> entity.
@@ -537,6 +540,25 @@ export async function POST(req: NextRequest) {
       where: { id: batch.id },
       data: { importedRows },
     });
+
+    // Tell AZZUR about the calls this file just created. Duplicates were
+    // filtered out above, so re-uploading a file pushes nothing twice. Returns
+    // at once and cannot fail the import; old calls are skipped by the helper.
+    const lineLabelById = new Map(phoneLines.map((line) => [line.id, line.label]));
+    scheduleAzzurPush(
+      validRows.map((row, index) => ({
+        reference: `import:${batch.id}#${index + 1}`,
+        callerNumber: row.callerNumber,
+        startedAt: row.startedAt!,
+        isMissed: row.isMissed,
+        lineLabel: lineLabelById.get(row.lineId ?? defaultLineId) ?? null,
+        conseiller: {
+          email: row.conseiller!.email,
+          nom: row.conseiller!.nom,
+          prenom: row.conseiller!.prenom,
+        },
+      }))
+    );
 
     return NextResponse.json({
       success: true,
