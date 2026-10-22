@@ -374,6 +374,38 @@ Invariant vérifié : `totalProspects` est exactement le nombre de lignes que
 peuvent pas se contredire. Un appelant sans numéro compte pour un prospect à lui seul,
 des deux côtés : deux appelants anonymes ne sont pas une même personne.
 
+### Statistiques des lignes (`/admin/statistiques-lignes`)
+
+Réconciliation des lignes standard **CPA / ALM** avec les conseillers qui ont
+décroché, pour une période choisie (Aujourd'hui, 7 jours, Ce mois, Personnalisé).
+Administrateur uniquement ; règles de calcul dans `src/lib/lineStats.ts`, données
+par `GET /api/admin/stats-lignes`.
+
+| Carte                          | Appels répondus qui sont arrivés sur… | …et décrochés par un conseiller |
+|--------------------------------|---------------------------------------|---------------------------------|
+| Standard CPA → Conseiller ALM  | la ligne CPA                          | équipe ALM                      |
+| Standard ALM → Conseiller ALM  | la ligne ALM                          | équipe ALM                      |
+| Standard CPA → Conseiller CPA  | la ligne CPA                          | équipe CPA                      |
+| Standard ALM → Conseiller CPA  | la ligne ALM                          | équipe CPA                      |
+
+- **Ligne source** : entité de la ligne d'arrivée (équipe de la ligne, à défaut son
+  libellé, à défaut l'équipe de l'appel). **Conseiller** : entité de l'équipe du
+  conseiller qui a décroché, pas de la ligne (cf. `src/lib/entity.ts`).
+- Seuls les appels **répondus** par un conseiller dont l'équipe est ALM ou CPA
+  comptent. Le reste (manqués, sans conseiller, équipe ni ALM ni CPA, ligne
+  inconnue) est listé sous les totaux, pour que les chiffres se réconcilient.
+- **Doublons** = appels bruts − appelants uniques, **par catégorie** : un même
+  numéro (`+33 6…` et `06…` sont identiques) qui rappelle dans la même catégorie
+  sur la période. Un numéro vide n'est jamais fusionné avec un autre.
+- **Brut / Net** : brut liste chaque appel ; net une ligne par appelant et par
+  catégorie (le plus long appel, avec le nombre de tentatives). Cliquer une carte
+  restreint le tableau à cette catégorie. Les filtres Ligne source et Équipe
+  conseiller s'appliquent avant le calcul, donc cartes et tableau décrivent les
+  mêmes appels.
+- Numéros affichés **en entier**. Au plus 50 000 appels analysés et 500 lignes de
+  tableau par requête (un bandeau le signale) ; les cartes utilisent tous les
+  appels analysés. Vérifié contre un calcul SQL indépendant (mêmes totaux).
+
 ### Section « Statistiques détaillées »
 
 Le tableau de bord `/admin` porte un bloc d'analyse distinct des tableaux

@@ -85,6 +85,7 @@ export default function Sidebar() {
             <NavLink href="/admin/appels"        label="Tous les appels" />
             <NavLink href="/admin/appels/import" label="Import fichier" />
             <NavLink href="/admin/classement"    label="Classement" />
+            <NavLink href="/admin/statistiques-lignes" label="Statistiques lignes" />
 
             {/* Entity workspaces: each opens a view restricted to that entity's
                 coaches, conseillers and calls. */}
