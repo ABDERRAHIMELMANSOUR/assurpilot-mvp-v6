@@ -154,6 +154,51 @@ export function buildAzzurPayload(event: AzzurCallEvent, config: AzzurConfig): R
   return out;
 }
 
+/** Offset of Europe/Paris from UTC at the given instant, in ms (DST-aware). */
+function parisOffsetMs(at: Date): number {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Paris", hourCycle: "h23",
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+  }).formatToParts(at);
+  const get = (type: string) => Number(parts.find((p) => p.type === type)!.value);
+  const asUtc = Date.UTC(get("year"), get("month") - 1, get("day"), get("hour"), get("minute"), get("second"));
+  return asUtc - Math.floor(at.getTime() / 1000) * 1000;
+}
+
+/**
+ * [start, end) of the current calendar day in Paris, as instants. "Today" must
+ * be the business's day, not the server's: Vercel runs in UTC, so a plain
+ * setHours(0) would cut the day two hours off in summer.
+ */
+export function parisDayBounds(now: Date = new Date()): { start: Date; end: Date } {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Paris", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(now);
+  const get = (type: string) => Number(parts.find((p) => p.type === type)!.value);
+  const midnight = (day: number) => {
+    const guess = Date.UTC(get("year"), get("month") - 1, day);
+    // One correction pass is enough: DST changes at night, never at midnight.
+    return new Date(guess - parisOffsetMs(new Date(guess - parisOffsetMs(new Date(guess)))));
+  };
+  return { start: midnight(get("day")), end: midnight(get("day") + 1) };
+}
+
+/** Runs `worker` over `items` with at most `limit` in flight, keeping input order in the result. */
+export async function mapPool<T, R>(items: T[], limit: number, worker: (item: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length);
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, async () => {
+      while (next < items.length) {
+        const i = next++;
+        out[i] = await worker(items[i]);
+      }
+    })
+  );
+  return out;
+}
+
 /** Strips the secret key (and any other query-string secret) from text bound for the logs. */
 export function redactSecrets(text: string): string {
   return text.replace(/(cle_ws=)[^&\s"']+/gi, "$1***");

@@ -103,6 +103,7 @@ export default function Sidebar() {
             <SectionLabel label="Configuration" />
             <NavLink href="/admin/resultats" label="Résultats d'appel" />
             <NavLink href="/admin/keyyo"     label="Config. Keyyo" />
+            <NavLink href="/admin/azzur"     label="Intégration AZZUR" />
 
             <SectionLabel label="Mon compte" />
             <NavLink href="/profil" label="Mon profil" />

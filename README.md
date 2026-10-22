@@ -410,6 +410,14 @@ l'enregistrement, tente 3 fois (0,5 s puis 1,5 s) sur délai dépassé / erreur 
 le numéro n'y figure que masqué. `GET /api/admin/azzur` (admin) montre la
 configuration (sans la clé) et les derniers résultats de l'instance. Les doublons
 d'import étant écartés avant l'envoi, ré-importer un fichier ne renvoie rien.
+**Vérifier et tester** : page admin `/admin/azzur` (menu Configuration › Intégration
+AZZUR) — état de la configuration, **Aperçu** (rien n'est envoyé : nombre d'appels du
+jour et charge utile exacte) puis **Envoyer** les N premiers appels **d'aujourd'hui**
+(jour calendaire à Paris, jamais l'historique) avec la réponse d'AZZUR pour chacun
+(`POST /api/admin/azzur/resend`, `mode` = `preview` | `send`, `limit` ≤ 200). Commencer
+par 1 appel. Un appel déjà transmis à sa création est renvoyé une 2e fois : rien ne
+garde la trace des envois passés.
+
 Limite connue : pas de file persistante, un appel dont les 3 tentatives échouent
 n'est pas renvoyé automatiquement (il est dans les logs).
 
