@@ -9,7 +9,7 @@
 // accès à la documentation du web service").
 import { NextResponse } from "next/server";
 import { handleApiError, requireRole, badRequest } from "@/lib/api";
-import { htmlToText, readAzzurConfig, redactSecrets } from "@/lib/azzur";
+import { azzurSecret, htmlToText, readAzzurConfig, redactSecrets } from "@/lib/azzur";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -34,7 +34,11 @@ export async function GET() {
     try {
       const res = await fetch(url, { signal: controller.signal, headers: { Accept: "text/html,*/*" } });
       const raw = await res.text();
-      const text = /<\s*(html|body|table|div)/i.test(raw) ? htmlToText(raw) : raw.replace(/\s+/g, " ").trim();
+      // The page prints the key in its example URL: remove it before it leaves the server.
+      const text = redactSecrets(
+        /<\s*(html|body|table|div)/i.test(raw) ? htmlToText(raw) : raw.replace(/\s+/g, " ").trim(),
+        azzurSecret(config)
+      );
       return NextResponse.json({
         status: res.status,
         host: url.host,
@@ -44,7 +48,7 @@ export async function GET() {
       });
     } catch (error) {
       const message = error instanceof Error && error.name === "AbortError" ? "délai dépassé" : String(error);
-      throw badRequest(redactSecrets(`Impossible de lire la documentation AZZUR : ${message}`));
+      throw badRequest(redactSecrets(`Impossible de lire la documentation AZZUR : ${message}`, azzurSecret(config)));
     } finally {
       clearTimeout(timer);
     }

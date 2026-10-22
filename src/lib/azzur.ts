@@ -295,8 +295,17 @@ export function htmlToText(html: string): string {
 }
 
 /** Strips the secret key (and any other query-string secret) from text bound for the logs. */
-export function redactSecrets(text: string): string {
-  return text.replace(/(cle_ws=)[^&\s"']+/gi, "$1***");
+export function redactSecrets(text: string, secret?: string | null): string {
+  let out = text.replace(/(cle_ws=)[^&\s"']+/gi, "$1***");
+  // AZZUR's documentation page prints the key on its own too (not only as cle_ws=),
+  // so the configured value is removed wherever it appears.
+  if (secret && secret.length >= 8) out = out.split(secret).join("***");
+  return out;
+}
+
+/** The configured cle_ws, for redaction. */
+export function azzurSecret(config: { url: URL | null }): string | null {
+  return config.url?.searchParams.get("cle_ws") ?? null;
 }
 
 /** Keeps the last 3 digits only: enough to find a call, not a phone book in the logs. */
@@ -344,13 +353,18 @@ export async function pushCallToAzzur(
   const fetchImpl = options.fetchImpl ?? fetch;
   const now = options.now ?? new Date();
   const finish = (r: Omit<PushResult, "reference" | "at">): PushResult => {
-    const result: PushResult = { reference: event.reference, at: new Date().toISOString(), ...r };
+    // The detail can be AZZUR's documentation page, which contains the key: it is
+    // scrubbed BEFORE it is stored or shown, not only before it is logged.
+    const result: PushResult = {
+      reference: event.reference, at: new Date().toISOString(), ...r,
+      detail: redactSecrets(r.detail, azzurSecret(config)),
+    };
     remember(result);
     const line = `[azzur] ${result.outcome} ref=${event.reference} tel=${maskForLog(event.callerNumber)}` +
       `${result.status ? ` status=${result.status}` : ""}${result.attempts ? ` attempts=${result.attempts}` : ""}` +
       ` ${result.detail.length > 400 ? `${result.detail.slice(0, 400)}…` : result.detail}`;
-    if (result.outcome === "failed") console.error(redactSecrets(line));
-    else console.log(redactSecrets(line));
+    if (result.outcome === "failed") console.error(redactSecrets(line, azzurSecret(config)));
+    else console.log(redactSecrets(line, azzurSecret(config)));
     return result;
   };
 
