@@ -387,7 +387,8 @@ pour apparaître dans le dispatch board ou directement chez le conseiller. Code 
 | `AZZUR_MER_URL`             | URL complète du MER (Administration › Provenances › « Voir l'URL »)       |
 | `AZZUR_MER_ID_PROV`         | optionnel : remplace `id_prov` (51 dans l'URL fournie)                    |
 | `AZZUR_MER_PROVENANCE`      | valeur du champ `provenance` : le code AZZUR (défaut `AE`)                |
-| `AZZUR_MER_METHOD` / `_FORMAT` | `POST` (défaut) ou `GET` ; `form` (défaut) ou `json`                   |
+| `AZZUR_MER_METHOD` / `_FORMAT` | `GET` (défaut, c'est le REST GET documenté par AZZUR) ou `POST` ; `form`/`json` (POST seulement) |
+| `AZZUR_MER_RETOUR_WS`       | `json` ou `text` : format de réponse d'AZZUR (`retour_ws`). Vide = non envoyé (texte par défaut, que l'on interprète) |
 | `AZZUR_MER_FIELDS`          | JSON : renomme un champ, ou `""` pour ne plus l'envoyer                   |
 | `AZZUR_MER_TIMEOUT_MS`      | délai par tentative (5000)                                                |
 | `AZZUR_MER_MAX_AGE_HOURS`   | les appels plus anciens ne sont pas poussés (48) : pas d'afflux d'historique |
@@ -402,6 +403,11 @@ l'URL ouvre dans AZZUR) : `telephone` (numéro complet, forme nationale `06…`)
 `provenance` (le **code** de la provenance AZZUR, `AE` par défaut — `AZZUR_MER_PROVENANCE` ; `id_prov=51` est déjà dans l'URL ; la ligne n'est envoyée que si `AZZUR_MER_FIELDS` active le champ `ligne`), `date` (`AAAA-MM-JJ HH:MM:SS`,
 heure de Paris), `conseiller` (e-mail) et `conseiller_nom` — ces deux derniers
 omis s'il n'y a pas de conseiller, pour un dispatch manuel.
+
+`ws=mer`, `id_prov` et `cle_ws` sont toujours dans l'URL (`ws=mer` est ajouté même s'il
+manque). **Interprétation de la réponse** (format texte par défaut d'AZZUR, toujours en
+HTTP 200) : un nombre = fiche créée (id) ; `DOUBLON:identifiant` = déjà dans AZZUR
+(*doublon*, pas une erreur) ; tout autre texte = *échec* avec le message d'AZZUR.
 
 Une réponse **HTML** d'AZZUR (même en HTTP 200) est comptée comme **échec** : c'est la
 page de documentation du service, pas une confirmation ; son texte (qui nomme les

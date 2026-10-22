@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { errorMessage, fetchJson } from "@/lib/fetchJson";
 
-type Result = { reference: string; outcome: "sent" | "skipped" | "failed"; status?: number; attempts?: number; detail: string; at: string };
+type Result = { reference: string; outcome: "sent" | "duplicate" | "skipped" | "failed"; status?: number; attempts?: number; detail: string; at: string };
 type Status = {
   enabled: boolean; ready: boolean; problem: string | null;
   host: string | null; path: string | null; idProv: string | null;
@@ -17,10 +17,10 @@ type Resend = {
   mode: "preview" | "send"; callsToday: number; selected: number; limit: number;
   target: { host?: string; idProv?: string | null; method: string; format: string };
   payloads?: Record<string, string>[];
-  sent?: number; failed?: number; skipped?: number; results?: Result[];
+  sent?: number; duplicates?: number; failed?: number; skipped?: number; results?: Result[];
 };
 
-const BADGE: Record<Result["outcome"], string> = { sent: "badge-green", failed: "badge-red", skipped: "badge-gray" };
+const BADGE: Record<Result["outcome"], string> = { sent: "badge-green", duplicate: "badge-yellow", failed: "badge-red", skipped: "badge-gray" };
 
 export default function AzzurPage() {
   const [status, setStatus] = useState<Status | null>(null);
@@ -95,7 +95,7 @@ export default function AzzurPage() {
           <div className="mt-4 text-sm">
             <p className="text-slate-700">
               {out.callsToday} appel(s) aujourd&apos;hui, {out.selected} sélectionné(s) → {out.target.host} (id_prov={out.target.idProv}).
-              {out.mode === "send" && <> Envoyés : <b>{out.sent}</b> · échecs : <b>{out.failed}</b> · ignorés : <b>{out.skipped}</b></>}
+              {out.mode === "send" && <> Créés : <b>{out.sent}</b> · doublons : <b>{out.duplicates}</b> · échecs : <b>{out.failed}</b> · ignorés : <b>{out.skipped}</b></>}
             </p>
             {out.payloads && (
               <pre className="mt-2 bg-slate-50 border border-slate-100 rounded-xl p-3 text-xs overflow-x-auto">{JSON.stringify(out.payloads, null, 2)}</pre>
@@ -126,7 +126,7 @@ function ResultTable({ rows }: { rows: Result[] }) {
               <td className="table-td"><span className={`badge ${BADGE[r.outcome]}`}>{r.outcome}</span></td>
               <td className="table-td">{r.status ?? "—"}</td>
               <td className="table-td">{r.attempts ?? "—"}</td>
-              <td className="table-td font-mono text-xs break-all">{r.detail}</td>
+              <td className="table-td font-mono text-xs break-all"><div className="max-h-72 overflow-y-auto min-w-[260px]">{r.detail}</div></td>
             </tr>
           ))}
         </tbody>

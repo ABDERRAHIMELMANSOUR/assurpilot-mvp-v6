@@ -42,6 +42,8 @@ export type AzzurConfig = {
   ready: boolean;
   url: URL | null;
   method: "POST" | "GET";
+  /** AZZUR's `retour_ws` (json | text). null = not sent: the service defaults to text. */
+  retourWs: "json" | "text" | null;
   format: "form" | "json";
   fields: Record<FieldKey, string>;
   /** Value of the provenance field: AZZUR's provenance CODE, e.g. "AE" (id 51). */
@@ -115,7 +117,11 @@ export function readAzzurConfig(env: Record<string, string | undefined> = proces
     enabled,
     ready: enabled && url !== null,
     url,
-    method: (env.AZZUR_MER_METHOD ?? "").trim().toUpperCase() === "GET" ? "GET" : "POST",
+    // The MER service is documented as REST GET, so GET is the default.
+    method: (env.AZZUR_MER_METHOD ?? "").trim().toUpperCase() === "POST" ? "POST" : "GET",
+    retourWs: ["json", "text"].includes((env.AZZUR_MER_RETOUR_WS ?? "").trim().toLowerCase())
+      ? ((env.AZZUR_MER_RETOUR_WS ?? "").trim().toLowerCase() as "json" | "text")
+      : null,
     format: (env.AZZUR_MER_FORMAT ?? "").trim().toLowerCase() === "json" ? "json" : "form",
     fields,
     provenance: (env.AZZUR_MER_PROVENANCE ?? "").trim() || "AE",
@@ -232,7 +238,8 @@ function maskForLog(raw: string): string {
 
 export type PushResult = {
   reference: string;
-  outcome: "sent" | "skipped" | "failed";
+  /** duplicate: AZZUR already holds this lead — not an error, but nothing new was created. */
+  outcome: "sent" | "duplicate" | "skipped" | "failed";
   status?: number;
   attempts?: number;
   detail: string;
@@ -272,7 +279,7 @@ export async function pushCallToAzzur(
     remember(result);
     const line = `[azzur] ${result.outcome} ref=${event.reference} tel=${maskForLog(event.callerNumber)}` +
       `${result.status ? ` status=${result.status}` : ""}${result.attempts ? ` attempts=${result.attempts}` : ""}` +
-      ` ${result.detail}`;
+      ` ${result.detail.length > 400 ? `${result.detail.slice(0, 400)}…` : result.detail}`;
     if (result.outcome === "failed") console.error(redactSecrets(line));
     else console.log(redactSecrets(line));
     return result;
@@ -289,6 +296,10 @@ export async function pushCallToAzzur(
 
     const payload = buildAzzurPayload(event, config);
     const url = new URL(config.url.toString());
+    // ws=mer selects the mise-en-relation service; the documentation lists it as
+    // required, so it is always present whatever the configured URL says.
+    url.searchParams.set("ws", "mer");
+    if (config.retourWs) url.searchParams.set("retour_ws", config.retourWs);
     let body: string | undefined;
     const headers: Record<string, string> = { Accept: "application/json, text/plain, */*" };
 
@@ -318,11 +329,22 @@ export async function pushCallToAzzur(
         if (looksHtml) {
           return finish({
             outcome: "failed", status: res.status, attempts: attempt,
-            detail: `AZZUR a renvoyé une page HTML, pas une confirmation : la requête n'a pas été prise en compte (champs ou paramètres non reconnus ?). Texte de la page : ${htmlToText(raw).slice(0, 1500) || "(vide)"}`,
+            detail: `AZZUR a renvoyé une page HTML, pas une confirmation : la requête n'a pas été prise en compte (champs ou paramètres non reconnus ?). Texte de la page : ${htmlToText(raw).slice(0, 8000) || "(vide)"}`,
           });
         }
         const text = raw.replace(/\s+/g, " ").trim().slice(0, 300);
-        if (res.ok) return finish({ outcome: "sent", status: res.status, attempts: attempt, detail: `réponse: ${text || "(vide)"}` });
+        if (res.ok) {
+          // AZZUR's documented default answers (text format): the fiche id on
+          // success, "DOUBLON:identifiant" for a duplicate, otherwise a message
+          // describing the error — all with HTTP 200, so the body decides. When
+          // the answer format was customised we cannot tell, and trust the status.
+          if (!config.retourWs) {
+            if (/^\d+$/.test(text)) return finish({ outcome: "sent", status: res.status, attempts: attempt, detail: `fiche créée, id ${text}` });
+            if (/^doublon/i.test(text)) return finish({ outcome: "duplicate", status: res.status, attempts: attempt, detail: `déjà dans AZZUR : ${text}` });
+            return finish({ outcome: "failed", status: res.status, attempts: attempt, detail: `refusé par AZZUR : ${text || "(réponse vide)"}` });
+          }
+          return finish({ outcome: "sent", status: res.status, attempts: attempt, detail: `réponse: ${text || "(vide)"}` });
+        }
         lastDetail = `HTTP ${res.status} réponse: ${text || "(vide)"}`;
         const retryable = res.status === 429 || res.status >= 500;
         if (!retryable) return finish({ outcome: "failed", status: res.status, attempts: attempt, detail: lastDetail });

@@ -24,6 +24,7 @@ export async function GET() {
       path: config.url?.pathname ?? null,
       idProv: config.url?.searchParams.get("id_prov") ?? null,
       method: config.method,
+      retourWs: config.retourWs,
       format: config.format,
       fields: config.fields,
       provenance: config.provenance,

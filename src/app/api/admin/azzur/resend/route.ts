@@ -99,6 +99,7 @@ export async function POST(req: NextRequest) {
       mode,
       ...base,
       sent: results.filter((r) => r.outcome === "sent").length,
+      duplicates: results.filter((r) => r.outcome === "duplicate").length,
       failed: results.filter((r) => r.outcome === "failed").length,
       skipped: results.filter((r) => r.outcome === "skipped").length,
       // `detail` carries the start of AZZUR's own answer.
