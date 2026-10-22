@@ -70,6 +70,7 @@ export async function POST(req: NextRequest) {
 
     const events: AzzurCallEvent[] = calls.map((c) => ({
       reference: `call:${c.id}`,
+      externalId: c.id.slice(-24),
       callerNumber: c.callerNumber,
       startedAt: c.startedAt,
       isMissed: c.isMissed,

@@ -398,37 +398,33 @@ pour apparaître dans le dispatch board ou directement chez le conseiller. Code 
 jamais dans le dépôt (public), et à régénérer côté AZZUR si elle a fuité. Elle est
 masquée dans tous les logs.
 
-Champs envoyés en **GET** (noms **par défaut, à confirmer avec la liste des variables du
-MER** — « Voir la liste des variables GET » dans AZZUR ; tous renommables via
-`AZZUR_MER_FIELDS`) : `ws=mer`, `id_prov`, `cle_ws`, `provenance=AE` (le **code** de la
-provenance, `AZZUR_MER_PROVENANCE`), `telephone` **et** `portable` (le même numéro
-complet, forme `06…` : un appel ne dit pas s'il vient d'un fixe ou d'un mobile),
-`date`, `conseiller` (e-mail) et `conseiller_nom` (omis sans conseiller),
-`observation` (« Appel entrant - Ligne santé CPA du … : coordonnées à compléter »).
-Paramètres encodés par `URLSearchParams`.
+Requête **GET** conforme à la documentation du MER d'AZZUR (v1.9.6.64, « Liste des
+variables GET »), paramètres encodés par `URLSearchParams` :
 
-**Données imposées par AZZUR** : le service refuse une fiche sans `nom`, `date_naissance`
-et `code_postal` (« ERREUR : nom, date naissance, code postal, mail ou telephone ou
-portable manquant »). Un appel n'en contient aucune ; des **valeurs de remplacement**
-volontairement évidentes sont donc envoyées (`AZZUR_MER_DEFAULTS`) : `nom=Appel Assurpilot`,
-`prenom=reçu par <conseiller qui a reçu l'appel>` (modèles `{conseiller}`, `{ligne}`, `{date}`),
-`date_naissance=01/01/1900`, `code_postal=00000`. Ces fiches sont à
-**compléter par le conseiller** (l'observation le dit) : les devis ne doivent pas être
-faits sur ces valeurs. Une valeur vide dans `AZZUR_MER_DEFAULTS` n'envoie pas le champ.
+| Paramètre AZZUR | Valeur envoyée |
+|---|---|
+| `ws`, `id_prov`, `cle_ws` | `mer`, `51`, la clé (toujours dans l'URL ; `id_prov=51` **est** la provenance « AE ») |
+| `tel` **et** `port` | le même numéro complet, forme `06…` (un appel ne dit pas fixe ou mobile) |
+| `nom`, `prenom` (obligatoire / non) | `Appel Assurpilot`, `reçu par <conseiller qui a reçu l'appel>` (modèles `{conseiller}`, `{ligne}`, `{date}`) |
+| `date_naissance` (obligatoire, aaaa-mm-jj) | `1900-01-01` |
+| `cp` (obligatoire, 5 chiffres) | `00000` |
+| `commentaire` (255 car.) | « Appel entrant - Ligne santé CPA du … (Assurpilot) : coordonnées à compléter » |
+| `date_cotation` (aaaa-mm-jj hh:mm:ss) | date et heure de l'appel, heure de Paris |
+| `num_devis_initial` (24 car.) | identifiant de l'appel côté Assurpilot |
+| `id_user` | identifiant **AZZUR** du conseiller, voir ci-dessous (sinon absent) |
 
-Garanties : l'envoi est **asynchrone** (la réponse à l'utilisateur ne l'attend pas ;
-`waitUntil` garde la fonction Vercel en vie), **ne peut jamais faire échouer**
-l'enregistrement, tente 3 fois (0,5 s puis 1,5 s) sur délai dépassé / erreur réseau /
-429 / 5xx, ne réessaie pas un 4xx. Chaque résultat est loggé
-(`[azzur] sent|failed|skipped ref=… tel=*****399 status=…` + début de la réponse) ;
-le numéro n'y figure que masqué. `GET /api/admin/azzur` (admin) montre la
-configuration (sans la clé) et les derniers résultats de l'instance. Les doublons
-d'import étant écartés avant l'envoi, ré-importer un fichier ne renvoie rien.
-**Noms de variables** : si AZZUR répond encore « … manquant » alors que ces champs sont
-envoyés, ses noms de paramètres diffèrent des nôtres. `/admin/azzur` › « Lire la
-documentation » affiche la page de documentation du MER (seulement `ws`, `id_prov`,
-`cle_ws` sont envoyés : rien n'est créé) ; les noms exacts s'y lisent, puis se règlent
-dans `AZZUR_MER_FIELDS`.
+**Conseiller** : AZZUR attend *son* identifiant d'utilisateur, que nous n'avons pas.
+`AZZUR_MER_USER_MAP` (JSON e-mail du conseiller → `id_user` AZZUR) range la fiche dans son
+espace ; `AZZUR_MER_ID_USER` (`0` = personne, dispatch board) sert aux conseillers absents de la
+table ; sans rien, AZZUR applique son utilisateur par défaut. `provenance`, `conseiller` et
+`conseiller_nom` ne sont **pas** des variables AZZUR : désactivés par défaut.
+
+**Données imposées par AZZUR** : `nom`, `date_naissance` et `cp` sont obligatoires (et
+`mail`, `tel` ou `port`), alors qu'un appel n'en contient aucune ; des **valeurs de
+remplacement** volontairement évidentes sont donc envoyées (`AZZUR_MER_DEFAULTS`). Ces fiches
+sont à **compléter par le conseiller** dans AZZUR (le commentaire le dit) : aucun devis ne
+doit être fait sur 1900 / 00000. Une valeur vide dans `AZZUR_MER_DEFAULTS` n'envoie pas le
+champ. Les fiches AZZUR de ce service sont de type Santé (seul type documenté).
 
 **Vérifier et tester** : page admin `/admin/azzur` (menu Configuration › Intégration
 AZZUR) — état de la configuration, **Aperçu** (rien n'est envoyé : nombre d'appels du

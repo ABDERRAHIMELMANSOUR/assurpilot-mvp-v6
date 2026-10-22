@@ -548,6 +548,8 @@ export async function POST(req: NextRequest) {
     scheduleAzzurPush(
       validRows.map((row, index) => ({
         reference: `import:${batch.id}#${index + 1}`,
+        // 24 characters at most: end of the batch id + row number.
+        externalId: `${batch.id.slice(-16)}-${index + 1}`.slice(-24),
         callerNumber: row.callerNumber,
         startedAt: row.startedAt!,
         isMissed: row.isMissed,

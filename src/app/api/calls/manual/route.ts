@@ -98,6 +98,7 @@ export async function POST(req: NextRequest) {
     scheduleAzzurPush([
       {
         reference: `call:${call?.id ?? "?"}`,
+        externalId: call?.id ? call.id.slice(-24) : undefined,
         callerNumber: callerNumber.trim(),
         startedAt: startDate,
         isMissed: missed,

@@ -29,6 +29,8 @@ export async function GET() {
       fields: config.fields,
       provenance: config.provenance,
       placeholders: config.placeholders,
+      mappedAdvisers: Object.keys(config.userMap).length,
+      defaultUserId: config.defaultUserId,
       timeoutMs: config.timeoutMs,
       maxAgeHours: config.maxAgeHours,
       onlyAnswered: config.onlyAnswered,

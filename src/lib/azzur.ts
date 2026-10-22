@@ -16,9 +16,8 @@
 //      recent ones: pushing a month-old backlog into a CRM would create stale
 //      fiches, so calls older than AZZUR_MER_MAX_AGE_HOURS are skipped.
 //
-// The exact field names AZZUR's MER service expects are documented behind the
-// MER URL itself, not in this repository, so the defaults below are a best guess
-// and every one of them can be renamed — or switched off with "" — through
+// The field names AZZUR's MER service expects are those of its own documentation
+// (see DEFAULT_FIELDS); each can be renamed — or switched off with "" — through
 // AZZUR_MER_FIELDS (JSON) without touching code.
 import { waitUntil } from "@vercel/functions";
 import { normalizePhone } from "@/lib/phone";
@@ -34,6 +33,8 @@ export type AzzurCallEvent = {
   lineLabel: string | null;
   /** The adviser who answered, when there is one. */
   conseiller: { email: string; nom: string; prenom: string } | null;
+  /** The call's id on our side, sent as num_devis_initial (24 characters at most). */
+  externalId?: string;
 };
 
 export type AzzurConfig = {
@@ -48,6 +49,10 @@ export type AzzurConfig = {
   fields: Record<FieldKey, string>;
   /** Stand-ins for contact data Assurpilot does not hold but AZZUR requires. */
   placeholders: { nom: string; prenom: string; date_naissance: string; code_postal: string };
+  /** Adviser e-mail (lower case) -> AZZUR id_user, so the fiche lands in that adviser's space. */
+  userMap: Record<string, string>;
+  /** id_user for advisers absent from the map: "0" = nobody (dispatch board), null = AZZUR's default user. */
+  defaultUserId: string | null;
   /** Value of the provenance field: AZZUR's provenance CODE, e.g. "AE" (id 51). */
   provenance: string;
   timeoutMs: number;
@@ -59,27 +64,29 @@ export type AzzurConfig = {
 
 type FieldKey =
   | "telephone" | "portable" | "nom" | "prenom" | "date_naissance" | "code_postal" | "observation"
-  | "provenance" | "ligne" | "conseiller" | "conseiller_nom" | "date";
+  | "date" | "id_user" | "num_devis_initial"
+  // Not AZZUR variables (the provenance is id_prov in the URL): off by default, kept
+  // so they can be switched on if AZZUR ever documents them.
+  | "provenance" | "ligne" | "conseiller" | "conseiller_nom";
 
-// Parameter names are AZZUR's, from its validator message ("nom, date naissance,
-// code postal, mail ou telephone ou portable manquant") and its CSV model; the
-// web service's own variable list is not in this repository, so every one of them
-// can be renamed in AZZUR_MER_FIELDS.
+// AZZUR's own variable names, from the "Liste des variables GET" of its MER
+// documentation (v1.9.6.64). Each can still be renamed — or switched off with "" —
+// in AZZUR_MER_FIELDS.
 const DEFAULT_FIELDS: Record<FieldKey, string> = {
-  telephone: "telephone",
-  portable: "portable",
-  nom: "nom",
-  prenom: "prenom",
-  date_naissance: "date_naissance",
-  code_postal: "code_postal",
-  observation: "observation",
-  provenance: "provenance",
-  // The line (ALM / CPA, santé / auto) is NOT sent unless asked for: AZZUR's
-  // provenance is a code ("AE", id 51), and the URL already carries it.
+  telephone: "tel",                 // Téléphone (14 car.)
+  portable: "port",                 // Portable (14 car.)
+  nom: "nom",                       // OBLIGATOIRE (50 car.)
+  prenom: "prenom",                 // (50 car.)
+  date_naissance: "date_naissance", // OBLIGATOIRE, aaaa-mm-jj
+  code_postal: "cp",                // OBLIGATOIRE, 5 chiffres
+  observation: "commentaire",       // commentaire bref du fournisseur (255 car.)
+  date: "date_cotation",            // date/heure de création chez le fournisseur, aaaa-mm-jj hh:mm:ss
+  id_user: "id_user",               // identifiant AZZUR de l'utilisateur (0 = aucun)
+  num_devis_initial: "num_devis_initial", // identifiant de la fiche chez le fournisseur (24 car.)
+  provenance: "",
   ligne: "",
-  conseiller: "conseiller",
-  conseiller_nom: "conseiller_nom",
-  date: "date",
+  conseiller: "",
+  conseiller_nom: "",
 };
 
 function isTrue(value: string | undefined): boolean {
@@ -104,9 +111,14 @@ function positiveInt(value: string | undefined, fallback: number): number {
 const DEFAULT_PLACEHOLDERS = {
   nom: "Appel Assurpilot",
   prenom: "reçu par {conseiller}",
-  date_naissance: "01/01/1900",
+  date_naissance: "1900-01-01", // AZZUR wants aaaa-mm-jj
   code_postal: "00000",
 };
+
+/** Cuts to AZZUR's documented maximum length for a field. */
+function clip(value: string, max: number): string {
+  return value.length > max ? value.slice(0, max) : value;
+}
 
 /** Fills {conseiller} / {ligne} / {date} in a placeholder template. */
 function fillTemplate(template: string, event: AzzurCallEvent): string {
@@ -116,6 +128,20 @@ function fillTemplate(template: string, event: AzzurCallEvent): string {
     .replace(/\{ligne\}/g, event.lineLabel ?? "")
     .replace(/\{date\}/g, formatParisDate(event.startedAt))
     .trim();
+}
+
+function readUserMap(raw: string | undefined): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!raw?.trim()) return out;
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    for (const [email, id] of Object.entries(parsed)) {
+      if (/^\d+$/.test(String(id))) out[email.trim().toLowerCase()] = String(id);
+    }
+  } catch {
+    // Bad JSON: no mapping, fiches go to AZZUR's default user.
+  }
+  return out;
 }
 
 function readPlaceholders(raw: string | undefined): AzzurConfig["placeholders"] {
@@ -181,6 +207,8 @@ export function readAzzurConfig(env: Record<string, string | undefined> = proces
     fields,
     provenance: (env.AZZUR_MER_PROVENANCE ?? "").trim() || "AE",
     placeholders: readPlaceholders(env.AZZUR_MER_DEFAULTS),
+    userMap: readUserMap(env.AZZUR_MER_USER_MAP),
+    defaultUserId: /^\d+$/.test((env.AZZUR_MER_ID_USER ?? "").trim()) ? (env.AZZUR_MER_ID_USER ?? "").trim() : null,
     timeoutMs: positiveInt(env.AZZUR_MER_TIMEOUT_MS, 5000),
     maxAgeHours: positiveInt(env.AZZUR_MER_MAX_AGE_HOURS, 48),
     onlyAnswered: isTrue(env.AZZUR_MER_ONLY_ANSWERED),
@@ -212,25 +240,32 @@ export function buildAzzurPayload(event: AzzurCallEvent, config: AzzurConfig): R
     if (name) out[name] = value; // "" in AZZUR_MER_FIELDS switches the field off
   };
 
-  // The number goes out as BOTH telephone and portable: AZZUR accepts either, and
-  // a call does not say whether it came from a landline or a mobile.
-  const phone = normalizePhone(event.callerNumber);
+  // The number goes out as BOTH tel and port: AZZUR accepts either, and a call
+  // does not say whether it came from a landline or a mobile.
+  const phone = clip(normalizePhone(event.callerNumber), 14);
   put("telephone", phone);
   put("portable", phone);
-  // Contact data a call does not carry, required by AZZUR (see DEFAULT_PLACEHOLDERS).
+  // Contact data a call does not carry but AZZUR requires (see DEFAULT_PLACEHOLDERS).
   for (const key of ["nom", "prenom", "date_naissance", "code_postal"] as const) {
     const value = fillTemplate(config.placeholders[key], event);
-    if (value) put(key, value);
+    if (value) put(key, key === "nom" || key === "prenom" ? clip(value, 50) : value);
   }
   put(
     "observation",
-    `Appel entrant${event.lineLabel ? ` - ${event.lineLabel}` : ""} du ${formatParisDate(event.startedAt)} (Assurpilot) : coordonnées à compléter`
+    clip(`Appel entrant${event.lineLabel ? ` - ${event.lineLabel}` : ""} du ${formatParisDate(event.startedAt)} (Assurpilot) : coordonnées à compléter`, 255)
   );
-  // AZZUR identifies a provenance by its code, not by a description: a free-text
-  // value such as "Appel entrant - Ligne auto ALM" matches nothing there.
+  put("date", formatParisDate(event.startedAt));
+  if (event.externalId) put("num_devis_initial", clip(event.externalId, 24));
+
+  // The adviser, as AZZUR knows them: its own user id, never ours. Without a
+  // mapping the field is left out and AZZUR applies its default user.
+  const mapped = event.conseiller ? config.userMap[event.conseiller.email.trim().toLowerCase()] : undefined;
+  const userId = mapped ?? config.defaultUserId;
+  if (userId !== undefined && userId !== null) put("id_user", userId);
+
+  // Only meaningful if AZZUR documents them (off by default).
   put("provenance", config.provenance);
   if (event.lineLabel) put("ligne", event.lineLabel);
-  put("date", formatParisDate(event.startedAt));
   if (event.conseiller) {
     put("conseiller", event.conseiller.email);
     put("conseiller_nom", `${event.conseiller.prenom} ${event.conseiller.nom}`.trim());
