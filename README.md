@@ -386,6 +386,7 @@ pour apparaître dans le dispatch board ou directement chez le conseiller. Code 
 | `AZZUR_WEBHOOK_ENABLED`     | `true` pour activer                                                       |
 | `AZZUR_MER_URL`             | URL complète du MER (Administration › Provenances › « Voir l'URL »)       |
 | `AZZUR_MER_ID_PROV`         | optionnel : remplace `id_prov` (51 dans l'URL fournie)                    |
+| `AZZUR_MER_PROVENANCE`      | valeur du champ `provenance` : le code AZZUR (défaut `AE`)                |
 | `AZZUR_MER_METHOD` / `_FORMAT` | `POST` (défaut) ou `GET` ; `form` (défaut) ou `json`                   |
 | `AZZUR_MER_FIELDS`          | JSON : renomme un champ, ou `""` pour ne plus l'envoyer                   |
 | `AZZUR_MER_TIMEOUT_MS`      | délai par tentative (5000)                                                |
@@ -398,9 +399,13 @@ masquée dans tous les logs.
 
 Champs envoyés (noms **par défaut, à confirmer avec la documentation du MER** que
 l'URL ouvre dans AZZUR) : `telephone` (numéro complet, forme nationale `06…`),
-`provenance` (« Appel entrant - Ligne santé CPA »), `date` (`AAAA-MM-JJ HH:MM:SS`,
+`provenance` (le **code** de la provenance AZZUR, `AE` par défaut — `AZZUR_MER_PROVENANCE` ; `id_prov=51` est déjà dans l'URL ; la ligne n'est envoyée que si `AZZUR_MER_FIELDS` active le champ `ligne`), `date` (`AAAA-MM-JJ HH:MM:SS`,
 heure de Paris), `conseiller` (e-mail) et `conseiller_nom` — ces deux derniers
 omis s'il n'y a pas de conseiller, pour un dispatch manuel.
+
+Une réponse **HTML** d'AZZUR (même en HTTP 200) est comptée comme **échec** : c'est la
+page de documentation du service, pas une confirmation ; son texte (qui nomme les
+champs attendus) est affiché dans `/admin/azzur`.
 
 Garanties : l'envoi est **asynchrone** (la réponse à l'utilisateur ne l'attend pas ;
 `waitUntil` garde la fonction Vercel en vie), **ne peut jamais faire échouer**

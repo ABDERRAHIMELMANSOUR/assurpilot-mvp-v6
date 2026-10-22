@@ -10,7 +10,7 @@ type Result = { reference: string; outcome: "sent" | "skipped" | "failed"; statu
 type Status = {
   enabled: boolean; ready: boolean; problem: string | null;
   host: string | null; path: string | null; idProv: string | null;
-  method: string; format: string; fields: Record<string, string>;
+  method: string; format: string; fields: Record<string, string>; provenance: string;
   timeoutMs: number; maxAgeHours: number; onlyAnswered: boolean; recent: Result[];
 };
 type Resend = {
@@ -69,6 +69,7 @@ export default function AzzurPage() {
             <div><dt className="inline text-slate-400">Requête : </dt><dd className="inline font-mono">{status.method} {status.format}</dd></div>
             <div className="sm:col-span-2"><dt className="inline text-slate-400">Champs : </dt>
               <dd className="inline font-mono text-xs">{Object.entries(status.fields).map(([k, v]) => `${k}→${v || "(désactivé)"}`).join("  ")}</dd></div>
+            <div><dt className="inline text-slate-400">Provenance envoyée : </dt><dd className="inline font-mono">{status.provenance}</dd></div>
             <div><dt className="inline text-slate-400">Appels plus vieux que : </dt><dd className="inline">{status.maxAgeHours} h ignorés</dd></div>
             <div><dt className="inline text-slate-400">Manqués : </dt><dd className="inline">{status.onlyAnswered ? "ignorés" : "envoyés"}</dd></div>
             {status.problem && <p className="sm:col-span-2 text-rose-600">{status.problem}</p>}

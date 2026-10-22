@@ -26,6 +26,7 @@ export async function GET() {
       method: config.method,
       format: config.format,
       fields: config.fields,
+      provenance: config.provenance,
       timeoutMs: config.timeoutMs,
       maxAgeHours: config.maxAgeHours,
       onlyAnswered: config.onlyAnswered,

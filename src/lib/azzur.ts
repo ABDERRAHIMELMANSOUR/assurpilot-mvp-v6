@@ -44,6 +44,8 @@ export type AzzurConfig = {
   method: "POST" | "GET";
   format: "form" | "json";
   fields: Record<FieldKey, string>;
+  /** Value of the provenance field: AZZUR's provenance CODE, e.g. "AE" (id 51). */
+  provenance: string;
   timeoutMs: number;
   maxAgeHours: number;
   onlyAnswered: boolean;
@@ -51,11 +53,14 @@ export type AzzurConfig = {
   problem: string | null;
 };
 
-type FieldKey = "telephone" | "provenance" | "conseiller" | "conseiller_nom" | "date";
+type FieldKey = "telephone" | "provenance" | "ligne" | "conseiller" | "conseiller_nom" | "date";
 
 const DEFAULT_FIELDS: Record<FieldKey, string> = {
   telephone: "telephone",
   provenance: "provenance",
+  // The line (ALM / CPA, santé / auto) is NOT sent unless asked for: AZZUR's
+  // provenance is a code ("AE", id 51), and the URL already carries it.
+  ligne: "",
   conseiller: "conseiller",
   conseiller_nom: "conseiller_nom",
   date: "date",
@@ -113,6 +118,7 @@ export function readAzzurConfig(env: Record<string, string | undefined> = proces
     method: (env.AZZUR_MER_METHOD ?? "").trim().toUpperCase() === "GET" ? "GET" : "POST",
     format: (env.AZZUR_MER_FORMAT ?? "").trim().toLowerCase() === "json" ? "json" : "form",
     fields,
+    provenance: (env.AZZUR_MER_PROVENANCE ?? "").trim() || "AE",
     timeoutMs: positiveInt(env.AZZUR_MER_TIMEOUT_MS, 5000),
     maxAgeHours: positiveInt(env.AZZUR_MER_MAX_AGE_HOURS, 48),
     onlyAnswered: isTrue(env.AZZUR_MER_ONLY_ANSWERED),
@@ -145,7 +151,10 @@ export function buildAzzurPayload(event: AzzurCallEvent, config: AzzurConfig): R
   };
 
   put("telephone", normalizePhone(event.callerNumber));
-  put("provenance", event.lineLabel ? `Appel entrant - ${event.lineLabel}` : "Appel entrant");
+  // AZZUR identifies a provenance by its code, not by a description: a free-text
+  // value such as "Appel entrant - Ligne auto ALM" matches nothing there.
+  put("provenance", config.provenance);
+  if (event.lineLabel) put("ligne", event.lineLabel);
   put("date", formatParisDate(event.startedAt));
   if (event.conseiller) {
     put("conseiller", event.conseiller.email);
@@ -197,6 +206,17 @@ export async function mapPool<T, R>(items: T[], limit: number, worker: (item: T)
     })
   );
   return out;
+}
+
+/** Readable text of an HTML page: no scripts, styles or tags, single-spaced. */
+export function htmlToText(html: string): string {
+  return html
+    .replace(/<(script|style)[\s\S]*?<\/\1>/gi, " ")
+    .replace(/<br\s*\/?>|<\/(p|div|li|tr|h\d)>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#0?39;/g, "'")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 /** Strips the secret key (and any other query-string secret) from text bound for the logs. */
@@ -289,7 +309,19 @@ export async function pushCallToAzzur(
       const timer = setTimeout(() => controller.abort(), config.timeoutMs);
       try {
         const res = await fetchImpl(url, { method: config.method, headers, body, signal: controller.signal, redirect: "follow" });
-        const text = (await res.text().catch(() => "")).replace(/\s+/g, " ").trim().slice(0, 300);
+        const raw = await res.text().catch(() => "");
+        const looksHtml = /html/i.test(res.headers.get("content-type") ?? "") || /^\s*<(!doctype|html)/i.test(raw);
+        // An HTML page with a 200 is AZZUR's web-service documentation (or a login
+        // page), not an answer to our request: nothing was inserted. Reporting it
+        // as "sent" hid exactly that. Its text is kept, longer than a normal
+        // answer, because it usually names the fields the service expects.
+        if (looksHtml) {
+          return finish({
+            outcome: "failed", status: res.status, attempts: attempt,
+            detail: `AZZUR a renvoyé une page HTML, pas une confirmation : la requête n'a pas été prise en compte (champs ou paramètres non reconnus ?). Texte de la page : ${htmlToText(raw).slice(0, 1500) || "(vide)"}`,
+          });
+        }
+        const text = raw.replace(/\s+/g, " ").trim().slice(0, 300);
         if (res.ok) return finish({ outcome: "sent", status: res.status, attempts: attempt, detail: `réponse: ${text || "(vide)"}` });
         lastDetail = `HTTP ${res.status} réponse: ${text || "(vide)"}`;
         const retryable = res.status === 429 || res.status >= 500;
