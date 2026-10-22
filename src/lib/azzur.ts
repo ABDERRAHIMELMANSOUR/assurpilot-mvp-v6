@@ -46,6 +46,8 @@ export type AzzurConfig = {
   retourWs: "json" | "text" | null;
   format: "form" | "json";
   fields: Record<FieldKey, string>;
+  /** Stand-ins for contact data Assurpilot does not hold but AZZUR requires. */
+  placeholders: { nom: string; prenom: string; date_naissance: string; code_postal: string };
   /** Value of the provenance field: AZZUR's provenance CODE, e.g. "AE" (id 51). */
   provenance: string;
   timeoutMs: number;
@@ -55,10 +57,22 @@ export type AzzurConfig = {
   problem: string | null;
 };
 
-type FieldKey = "telephone" | "provenance" | "ligne" | "conseiller" | "conseiller_nom" | "date";
+type FieldKey =
+  | "telephone" | "portable" | "nom" | "prenom" | "date_naissance" | "code_postal" | "observation"
+  | "provenance" | "ligne" | "conseiller" | "conseiller_nom" | "date";
 
+// Parameter names are AZZUR's, from its validator message ("nom, date naissance,
+// code postal, mail ou telephone ou portable manquant") and its CSV model; the
+// web service's own variable list is not in this repository, so every one of them
+// can be renamed in AZZUR_MER_FIELDS.
 const DEFAULT_FIELDS: Record<FieldKey, string> = {
   telephone: "telephone",
+  portable: "portable",
+  nom: "nom",
+  prenom: "prenom",
+  date_naissance: "date_naissance",
+  code_postal: "code_postal",
+  observation: "observation",
   provenance: "provenance",
   // The line (ALM / CPA, santé / auto) is NOT sent unless asked for: AZZUR's
   // provenance is a code ("AE", id 51), and the URL already carries it.
@@ -75,6 +89,29 @@ function isTrue(value: string | undefined): boolean {
 function positiveInt(value: string | undefined, fallback: number): number {
   const n = Number(value);
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
+}
+
+/**
+ * AZZUR refuses a fiche without a name, a date of birth and a postal code, none
+ * of which a phone call carries. These placeholders let the fiche in so the
+ * adviser can complete it; they are deliberately obvious stand-ins (a 1900 birth
+ * date, postal code 00000) so they can never pass for real data, and the fiche
+ * says so in its observation. Override or blank each one with AZZUR_MER_DEFAULTS.
+ */
+const DEFAULT_PLACEHOLDERS = { nom: "Appelant", prenom: "Prospect", date_naissance: "01/01/1900", code_postal: "00000" };
+
+function readPlaceholders(raw: string | undefined): AzzurConfig["placeholders"] {
+  const out = { ...DEFAULT_PLACEHOLDERS };
+  if (!raw?.trim()) return out;
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    for (const key of Object.keys(out) as (keyof typeof out)[]) {
+      if (typeof parsed[key] === "string") out[key] = parsed[key] as string;
+    }
+  } catch {
+    // Bad JSON: keep the defaults rather than sending fiches AZZUR will refuse.
+  }
+  return out;
 }
 
 /** Reads the integration settings. Pure: pass an env object to test it. */
@@ -125,6 +162,7 @@ export function readAzzurConfig(env: Record<string, string | undefined> = proces
     format: (env.AZZUR_MER_FORMAT ?? "").trim().toLowerCase() === "json" ? "json" : "form",
     fields,
     provenance: (env.AZZUR_MER_PROVENANCE ?? "").trim() || "AE",
+    placeholders: readPlaceholders(env.AZZUR_MER_DEFAULTS),
     timeoutMs: positiveInt(env.AZZUR_MER_TIMEOUT_MS, 5000),
     maxAgeHours: positiveInt(env.AZZUR_MER_MAX_AGE_HOURS, 48),
     onlyAnswered: isTrue(env.AZZUR_MER_ONLY_ANSWERED),
@@ -156,7 +194,19 @@ export function buildAzzurPayload(event: AzzurCallEvent, config: AzzurConfig): R
     if (name) out[name] = value; // "" in AZZUR_MER_FIELDS switches the field off
   };
 
-  put("telephone", normalizePhone(event.callerNumber));
+  // The number goes out as BOTH telephone and portable: AZZUR accepts either, and
+  // a call does not say whether it came from a landline or a mobile.
+  const phone = normalizePhone(event.callerNumber);
+  put("telephone", phone);
+  put("portable", phone);
+  // Contact data a call does not carry, required by AZZUR (see DEFAULT_PLACEHOLDERS).
+  for (const key of ["nom", "prenom", "date_naissance", "code_postal"] as const) {
+    if (config.placeholders[key]) put(key, config.placeholders[key]);
+  }
+  put(
+    "observation",
+    `Appel entrant${event.lineLabel ? ` - ${event.lineLabel}` : ""} du ${formatParisDate(event.startedAt)} (Assurpilot) : coordonnées à compléter`
+  );
   // AZZUR identifies a provenance by its code, not by a description: a free-text
   // value such as "Appel entrant - Ligne auto ALM" matches nothing there.
   put("provenance", config.provenance);
@@ -322,17 +372,19 @@ export async function pushCallToAzzur(
         const res = await fetchImpl(url, { method: config.method, headers, body, signal: controller.signal, redirect: "follow" });
         const raw = await res.text().catch(() => "");
         const looksHtml = /html/i.test(res.headers.get("content-type") ?? "") || /^\s*<(!doctype|html)/i.test(raw);
+        // AZZUR wraps even its short answers ("ERREUR : …", the fiche id) in a page.
+        const pageText = looksHtml ? htmlToText(raw) : "";
         // An HTML page with a 200 is AZZUR's web-service documentation (or a login
         // page), not an answer to our request: nothing was inserted. Reporting it
         // as "sent" hid exactly that. Its text is kept, longer than a normal
         // answer, because it usually names the fields the service expects.
-        if (looksHtml) {
+        if (looksHtml && pageText.length > 600) {
           return finish({
             outcome: "failed", status: res.status, attempts: attempt,
-            detail: `AZZUR a renvoyé une page HTML, pas une confirmation : la requête n'a pas été prise en compte (champs ou paramètres non reconnus ?). Texte de la page : ${htmlToText(raw).slice(0, 8000) || "(vide)"}`,
+            detail: `AZZUR a renvoyé une page HTML, pas une confirmation : la requête n'a pas été prise en compte (champs ou paramètres non reconnus ?). Texte de la page : ${pageText.slice(0, 8000) || "(vide)"}`,
           });
         }
-        const text = raw.replace(/\s+/g, " ").trim().slice(0, 300);
+        const text = (looksHtml ? pageText : raw.replace(/\s+/g, " ").trim()).slice(0, 300);
         if (res.ok) {
           // AZZUR's documented default answers (text format): the fiche id on
           // success, "DOUBLON:identifiant" for a duplicate, otherwise a message

@@ -28,6 +28,7 @@ export async function GET() {
       format: config.format,
       fields: config.fields,
       provenance: config.provenance,
+      placeholders: config.placeholders,
       timeoutMs: config.timeoutMs,
       maxAgeHours: config.maxAgeHours,
       onlyAnswered: config.onlyAnswered,

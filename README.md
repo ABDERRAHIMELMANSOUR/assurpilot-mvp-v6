@@ -398,20 +398,22 @@ pour apparaître dans le dispatch board ou directement chez le conseiller. Code 
 jamais dans le dépôt (public), et à régénérer côté AZZUR si elle a fuité. Elle est
 masquée dans tous les logs.
 
-Champs envoyés (noms **par défaut, à confirmer avec la documentation du MER** que
-l'URL ouvre dans AZZUR) : `telephone` (numéro complet, forme nationale `06…`),
-`provenance` (le **code** de la provenance AZZUR, `AE` par défaut — `AZZUR_MER_PROVENANCE` ; `id_prov=51` est déjà dans l'URL ; la ligne n'est envoyée que si `AZZUR_MER_FIELDS` active le champ `ligne`), `date` (`AAAA-MM-JJ HH:MM:SS`,
-heure de Paris), `conseiller` (e-mail) et `conseiller_nom` — ces deux derniers
-omis s'il n'y a pas de conseiller, pour un dispatch manuel.
+Champs envoyés en **GET** (noms **par défaut, à confirmer avec la liste des variables du
+MER** — « Voir la liste des variables GET » dans AZZUR ; tous renommables via
+`AZZUR_MER_FIELDS`) : `ws=mer`, `id_prov`, `cle_ws`, `provenance=AE` (le **code** de la
+provenance, `AZZUR_MER_PROVENANCE`), `telephone` **et** `portable` (le même numéro
+complet, forme `06…` : un appel ne dit pas s'il vient d'un fixe ou d'un mobile),
+`date`, `conseiller` (e-mail) et `conseiller_nom` (omis sans conseiller),
+`observation` (« Appel entrant - Ligne santé CPA du … : coordonnées à compléter »).
+Paramètres encodés par `URLSearchParams`.
 
-`ws=mer`, `id_prov` et `cle_ws` sont toujours dans l'URL (`ws=mer` est ajouté même s'il
-manque). **Interprétation de la réponse** (format texte par défaut d'AZZUR, toujours en
-HTTP 200) : un nombre = fiche créée (id) ; `DOUBLON:identifiant` = déjà dans AZZUR
-(*doublon*, pas une erreur) ; tout autre texte = *échec* avec le message d'AZZUR.
-
-Une réponse **HTML** d'AZZUR (même en HTTP 200) est comptée comme **échec** : c'est la
-page de documentation du service, pas une confirmation ; son texte (qui nomme les
-champs attendus) est affiché dans `/admin/azzur`.
+**Données imposées par AZZUR** : le service refuse une fiche sans `nom`, `date_naissance`
+et `code_postal` (« ERREUR : nom, date naissance, code postal, mail ou telephone ou
+portable manquant »). Un appel n'en contient aucune ; des **valeurs de remplacement**
+volontairement évidentes sont donc envoyées (`AZZUR_MER_DEFAULTS`) : `nom=Appelant`,
+`prenom=Prospect`, `date_naissance=01/01/1900`, `code_postal=00000`. Ces fiches sont à
+**compléter par le conseiller** (l'observation le dit) : les devis ne doivent pas être
+faits sur ces valeurs. Une valeur vide dans `AZZUR_MER_DEFAULTS` n'envoie pas le champ.
 
 Garanties : l'envoi est **asynchrone** (la réponse à l'utilisateur ne l'attend pas ;
 `waitUntil` garde la fonction Vercel en vie), **ne peut jamais faire échouer**
