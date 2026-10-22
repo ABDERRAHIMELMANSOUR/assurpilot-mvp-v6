@@ -410,8 +410,9 @@ Paramètres encodés par `URLSearchParams`.
 **Données imposées par AZZUR** : le service refuse une fiche sans `nom`, `date_naissance`
 et `code_postal` (« ERREUR : nom, date naissance, code postal, mail ou telephone ou
 portable manquant »). Un appel n'en contient aucune ; des **valeurs de remplacement**
-volontairement évidentes sont donc envoyées (`AZZUR_MER_DEFAULTS`) : `nom=Appelant`,
-`prenom=Prospect`, `date_naissance=01/01/1900`, `code_postal=00000`. Ces fiches sont à
+volontairement évidentes sont donc envoyées (`AZZUR_MER_DEFAULTS`) : `nom=Appel Assurpilot`,
+`prenom=reçu par <conseiller qui a reçu l'appel>` (modèles `{conseiller}`, `{ligne}`, `{date}`),
+`date_naissance=01/01/1900`, `code_postal=00000`. Ces fiches sont à
 **compléter par le conseiller** (l'observation le dit) : les devis ne doivent pas être
 faits sur ces valeurs. Une valeur vide dans `AZZUR_MER_DEFAULTS` n'envoie pas le champ.
 
@@ -423,6 +424,12 @@ l'enregistrement, tente 3 fois (0,5 s puis 1,5 s) sur délai dépassé / erreur 
 le numéro n'y figure que masqué. `GET /api/admin/azzur` (admin) montre la
 configuration (sans la clé) et les derniers résultats de l'instance. Les doublons
 d'import étant écartés avant l'envoi, ré-importer un fichier ne renvoie rien.
+**Noms de variables** : si AZZUR répond encore « … manquant » alors que ces champs sont
+envoyés, ses noms de paramètres diffèrent des nôtres. `/admin/azzur` › « Lire la
+documentation » affiche la page de documentation du MER (seulement `ws`, `id_prov`,
+`cle_ws` sont envoyés : rien n'est créé) ; les noms exacts s'y lisent, puis se règlent
+dans `AZZUR_MER_FIELDS`.
+
 **Vérifier et tester** : page admin `/admin/azzur` (menu Configuration › Intégration
 AZZUR) — état de la configuration, **Aperçu** (rien n'est envoyé : nombre d'appels du
 jour et charge utile exacte) puis **Envoyer** les N premiers appels **d'aujourd'hui**

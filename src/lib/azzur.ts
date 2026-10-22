@@ -98,7 +98,25 @@ function positiveInt(value: string | undefined, fallback: number): number {
  * date, postal code 00000) so they can never pass for real data, and the fiche
  * says so in its observation. Override or blank each one with AZZUR_MER_DEFAULTS.
  */
-const DEFAULT_PLACEHOLDERS = { nom: "Appelant", prenom: "Prospect", date_naissance: "01/01/1900", code_postal: "00000" };
+// nom / prenom may use {conseiller} (who received the call on Assurpilot, or
+// "non attribué"), {ligne} and {date}, so the fiche says where it came from and the
+// adviser can find it in AZZUR.
+const DEFAULT_PLACEHOLDERS = {
+  nom: "Appel Assurpilot",
+  prenom: "reçu par {conseiller}",
+  date_naissance: "01/01/1900",
+  code_postal: "00000",
+};
+
+/** Fills {conseiller} / {ligne} / {date} in a placeholder template. */
+function fillTemplate(template: string, event: AzzurCallEvent): string {
+  const who = event.conseiller ? `${event.conseiller.prenom} ${event.conseiller.nom}`.trim() : "non attribué";
+  return template
+    .replace(/\{conseiller\}/g, who)
+    .replace(/\{ligne\}/g, event.lineLabel ?? "")
+    .replace(/\{date\}/g, formatParisDate(event.startedAt))
+    .trim();
+}
 
 function readPlaceholders(raw: string | undefined): AzzurConfig["placeholders"] {
   const out = { ...DEFAULT_PLACEHOLDERS };
@@ -201,7 +219,8 @@ export function buildAzzurPayload(event: AzzurCallEvent, config: AzzurConfig): R
   put("portable", phone);
   // Contact data a call does not carry, required by AZZUR (see DEFAULT_PLACEHOLDERS).
   for (const key of ["nom", "prenom", "date_naissance", "code_postal"] as const) {
-    if (config.placeholders[key]) put(key, config.placeholders[key]);
+    const value = fillTemplate(config.placeholders[key], event);
+    if (value) put(key, value);
   }
   put(
     "observation",

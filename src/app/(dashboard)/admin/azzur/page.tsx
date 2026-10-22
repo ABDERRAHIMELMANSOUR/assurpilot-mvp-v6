@@ -28,6 +28,7 @@ export default function AzzurPage() {
   const [limit, setLimit] = useState(1);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [doc, setDoc] = useState<{ text: string; chars: number; truncated: boolean } | null>(null);
 
   const loadStatus = useCallback(async () => {
     try { setStatus(await fetchJson<Status>("/api/admin/azzur")); setError(""); }
@@ -46,6 +47,13 @@ export default function AzzurPage() {
       }));
       if (mode === "send") loadStatus();
     } catch (e) { setError(errorMessage(e)); }
+    finally { setBusy(false); }
+  }
+
+  async function loadDoc() {
+    setBusy(true); setError("");
+    try { setDoc(await fetchJson("/api/admin/azzur/doc")); }
+    catch (e) { setError(errorMessage(e)); }
     finally { setBusy(false); }
   }
 
@@ -105,6 +113,19 @@ export default function AzzurPage() {
             {out.results && <ResultTable rows={out.results} />}
           </div>
         )}
+      </div>
+
+      <div className="card p-4 mb-5">
+        <h2 className="text-sm font-semibold text-slate-800 mb-1">Documentation AZZUR (variables du web service)</h2>
+        <p className="text-xs text-slate-500 mb-3">
+          Lit la page de documentation du MER (celle de « Voir l&apos;URL »). Aucune donnée de contact n&apos;est envoyée, rien n&apos;est créé.
+        </p>
+        <div className="flex items-center gap-3">
+          <button className="btn-secondary" disabled={busy || !status?.ready} onClick={loadDoc}>Lire la documentation</button>
+          {doc && <button className="btn-secondary" onClick={() => navigator.clipboard?.writeText(doc.text)}>Copier le texte</button>}
+          {doc && <span className="text-xs text-slate-400">{doc.chars.toLocaleString("fr-FR")} caractères{doc.truncated ? " (tronqué)" : ""}</span>}
+        </div>
+        {doc && <pre className="mt-3 bg-slate-50 border border-slate-100 rounded-xl p-3 text-xs whitespace-pre-wrap break-words max-h-96 overflow-y-auto">{doc.text}</pre>}
       </div>
 
       <div className="card p-4">
