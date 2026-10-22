@@ -397,6 +397,12 @@ par `GET /api/admin/stats-lignes`.
 - **Doublons** = appels bruts − appelants uniques, **par catégorie** : un même
   numéro (`+33 6…` et `06…` sont identiques) qui rappelle dans la même catégorie
   sur la période. Un numéro vide n'est jamais fusionné avec un autre.
+- **Branche / Produit** (`?produit=tous|sante|auto`, alias `branche`) : Santé ou Auto,
+  lu sur la **ligne** d'arrivée (son équipe, à défaut son libellé « Ligne santé CPA »,
+  à défaut l'équipe de l'appel) et, seulement si la ligne n'en nomme aucun, sur
+  l'équipe du conseiller. La ligne prime : un conseiller de l'équipe santé qui
+  décroche sur la ligne auto compte en Auto. Les accents et la casse sont ignorés.
+  Un appel dont le produit est indéterminé est exclu dès qu'un produit est choisi.
 - **Brut / Net** : brut liste chaque appel ; net une ligne par appelant et par
   catégorie (le plus long appel, avec le nombre de tentatives). Cliquer une carte
   restreint le tableau à cette catégorie. Les filtres Ligne source et Équipe

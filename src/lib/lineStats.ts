@@ -24,7 +24,7 @@
 // normalised form, so +33687814485 and 0687814485 are one caller) beyond the
 // first are repeats. doublons = gross - unique. A blank / withheld number is
 // never merged with another: "unknown" is not one caller.
-import { entityOfTeamName, type Entity } from "@/lib/entity";
+import { entityOfTeamName, subTeamOfTeamName, type Entity, type SubTeam } from "@/lib/entity";
 import { countUniqueCallers, groupCallsByCaller } from "@/lib/dedupe";
 
 export type CategoryKey = "CPA>ALM" | "ALM>ALM" | "CPA>CPA" | "ALM>CPA";
@@ -62,6 +62,8 @@ export type StatCall = {
   adviserEntity: Entity | null;
   /** True when a conseiller is attached to the call at all. */
   hasAdviser: boolean;
+  /** Product (Santé / Auto) of the line the call entered on; null when it names none. */
+  product: SubTeam | null;
 };
 
 export type ClassifiedCall<T extends StatCall = StatCall> = T & { categorie: CategoryKey };
@@ -124,18 +126,44 @@ export function computeLineStats(calls: StatCall[]): { stats: LineStats; classif
 }
 
 /**
- * Narrows to one source line and/or one adviser entity. Either may be null for
- * "all". Applied BEFORE counting so the cards and the table always describe
- * the same set of calls.
+ * Narrows to one source line, one adviser entity and/or one product. Each may
+ * be null for "all". Applied BEFORE counting so the cards and the table always
+ * describe the same set of calls. A call whose product cannot be determined is
+ * left out when a product is chosen: it is neither Santé nor Auto.
  */
 export function filterByEntities<T extends StatCall>(
   calls: T[],
   source: Entity | null,
-  adviser: Entity | null
+  adviser: Entity | null,
+  product: SubTeam | null = null
 ): T[] {
-  if (!source && !adviser) return calls;
+  if (!source && !adviser && !product) return calls;
   return calls.filter(
-    (c) => (!source || c.sourceEntity === source) && (!adviser || c.adviserEntity === adviser)
+    (c) =>
+      (!source || c.sourceEntity === source) &&
+      (!adviser || c.adviserEntity === adviser) &&
+      (!product || c.product === product)
+  );
+}
+
+/**
+ * Product of a call: Santé or Auto, read from the LINE it entered on — its team
+ * name, then its label ("Ligne santé CPA"), then the call's own team — and only
+ * when none of those names one, from the answering adviser's team. The line
+ * comes first because that is what "type de ligne" means; advisers do answer
+ * across products, so their team is a fallback, not the rule.
+ */
+export function productOf(
+  lineTeamName: string | null | undefined,
+  lineLabel: string | null | undefined,
+  callTeamName: string | null | undefined,
+  adviserTeamName: string | null | undefined
+): SubTeam | null {
+  return (
+    subTeamOfTeamName(lineTeamName) ??
+    subTeamOfTeamName(lineLabel) ??
+    subTeamOfTeamName(callTeamName) ??
+    subTeamOfTeamName(adviserTeamName)
   );
 }
 

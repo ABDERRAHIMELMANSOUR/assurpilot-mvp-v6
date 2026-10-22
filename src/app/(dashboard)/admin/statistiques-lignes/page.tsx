@@ -9,6 +9,7 @@ import { errorMessage, fetchJson } from "@/lib/fetchJson";
 
 type Period = "today" | "week" | "month" | "custom";
 type Entity = "" | "ALM" | "CPA";
+type Produit = "" | "sante" | "auto";
 type View = "gross" | "net";
 type CategoryKey = "CPA>ALM" | "ALM>ALM" | "CPA>CPA" | "ALM>CPA";
 
@@ -76,6 +77,7 @@ export default function StatistiquesLignesPage() {
   const [dateTo, setDateTo] = useState("");
   const [ligne, setLigne] = useState<Entity>("");
   const [equipe, setEquipe] = useState<Entity>("");
+  const [produit, setProduit] = useState<Produit>("");
   const [view, setView] = useState<View>("gross");
   const [categorie, setCategorie] = useState<CategoryKey | "">("");
 
@@ -97,10 +99,11 @@ export default function StatistiquesLignesPage() {
     }
     if (ligne) p.set("ligne", ligne);
     if (equipe) p.set("equipe", equipe);
+    if (produit) p.set("produit", produit);
     p.set("view", view);
     if (categorie) p.set("categorie", categorie);
     return "?" + p.toString();
-  }, [period, dateFrom, dateTo, ligne, equipe, view, categorie]);
+  }, [period, dateFrom, dateTo, ligne, equipe, produit, view, categorie]);
 
   const load = useCallback(async () => {
     if (!customReady) return;
@@ -172,6 +175,15 @@ export default function StatistiquesLignesPage() {
             <option value="">Toutes (ALM + CPA)</option>
             <option value="ALM">Conseillers ALM</option>
             <option value="CPA">Conseillers CPA</option>
+          </select>
+        </label>
+
+        <label className="text-xs text-slate-500">
+          <span className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1">Branche / Produit</span>
+          <select value={produit} onChange={(e) => setProduit(e.target.value as Produit)} className={SELECT}>
+            <option value="">Tous</option>
+            <option value="sante">Santé</option>
+            <option value="auto">Auto</option>
           </select>
         </label>
 

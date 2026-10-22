@@ -7,6 +7,7 @@
 //   GET ?period=today|week|month  or  ?dateFrom=YYYY-MM-DD&dateTo=YYYY-MM-DD
 //       &ligne=ALM|CPA        standard line the call entered on
 //       &equipe=ALM|CPA       entity of the adviser who answered
+//       &produit=tous|sante|auto   product of the line (alias: branche)
 //       &view=gross|net       table rows: every call, or one per caller
 //       &categorie=CPA>ALM    table only: restrict to one card
 //
@@ -19,12 +20,13 @@ import type { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { badRequest, handleApiError, requireRole } from "@/lib/api";
 import { buildDateRange } from "@/lib/dates";
-import { entityOfTeamName, parseEntity } from "@/lib/entity";
+import { entityOfTeamName, parseEntity, parseSubTeam } from "@/lib/entity";
 import {
   buildRows,
   computeLineStats,
   filterByEntities,
   isCategoryKey,
+  productOf,
   sourceEntityOf,
   type StatCall,
 } from "@/lib/lineStats";
@@ -59,6 +61,13 @@ export async function GET(req: NextRequest) {
     const equipe = parseEntity(equipeRaw);
     if (ligneRaw && !ligne) throw badRequest("Ligne source inconnue (ALM ou CPA)");
     if (equipeRaw && !equipe) throw badRequest("Équipe conseiller inconnue (ALM ou CPA)");
+
+    // "tous" (or nothing) means every product; anything else must be Santé or Auto.
+    const produitRaw = (params.get("produit") ?? params.get("branche") ?? "").trim();
+    const produit = parseSubTeam(produitRaw);
+    if (produitRaw && produitRaw.toLowerCase() !== "tous" && !produit) {
+      throw badRequest("Produit inconnu (tous, sante ou auto)");
+    }
 
     const view = params.get("view") === "net" ? "net" : "gross";
     const categorieRaw = params.get("categorie");
@@ -118,11 +127,17 @@ export async function GET(req: NextRequest) {
         ),
         adviserEntity: entityOfTeamName(userTeam),
         hasAdviser: Boolean(user),
+        product: productOf(
+          line?.teamId ? teamName.get(line.teamId) : null,
+          line?.label,
+          c.teamId ? teamName.get(c.teamId) : null,
+          userTeam
+        ),
       };
     });
 
     // Filter first, then count, so cards and table describe the same calls.
-    const scoped = filterByEntities(statCalls, ligne, equipe);
+    const scoped = filterByEntities(statCalls, ligne, equipe, produit);
     const { stats, classified } = computeLineStats(scoped);
 
     const tableSource = categorieRaw ? classified.filter((c) => c.categorie === categorieRaw) : classified;
@@ -148,7 +163,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       range: { from: range?.gte?.toISOString() ?? null, to: range?.lte?.toISOString() ?? null },
-      filters: { ligne, equipe, view, categorie: categorieRaw },
+      filters: { ligne, equipe, produit, view, categorie: categorieRaw },
       scanned: calls.length,
       truncated,
       ...stats,
