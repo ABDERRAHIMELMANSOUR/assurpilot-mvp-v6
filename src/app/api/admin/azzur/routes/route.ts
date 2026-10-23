@@ -2,15 +2,14 @@
 //
 // The four AZZUR links (AUTO ALM, SANTÉ ALM, AUTO CPA, SANTÉ CPA). ADMIN ONLY.
 //
-//   GET  -> for each link: whether it is set, where it points (host, path, id_prov —
+//   GET  -> for each link: whether it is configured, where it points (host, path, id_prov —
 //           NEVER the secret key) and whether the table exists
-//   PUT  { key, value }  -> sets it; value is a full MER URL, a bare id_prov, or ""
-//           to clear it (the main link is then used)
+//   PUT  { key, value }  -> sets it; value is a full MER URL, or "" to clear it. A link that
+//           is not configured has no destination: nothing is sent for that category.
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { ApiError, badRequest, handleApiError, readJson, requireRole } from "@/lib/api";
-import { readAzzurConfig } from "@/lib/azzur";
-import { describeUrl, isRouteKey, parseRouteValue, resolveEndpoint, ROUTE_KEYS, ROUTE_LABEL } from "@/lib/azzurRouting";
+import { allowedHosts, describeUrl, isRouteKey, parseRouteValue, resolveEndpoint, ROUTE_KEYS, ROUTE_LABEL } from "@/lib/azzurRouting";
 import { isMissingTable, loadAzzurRoutes, saveAzzurRoute } from "@/lib/azzurRoutesStore";
 
 export const runtime = "nodejs";
@@ -21,23 +20,22 @@ const MIGRATION_HINT = "Exécutez prisma/sql/009-azzur-routes.sql dans Supabase 
 export async function GET() {
   try {
     await requireRole("ADMINISTRATEUR");
-    const config = readAzzurConfig();
     const { routes, tableAvailable, origin } = await loadAzzurRoutes();
 
     return NextResponse.json({
       tableAvailable,
       migrationHint: tableAvailable ? null : MIGRATION_HINT,
-      main: config.url ? describeUrl(config.url) : null,
+      allowedHosts: allowedHosts(),
       routes: ROUTE_KEYS.map((key) => {
-        const ep = config.url ? resolveEndpoint(key, routes, config.url) : null;
+        const ep = resolveEndpoint(key, routes);
         return {
           key,
           label: ROUTE_LABEL[key],
-          configured: ep?.source === "dedicated",
+          configured: ep.url !== null,
           origin: origin[key] ?? null,
-          // Where calls for this team and product actually go.
-          target: ep ? describeUrl(ep.url) : null,
-          why: ep?.why ?? null,
+          // Where calls for this team and product go; null = nowhere, they stay local.
+          target: ep.url ? describeUrl(ep.url) : null,
+          why: ep.why,
         };
       }),
     });
@@ -53,7 +51,7 @@ export async function PUT(req: NextRequest) {
     if (!isRouteKey(body.key)) throw badRequest("Lien inconnu (AUTO_ALM, SANTE_ALM, AUTO_CPA ou SANTE_CPA)");
     if (typeof body.value !== "string") throw badRequest("value doit être un texte (vide pour effacer)");
 
-    const parsed = parseRouteValue(body.value, readAzzurConfig().url);
+    const parsed = parseRouteValue(body.value, allowedHosts());
     if (!parsed.ok) throw badRequest(parsed.error);
 
     try {

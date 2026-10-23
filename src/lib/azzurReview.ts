@@ -19,12 +19,12 @@
 import { normalizePhone } from "@/lib/phone";
 import { ROUTE_KEYS, ROUTE_LABEL, routeKeyFor, type RouteKey } from "@/lib/azzurRouting";
 
-export type CategoryId = RouteKey | "PRINCIPAL";
+export type CategoryId = RouteKey | "INCONNU";
 
-export const CATEGORY_ORDER: CategoryId[] = [...ROUTE_KEYS, "PRINCIPAL"];
+export const CATEGORY_ORDER: CategoryId[] = [...ROUTE_KEYS, "INCONNU"];
 export const CATEGORY_LABEL: Record<CategoryId, string> = {
   ...ROUTE_LABEL,
-  PRINCIPAL: "Équipe non identifiée (lien principal)",
+  INCONNU: "Équipe non identifiée (aucun lien)",
 };
 
 export type ReviewCall = {
@@ -118,7 +118,7 @@ export function buildReview(calls: ReviewCall[], options: { includeHistory?: boo
 
     const owner = [...group].sort(byFirstAttempt)[0];
     const fromHistory = !owner.inSelection;
-    const category: CategoryId = routeKeyFor(owner.teamName, owner.lineLabel) ?? "PRINCIPAL";
+    const category: CategoryId = routeKeyFor(owner.teamName, owner.lineLabel) ?? "INCONNU";
     const cat = cats.get(category)!;
 
     const line =
@@ -158,7 +158,7 @@ export function buildReview(calls: ReviewCall[], options: { includeHistory?: boo
   for (const id of CATEGORY_ORDER) {
     const { byAdviser, ...rest } = cats.get(id)!;
     // The four links are always shown, even at zero; the fallback row only when it has calls.
-    if (id === "PRINCIPAL" && rest.calls === 0) continue;
+    if (id === "INCONNU" && rest.calls === 0) continue;
     categories.push({
       ...rest,
       advisers: [...byAdviser.values()].sort((a, b) => b.leads + b.alreadyReceived - (a.leads + a.alreadyReceived) || a.name.localeCompare(b.name, "fr")),

@@ -9,11 +9,11 @@
 // The key comes from the ADVISER who took the call: their team name carries both
 // halves ("Équipe auto CPA" -> CPA + Auto). If the team names only one half, or none,
 // the label of the line the call arrived on ("Ligne santé CPA") fills the gap.
-// Anything that still cannot be placed goes to the MAIN link (AZZUR_MER_URL) rather
-// than being dropped: the lead reaches AZZUR, just not in a team-specific space.
 //
-// A link that is not set also falls back to the main link, so the feature can be
-// switched on one team at a time.
+// There is NO default link. A category whose link has not been configured on
+// /admin/azzur — and a call whose team cannot be placed at all — has no destination:
+// nothing is sent for it, and the calls stay in the local database for the admin to
+// review. Configuring a link is the only thing that makes a category sendable.
 import { entityOfTeamName, subTeamOfTeamName } from "@/lib/entity";
 
 export const ROUTE_KEYS = ["AUTO_ALM", "SANTE_ALM", "AUTO_CPA", "SANTE_CPA"] as const;
@@ -50,27 +50,47 @@ export function describeUrl(url: URL): string {
   return `${url.host}${url.pathname}${idProv ? ` (id_prov=${idProv})` : ""}`;
 }
 
+/** Servers a link may point at unless AZZUR_MER_ALLOWED_HOSTS says otherwise. */
+export const DEFAULT_ALLOWED_HOSTS = ["www.gestfiches.com", "gestfiches.com"];
+
+/**
+ * Hosts a link may use. Customer phone numbers are posted to it, so a typo or a hostile
+ * paste must not be able to send them elsewhere. AZZUR_MER_ALLOWED_HOSTS (comma separated,
+ * host[:port]) replaces the default; the host of the optional reference AZZUR_MER_URL is
+ * always allowed too.
+ */
+export function allowedHosts(env: Record<string, string | undefined> = process.env): string[] {
+  const configured = (env.AZZUR_MER_ALLOWED_HOSTS ?? "").split(",").map((h) => h.trim().toLowerCase()).filter(Boolean);
+  const hosts = configured.length ? configured : [...DEFAULT_ALLOWED_HOSTS];
+  try {
+    const reference = (env.AZZUR_MER_URL ?? "").trim();
+    if (reference) hosts.push(new URL(reference).host.toLowerCase());
+  } catch {
+    // An unparseable reference URL adds nothing.
+  }
+  return [...new Set(hosts)];
+}
+
 export type ParsedRoute = { ok: true; value: string } | { ok: false; error: string };
 
 /**
  * Validates what an administrator typed for one link.
- *   ""            clears it (back to the main link)
- *   "51"          a bare id_prov: the main link with that provenance
- *   "https://…"   a full MER URL: must carry id_prov and cle_ws, and point at the SAME
- *                 host as the main link — customer phone numbers are posted to it, so a
- *                 typo or a hostile paste must not be able to send them elsewhere.
+ *   ""            clears it: the category then has no destination and sends nothing
+ *   "https://…"   a full MER URL, which must carry id_prov and cle_ws and point at an
+ *                 allowed host
+ * A bare id_prov is not accepted any more: it only made sense relative to a default link.
  */
-export function parseRouteValue(raw: string, main: URL | null): ParsedRoute {
+export function parseRouteValue(raw: string, hosts: string[]): ParsedRoute {
   const value = raw.trim();
   if (!value) return { ok: true, value: "" };
-  if (/^\d{1,9}$/.test(value)) {
-    return main ? { ok: true, value } : { ok: false, error: "Un id_prov seul nécessite AZZUR_MER_URL (le lien principal)." };
+  if (/^\d+$/.test(value)) {
+    return { ok: false, error: "Collez l'URL MER complète (avec id_prov et cle_ws) : un id_prov seul ne suffit plus." };
   }
   let url: URL;
   try {
     url = new URL(value);
   } catch {
-    return { ok: false, error: "Ce n'est ni une URL valide ni un id_prov (nombre)." };
+    return { ok: false, error: "Ce n'est pas une URL valide." };
   }
   if (url.protocol !== "https:" && url.protocol !== "http:") return { ok: false, error: "L'URL doit commencer par https://" };
   const key = url.searchParams.get("cle_ws");
@@ -78,42 +98,33 @@ export function parseRouteValue(raw: string, main: URL | null): ParsedRoute {
     return { ok: false, error: "L'URL doit contenir la clé complète (cle_ws=…). Une clé masquée (***) ne convient pas." };
   }
   if (!url.searchParams.get("id_prov")) return { ok: false, error: "L'URL doit contenir id_prov=…" };
-  if (main && url.host !== main.host) {
-    return { ok: false, error: `L'URL doit être sur le même serveur que le lien principal (${main.host}).` };
+  if (!hosts.includes(url.host.toLowerCase())) {
+    return { ok: false, error: `Serveur non autorisé (${url.host}). Autorisés : ${hosts.join(", ")}.` };
   }
   return { ok: true, value: url.toString() };
 }
 
 export type Endpoint = {
-  url: URL;
-  /** The key used, or null when the call could not be placed. */
+  /** Where to send, or null when this category has no usable link: nothing is sent. */
+  url: URL | null;
+  /** The category, or null when the call's team and product could not be placed. */
   routeKey: RouteKey | null;
-  /** dedicated: the link configured for this key; principal: the main link. */
-  source: "dedicated" | "principal";
-  /** Why the main link was used, when it was. */
+  /** Why there is no destination, when there is none. */
   why: string | null;
 };
 
-/** Picks the URL for a call. Never throws; a bad stored value degrades to the main link. */
-export function resolveEndpoint(
-  routeKey: RouteKey | null,
-  routes: RouteSettings,
-  main: URL
-): Endpoint {
-  const principal = (why: string): Endpoint => ({ url: new URL(main.toString()), routeKey, source: "principal", why });
-  if (!routeKey) return principal("équipe ou produit du conseiller inconnu");
+/** Picks the URL for a call. Never throws, and never falls back to another category's link. */
+export function resolveEndpoint(routeKey: RouteKey | null, routes: RouteSettings): Endpoint {
+  if (!routeKey) return { url: null, routeKey, why: "équipe ou produit du conseiller non identifié" };
 
   const raw = (routes[routeKey] ?? "").trim();
-  if (!raw) return principal(`lien ${ROUTE_LABEL[routeKey]} non défini`);
+  if (!raw) return { url: null, routeKey, why: `lien ${ROUTE_LABEL[routeKey]} non configuré` };
 
-  if (/^\d{1,9}$/.test(raw)) {
-    const url = new URL(main.toString());
-    url.searchParams.set("id_prov", raw);
-    return { url, routeKey, source: "dedicated", why: null };
-  }
   try {
-    return { url: new URL(raw), routeKey, source: "dedicated", why: null };
+    const url = new URL(raw);
+    if (!url.searchParams.get("cle_ws") || !url.searchParams.get("id_prov")) throw new Error("incomplete");
+    return { url, routeKey, why: null };
   } catch {
-    return principal(`lien ${ROUTE_LABEL[routeKey]} invalide`);
+    return { url: null, routeKey, why: `lien ${ROUTE_LABEL[routeKey]} invalide` };
   }
 }

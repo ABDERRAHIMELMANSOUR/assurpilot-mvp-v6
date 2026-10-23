@@ -8,8 +8,9 @@
 //      `scheduleAzzurPush` returns immediately, hands the work to the platform's
 //      `waitUntil` (so Vercel keeps the function alive to finish it) and swallows
 //      every error. A slow or down AZZUR costs nothing but a log line.
-//   2. Off by default. Nothing is sent unless AZZUR_WEBHOOK_ENABLED=true AND
-//      AZZUR_MER_URL is set.
+//   2. Off by default. Nothing is sent unless AZZUR_WEBHOOK_ENABLED=true AND the call's
+//      category has a link configured on /admin/azzur (there is no default link). And no
+//      send is ever triggered by a call being saved unless AZZUR_AUTO_PUSH=true.
 //   3. The URL carries a secret (`cle_ws`). It lives only in the environment, is
 //      never written to the repository, and is redacted from every log line.
 //   4. Only NEW calls are pushed (callers pass what they just created), and only
@@ -42,9 +43,18 @@ export type AzzurCallEvent = {
 
 export type AzzurConfig = {
   enabled: boolean;
-  /** Enabled AND a usable URL is configured. */
+  /**
+   * The master switch is on. Whether a given call can actually go out also depends on
+   * its category having a link configured (see azzurRouting.ts): there is no default link.
+   */
   ready: boolean;
+  /** AZZUR_MER_URL, kept ONLY as a reference to read AZZUR's documentation. Never a destination. */
   url: URL | null;
+  /**
+   * Automatic pushes (a call being saved triggers a send). Off unless AZZUR_AUTO_PUSH=true:
+   * for now calls are only stored locally and sent from the review on /admin/azzur.
+   */
+  autoPush: boolean;
   method: "POST" | "GET";
   /** AZZUR's `retour_ws` (json | text). null = not sent: the service defaults to text. */
   retourWs: "json" | "text" | null;
@@ -177,10 +187,8 @@ export function readAzzurConfig(env: Record<string, string | undefined> = proces
       if (idProv) url.searchParams.set("id_prov", idProv);
     } catch {
       url = null;
-      problem = "AZZUR_MER_URL n'est pas une URL valide";
+      problem = "AZZUR_MER_URL (lien de référence pour la documentation) n'est pas une URL valide";
     }
-  } else if (enabled) {
-    problem = "AZZUR_MER_URL n'est pas défini";
   }
 
   let fields = { ...DEFAULT_FIELDS };
@@ -199,8 +207,9 @@ export function readAzzurConfig(env: Record<string, string | undefined> = proces
 
   return {
     enabled,
-    ready: enabled && url !== null,
+    ready: enabled,
     url,
+    autoPush: isTrue(env.AZZUR_AUTO_PUSH),
     // The MER service is documented as REST GET, so GET is the default.
     method: (env.AZZUR_MER_METHOD ?? "").trim().toUpperCase() === "POST" ? "POST" : "GET",
     retourWs: ["json", "text"].includes((env.AZZUR_MER_RETOUR_WS ?? "").trim().toLowerCase())
@@ -362,7 +371,7 @@ export type PushResult = {
   attempts?: number;
   detail: string;
   at: string;
-  /** The link used: AUTO_ALM … or "principal" (the main AZZUR_MER_URL). */
+  /** The link used (AUTO_ALM …), or "non classé" when the adviser's team could not be placed. */
   route?: string;
 };
 
@@ -415,7 +424,7 @@ export async function pushCallToAzzur(
   };
 
   try {
-    if (!config.ready || !config.url) return finish({ outcome: "skipped", detail: "intégration désactivée" });
+    if (!config.ready) return finish({ outcome: "skipped", detail: "intégration désactivée" });
     if (!normalizePhone(event.callerNumber)) return finish({ outcome: "skipped", detail: "numéro absent ou masqué" });
     if (config.onlyAnswered && event.isMissed) return finish({ outcome: "skipped", detail: "appel manqué" });
     const ageHours = (now.getTime() - event.startedAt.getTime()) / 3_600_000;
@@ -426,9 +435,13 @@ export async function pushCallToAzzur(
     }
 
     const payload = buildAzzurPayload(event, config);
-    // Which AZZUR link: the one of the adviser's team and product, else the main one.
-    const endpoint = resolveEndpoint(routeKeyFor(event.teamName, event.lineLabel), options.routes ?? {}, config.url);
-    routeName = endpoint.source === "dedicated" ? endpoint.routeKey! : "principal";
+    // Which AZZUR link: the one of the adviser's team and product. There is no default:
+    // without a configured link nothing is sent and the call stays in the local database.
+    const endpoint = resolveEndpoint(routeKeyFor(event.teamName, event.lineLabel), options.routes ?? {});
+    routeName = endpoint.routeKey ?? "non classé";
+    if (!endpoint.url) {
+      return finish({ outcome: "skipped", detail: `${endpoint.why} : fiche conservée localement, non envoyée` });
+    }
     secrets.push(endpoint.url.searchParams.get("cle_ws"));
     const url = new URL(endpoint.url.toString());
     // ws=mer selects the mise-en-relation service; the documentation lists it as
@@ -519,16 +532,18 @@ export function scheduleAzzurPush(events: AzzurCallEvent[]): void {
   try {
     if (!events.length) return;
     const config = readAzzurConfig();
-    if (!config.ready) return;
+    // Automatic pushes are switched off: calls are only saved locally, and sent on request
+    // from the review on /admin/azzur. AZZUR_AUTO_PUSH=true turns this path back on.
+    if (!config.ready || !config.autoPush) return;
 
     const work = (async () => {
-      // One lookup of the four links for the whole batch. A failure here must not
-      // lose the calls: they go to the main link.
+      // One lookup of the four links for the whole batch. If it fails, no link is known
+      // and nothing is sent (the calls stay in the database).
       let routes: RouteSettings = {};
       try {
         routes = (await (await import("@/lib/azzurRoutesStore")).loadAzzurRoutes()).routes;
       } catch (error) {
-        console.error(redactSecrets(`[azzur] liens par équipe illisibles, lien principal utilisé: ${error instanceof Error ? error.message : String(error)}`));
+        console.error(redactSecrets(`[azzur] liens par équipe illisibles, rien n'est envoyé: ${error instanceof Error ? error.message : String(error)}`));
       }
       await pool(events, 4, (event) => pushCallToAzzur(event, { config, routes }));
     })().catch((error) =>

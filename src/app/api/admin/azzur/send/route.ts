@@ -6,6 +6,9 @@
 //   POST { source, includeHistory?, category: "AUTO_ALM" | … | "PRINCIPAL" | "ALL",
 //          exclude?: [categories already sent], offset?, limit?, confirm: true }
 //
+// Only categories whose link is configured can be sent: asking for one that is not is
+// refused, and "ALL" leaves the others out (their calls stay in the local database).
+//
 // The leads are RECOMPUTED here from the same rules as the review (the client never
 // sends a list), in a fixed order, and the request handles one slice of them
 // (`offset`, `limit` <= 100) so a large file fits the serverless time limit; the
@@ -16,7 +19,8 @@ import type { NextRequest } from "next/server";
 import { badRequest, handleApiError, readJson, requireRole } from "@/lib/api";
 import { mapPool, pushCallToAzzur, readAzzurConfig } from "@/lib/azzur";
 import { loadAzzurRoutes } from "@/lib/azzurRoutesStore";
-import { CATEGORY_ORDER, type CategoryId } from "@/lib/azzurReview";
+import { CATEGORY_ORDER, CATEGORY_LABEL, type CategoryId } from "@/lib/azzurReview";
+import { ROUTE_KEYS, resolveEndpoint, type RouteKey } from "@/lib/azzurRouting";
 import { eventForLead, loadReview, parseSource } from "@/lib/azzurReviewData";
 
 export const runtime = "nodejs";
@@ -45,16 +49,23 @@ export async function POST(req: NextRequest) {
 
     const config = readAzzurConfig();
     if (!config.ready) {
-      throw badRequest(config.problem ?? "Intégration AZZUR désactivée : définissez AZZUR_WEBHOOK_ENABLED=true et AZZUR_MER_URL.");
+      throw badRequest(config.problem ?? "Intégration AZZUR désactivée : définissez AZZUR_WEBHOOK_ENABLED=true.");
+    }
+
+    // Which categories have a link. Everything else is never sent.
+    const { routes } = await loadAzzurRoutes();
+    const configured = (id: CategoryId) =>
+      (ROUTE_KEYS as readonly string[]).includes(id) && resolveEndpoint(id as RouteKey, routes).url !== null;
+    if (category !== "ALL" && !configured(category as CategoryId)) {
+      throw badRequest(`Le lien ${CATEGORY_LABEL[category as CategoryId]} n'est pas configuré : ces appels restent en local. Configurez-le d'abord.`);
     }
 
     const { review } = await loadReview(source, includeHistory);
     const wanted = category === "ALL"
-      ? review.leads.filter((l) => !exclude.includes(l.category))
+      ? review.leads.filter((l) => !exclude.includes(l.category) && configured(l.category))
       : review.leads.filter((l) => l.category === category);
     const slice = wanted.slice(offset, offset + limit);
-
-    const { routes } = await loadAzzurRoutes();
+    const keptLocal = category === "ALL" ? review.leads.filter((l) => !configured(l.category)).length : 0;
     const results = await mapPool(slice, 4, (lead) =>
       pushCallToAzzur(eventForLead(lead), { config, routes, ignoreMaxAge: true }).then((r) => ({ ...r, category: lead.category }))
     );
@@ -67,6 +78,8 @@ export async function POST(req: NextRequest) {
       offset,
       processed: slice.length,
       nextOffset: next < wanted.length ? next : null,
+      // Leads left out because their link is not configured (they stay in the database).
+      keptLocal,
       sent: count("sent"),
       duplicates: count("duplicate"),
       failed: count("failed"),

@@ -5,9 +5,12 @@
 // ADMIN ONLY.
 //
 //   POST { source: "today" | "batch:<id>", includeHistory?: boolean }
+//
+// Works from the local database alone: it needs no AZZUR link and no network. A category
+// whose link is not configured is shown as such and simply cannot be sent.
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { badRequest, handleApiError, readJson, requireRole } from "@/lib/api";
+import { handleApiError, readJson, requireRole } from "@/lib/api";
 import { buildAzzurPayload, readAzzurConfig } from "@/lib/azzur";
 import { loadAzzurRoutes } from "@/lib/azzurRoutesStore";
 import { describeUrl, resolveEndpoint, type RouteKey } from "@/lib/azzurRouting";
@@ -29,19 +32,20 @@ export async function POST(req: NextRequest) {
     const includeHistory = body.includeHistory === true;
 
     const config = readAzzurConfig();
-    if (!config.url) throw badRequest(config.problem ?? "AZZUR_MER_URL n'est pas défini");
 
     const { review, selection, historyDays, truncated } = await loadReview(source, includeHistory);
     const { routes } = await loadAzzurRoutes();
 
     const categories = review.categories.map((cat) => {
       const key = (ROUTE_KEYS as readonly string[]).includes(cat.id) ? (cat.id as RouteKey) : null;
-      const ep = resolveEndpoint(key, routes, config.url!);
+      const ep = resolveEndpoint(key, routes);
       const first = review.leads.find((l) => l.category === cat.id);
       return {
         ...cat,
-        target: describeUrl(ep.url),
-        dedicated: ep.source === "dedicated",
+        // null = no link configured for this category: its leads stay local.
+        target: ep.url ? describeUrl(ep.url) : null,
+        configured: ep.url !== null,
+        why: ep.why,
         // The exact parameters of this category's first lead, so the admin can see what goes out.
         sample: first ? buildAzzurPayload(eventForLead(first), config) : null,
       };
@@ -50,6 +54,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       ready: config.ready,
       problem: config.problem,
+      sendableLeads: categories.filter((c) => c.configured).reduce((n, c) => n + c.leads, 0),
       selection,
       includeHistory,
       historyDays,

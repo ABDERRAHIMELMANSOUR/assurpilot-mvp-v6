@@ -383,34 +383,32 @@ des deux côtés : deux appelants anonymes ne sont pas une même personne.
 
 ### Envoi des appels vers AZZUR (CRM)
 
-Chaque appel **nouvellement enregistré** (saisie manuelle `POST /api/calls/manual`,
-import de fichier) est transmis au web service « mise en relation » (MER) d'AZZUR,
-pour apparaître dans le dispatch board ou directement chez le conseiller. Code :
-`src/lib/azzur.ts`. **Désactivé par défaut.**
+**Les appels sont enregistrés en local uniquement** : ni la création, ni l'import Excel, ni la saisie
+manuelle n'envoient quoi que ce soit à AZZUR (`AZZUR_AUTO_PUSH`, désactivé par défaut, est le
+seul interrupteur qui rétablirait un envoi à l'enregistrement). Les envois se font à la demande,
+depuis `/admin/azzur`, après vérification. Code : `src/lib/azzur*.ts`.
 
-| Variable                    | Rôle                                                                      |
-|-----------------------------|---------------------------------------------------------------------------|
-| `AZZUR_WEBHOOK_ENABLED`     | `true` pour activer                                                       |
-| `AZZUR_MER_URL`             | URL complète du MER (Administration › Provenances › « Voir l'URL »)       |
-| `AZZUR_MER_ID_PROV`         | optionnel : remplace `id_prov` (51 dans l'URL fournie)                    |
-| `AZZUR_MER_PROVENANCE`      | valeur du champ `provenance` : le code AZZUR (défaut `AE`)                |
-| `AZZUR_MER_METHOD` / `_FORMAT` | `GET` (défaut, c'est le REST GET documenté par AZZUR) ou `POST` ; `form`/`json` (POST seulement) |
-| `AZZUR_MER_RETOUR_WS`       | `json` ou `text` : format de réponse d'AZZUR (`retour_ws`). Vide = non envoyé (texte par défaut, que l'on interprète) |
-| `AZZUR_MER_FIELDS`          | JSON : renomme un champ, ou `""` pour ne plus l'envoyer                   |
-| `AZZUR_MER_TIMEOUT_MS`      | délai par tentative (5000)                                                |
-| `AZZUR_MER_MAX_AGE_HOURS`   | les appels plus anciens ne sont pas poussés (48) : pas d'afflux d'historique |
-| `AZZUR_MER_ONLY_ANSWERED`   | `true` = ignorer les appels manqués                                       |
+**Aucun lien par défaut.** Les quatre liens — AUTO ALM, SANTÉ ALM, AUTO CPA, SANTÉ CPA — se
+configurent chacun sur `/admin/azzur` (URL MER complète). Une catégorie sans lien **n'envoie rien,
+nulle part** : ses appels restent en base et apparaissent dans la vérification avec « Lien non
+configuré », bouton d'envoi désactivé ; « Confirmer et envoyer tout » ne concerne que les
+catégories configurées. `AZZUR_MER_URL` n'est plus une destination : c'est au plus une URL de
+référence pour lire la documentation. Un lien doit pointer vers un serveur autorisé
+(`AZZUR_MER_ALLOWED_HOSTS`, par défaut gestfiches.com) ; un `id_prov` seul n'est plus accepté.
 
-**L'URL contient la clé secrète `cle_ws`** : à saisir uniquement dans Vercel / `.env`,
-jamais dans le dépôt (public), et à régénérer côté AZZUR si elle a fuité. Elle est
-masquée dans tous les logs.
+Variables (toutes facultatives) : `AZZUR_WEBHOOK_ENABLED` (interrupteur d'envoi ; l'analyse marche sans),
+`AZZUR_AUTO_PUSH` (désactivé), `AZZUR_MER_ALLOWED_HOSTS`, `AZZUR_MER_URL` (référence pour la
+documentation), `AZZUR_MER_URL_<LIEN>` (secours par variable, si `/admin/azzur` n'en a pas),
+`AZZUR_MER_METHOD`, `AZZUR_MER_RETOUR_WS`, `AZZUR_MER_FIELDS`, `AZZUR_MER_DEFAULTS`,
+`AZZUR_MER_USER_MAP`, `AZZUR_MER_ID_USER`, `AZZUR_MER_DEDUPE_DAYS`, `AZZUR_MER_TIMEOUT_MS`,
+`AZZUR_MER_ONLY_ANSWERED` (voir `.env.example`).
 
 Requête **GET** conforme à la documentation du MER d'AZZUR (v1.9.6.64, « Liste des
 variables GET »), paramètres encodés par `URLSearchParams` :
 
 | Paramètre AZZUR | Valeur envoyée |
 |---|---|
-| `ws`, `id_prov`, `cle_ws` | `mer`, `51`, la clé (toujours dans l'URL ; `id_prov=51` **est** la provenance « AE ») |
+| `ws`, `id_prov`, `cle_ws` | `mer`, l'`id_prov` et la clé **du lien de la catégorie** (`id_prov` **est** la provenance) |
 | `tel` **et** `port` | le même numéro complet, forme `06…` (un appel ne dit pas fixe ou mobile) |
 | `nom`, `prenom` (obligatoire / non) | `Appel Assurpilot`, `reçu par <conseiller qui a reçu l'appel>` (modèles `{conseiller}`, `{ligne}`, `{date}`) |
 | `date_naissance` (obligatoire, aaaa-mm-jj) | `1900-01-01` |
@@ -454,27 +452,16 @@ les appels du jour) puis **Analyser** (`src/lib/azzurReview.ts`, rien n'est envo
   liste), par lots de 50 avec barre de progression ; « tout » saute les liens déjà envoyés.
   Chaque fiche porte l'id de son premier appel (`num_devis_initial`) : renvoyée, AZZUR répond
   doublon. Un envoi confirmé ignore la limite d'âge de l'envoi automatique.
-- La saisie manuelle d'un appel unique (`/admin/appels/nouveau`) reste, elle, envoyée
-  automatiquement à sa création.
-
-**Un lien par équipe et produit** (`/admin/azzur`, `src/lib/azzurRouting.ts`) : chaque appel part
-vers le lien de l'**équipe et du produit de son conseiller** — `AUTO ALM`, `SANTÉ ALM`,
-`AUTO CPA`, `SANTÉ CPA` — lus dans le nom de son équipe (« Équipe auto CPA »), à défaut dans le
-libellé de la ligne d'arrivée. Chaque lien se saisit sur la page : URL MER complète (avec
-`id_prov` et `cle_ws`) **ou** un simple `id_prov` (lien principal avec cette provenance). Un lien non
-défini — ou un conseiller sans équipe identifiable — utilise le **lien principal** `AZZUR_MER_URL`.
-Les paramètres standard (`ws=mer`, `id_prov`, `cle_ws`, `nom`, `prenom`, `cp`, `date_naissance`,
-`tel`, `port`, `commentaire`…) sont identiques sur les quatre. Les liens sont dans la table
-`azzur_routes` (`prisma/sql/009-azzur-routes.sql`, à exécuter une fois ; sans elle tout part vers le
-lien principal et la page l'indique) ; la clé n'est jamais renvoyée au navigateur, et une URL doit
-être sur le **même serveur** que le lien principal. Variables de secours :
-`AZZUR_MER_URL_AUTO_ALM`, `_SANTE_ALM`, `_AUTO_CPA`, `_SANTE_CPA`. Le tableau de vérification
-et les résultats indiquent le lien utilisé.
+**Choix du lien** (`src/lib/azzurRouting.ts`) : chaque fiche part vers le lien de l'**équipe et du produit
+de son conseiller**, lus dans le nom de son équipe (« Équipe auto CPA »), à défaut dans le libellé de
+la ligne d'arrivée. Équipe non identifiable = aucun lien, donc rien n'est envoyé. Les liens sont dans la
+table `azzur_routes` (`prisma/sql/009-azzur-routes.sql`, à exécuter une fois). La clé n'est jamais
+renvoyée au navigateur ni écrite dans les logs. Les paramètres standard (`ws=mer`, `id_prov`, `cle_ws`,
+`nom`, `prenom`, `cp`, `date_naissance`, `tel`, `port`, `commentaire`…) sont identiques sur les quatre.
 
 **Configuration et diagnostic** : page admin `/admin/azzur` (menu Configuration › Intégration
 AZZUR) — état de la configuration, liens par équipe, « Lire la documentation » du MER, puis la
-vérification avant envoi décrite plus haut. Aucun envoi n'est fait sans clic (hors saisie manuelle
-d'un appel). Commencer par un lien avec peu de fiches pour contrôler le résultat dans AZZUR. Rien
+vérification avant envoi décrite plus haut. Aucun envoi n'est fait sans clic. Commencer par un lien avec peu de fiches pour contrôler le résultat dans AZZUR. Rien
 ne garde la trace des envois passés : renvoyer une sélection déjà envoyée repasse par AZZUR, qui
 répond « doublon » grâce à `num_devis_initial`.
 

@@ -9,12 +9,12 @@ import AzzurReview from "@/components/ui/AzzurReview";
 type Result = { route?: string; reference: string; outcome: "sent" | "duplicate" | "skipped" | "failed"; status?: number; attempts?: number; detail: string; at: string };
 type Status = {
   enabled: boolean; ready: boolean; problem: string | null;
-  host: string | null; path: string | null; idProv: string | null;
+  referenceHost: string | null; autoPush: boolean; linksConfigured: number;
   method: string; format: string; fields: Record<string, string>; provenance: string; placeholders: Record<string, string>; mappedAdvisers: number; defaultUserId: string | null;
   timeoutMs: number; maxAgeHours: number; onlyAnswered: boolean; recent: Result[];
 };
 type RouteRow = { key: string; label: string; configured: boolean; origin: "base" | "env" | null; target: string | null; why: string | null };
-type RoutesInfo = { tableAvailable: boolean; migrationHint: string | null; main: string | null; routes: RouteRow[] };
+type RoutesInfo = { tableAvailable: boolean; migrationHint: string | null; allowedHosts: string[]; routes: RouteRow[] };
 
 const BADGE: Record<Result["outcome"], string> = { sent: "badge-green", duplicate: "badge-yellow", failed: "badge-red", skipped: "badge-gray" };
 
@@ -71,9 +71,12 @@ export default function AzzurPage() {
           <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-1.5 text-sm">
             <div><dt className="inline text-slate-400">AZZUR_WEBHOOK_ENABLED : </dt>
               <dd className="inline"><span className={`badge ${status.enabled ? "badge-green" : "badge-red"}`}>{status.enabled ? "true" : "false"}</span></dd></div>
-            <div><dt className="inline text-slate-400">AZZUR_MER_URL : </dt>
-              <dd className="inline">{status.host ? <span className="font-mono">{status.host}{status.path} (id_prov={status.idProv})</span> : <span className="badge badge-red">non défini</span>}</dd></div>
-            <div><dt className="inline text-slate-400">Prêt à envoyer : </dt>
+            <div><dt className="inline text-slate-400">Liens configurés : </dt>
+              <dd className="inline"><span className={`badge ${status.linksConfigured === 4 ? "badge-green" : status.linksConfigured === 0 ? "badge-red" : "badge-yellow"}`}>{status.linksConfigured} / 4</span></dd></div>
+            <div><dt className="inline text-slate-400">Envois automatiques : </dt>
+              <dd className="inline"><span className={`badge ${status.autoPush ? "badge-yellow" : "badge-gray"}`}>{status.autoPush ? "activés" : "désactivés"}</span>
+                <span className="text-xs text-slate-400"> {status.autoPush ? "" : "— les appels restent en local, envoi manuel ci-dessous"}</span></dd></div>
+            <div><dt className="inline text-slate-400">Envoi activé : </dt>
               <dd className="inline"><span className={`badge ${status.ready ? "badge-green" : "badge-red"}`}>{status.ready ? "oui" : "non"}</span></dd></div>
             <div><dt className="inline text-slate-400">Requête : </dt><dd className="inline font-mono">{status.method} {status.format}</dd></div>
             <div className="sm:col-span-2"><dt className="inline text-slate-400">Champs : </dt>
@@ -96,8 +99,9 @@ export default function AzzurPage() {
         <h2 className="text-sm font-semibold text-slate-800 mb-1">Liens AZZUR par équipe et produit</h2>
         <p className="text-xs text-slate-500 mb-3">
           Chaque appel part vers le lien de l&apos;équipe et du produit de son conseiller (équipe ALM ou CPA, Auto ou Santé).
-          Un lien non défini utilise le lien principal{routesInfo?.main ? <> (<span className="font-mono">{routesInfo.main}</span>)</> : ""}.
-          Saisissez une URL MER complète (avec <span className="font-mono">id_prov</span> et <span className="font-mono">cle_ws</span>) ou seulement un id_prov.
+          Il n&apos;y a <b>aucun lien par défaut</b> : tant qu&apos;un lien n&apos;est pas configuré, les appels de cette catégorie
+          restent enregistrés en local et ne sont envoyés nulle part. Collez l&apos;URL MER complète (avec{" "}
+          <span className="font-mono">id_prov</span> et <span className="font-mono">cle_ws</span>).
         </p>
         {routesInfo && !routesInfo.tableAvailable && (
           <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">{routesInfo.migrationHint}</div>
@@ -111,13 +115,13 @@ export default function AzzurPage() {
                   type="text" autoComplete="off" spellCheck={false}
                   value={drafts[r.key] ?? ""}
                   onChange={(e) => setDrafts((d) => ({ ...d, [r.key]: e.target.value }))}
-                  placeholder={r.configured ? "Lien défini : saisir une nouvelle valeur pour le remplacer" : "https://…/ws/index.php?ws=mer&id_prov=…&cle_ws=…  ou  id_prov"}
+                  placeholder={r.configured ? "Lien défini : saisir une nouvelle valeur pour le remplacer" : "https://www.gestfiches.com/…/ws/index.php?ws=mer&id_prov=…&cle_ws=…"}
                   className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-brand-400"
                 />
                 <p className="text-[11px] mt-1 text-slate-500">
                   {r.configured
                     ? <>Lien dédié : <span className="font-mono">{r.target}</span> (clé masquée){r.origin === "env" ? " — défini par variable d'environnement" : ""}</>
-                    : <>Par défaut : lien principal{r.target ? <> <span className="font-mono">{r.target}</span></> : ""}</>}
+                    : <span className="text-amber-700">Non configuré : les appels de cette catégorie restent en local, rien n'est envoyé.</span>}
                 </p>
               </div>
               <div className="flex gap-2">
@@ -125,7 +129,7 @@ export default function AzzurPage() {
                   onClick={() => saveRoute(r.key, drafts[r.key])}>{savingKey === r.key ? "…" : "Enregistrer"}</button>
                 {r.configured && r.origin === "base" && (
                   <button className="btn-secondary" disabled={!!savingKey}
-                    onClick={() => { if (window.confirm(`Revenir au lien principal pour ${r.label} ?`)) saveRoute(r.key, ""); }}>Effacer</button>
+                    onClick={() => { if (window.confirm(`Supprimer le lien ${r.label} ? Ses appels resteront en local et ne seront plus envoyés.`)) saveRoute(r.key, ""); }}>Effacer</button>
                 )}
               </div>
             </div>

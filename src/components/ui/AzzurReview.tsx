@@ -13,14 +13,14 @@ type Sources = { today: Source; batches: Source[] };
 type Adviser = { name: string; leads: number; duplicates: number; alreadyReceived: number };
 type Category = {
   id: string; label: string; calls: number; leads: number; duplicates: number; alreadyReceived: number;
-  advisers: Adviser[]; target: string; dedicated: boolean; sample: Record<string, string> | null;
+  advisers: Adviser[]; target: string | null; configured: boolean; why: string | null; sample: Record<string, string> | null;
 };
 type LeadRow = {
   number: string; category: string; conseiller: string | null; team: string | null;
   firstAt: string; calls: number; duplicates: number; fromHistory: boolean;
 };
 type Review = {
-  ready: boolean; problem: string | null;
+  ready: boolean; problem: string | null; sendableLeads: number;
   selection: { label: string; calls: number; from: string | null; to: string | null };
   includeHistory: boolean; historyDays: number; truncated: boolean;
   totals: { calls: number; leads: number; duplicates: number; alreadyReceived: number };
@@ -78,7 +78,7 @@ export default function AzzurReview({ ready }: { ready: boolean }) {
 
   async function send(category: string, label: string, count: number) {
     if (!review || sending) return;
-    const what = category === "ALL" ? "TOUTES les fiches" : `les fiches ${label}`;
+    const what = category === "ALL" ? "toutes les fiches des liens configurés" : `les fiches ${label}`;
     if (!window.confirm(
       `Envoyer ${count} fiche(s) vers AZZUR (${what}) ?\n\nLes fiches seront réellement créées dans le CRM. ` +
       `Les doublons ignorés et les numéros déjà reçus ne sont pas envoyés.`)) return;
@@ -112,8 +112,8 @@ export default function AzzurReview({ ready }: { ready: boolean }) {
     } finally { setSending(null); setProgress(null); }
   }
 
-  // What "send all" would still send: the leads of the links not already sent.
-  const sendable = review ? review.categories.filter((c) => !done[c.id]).reduce((n, c) => n + c.leads, 0) : 0;
+  // What "send all" would still send: leads of links that are configured and not already sent.
+  const sendable = review ? review.categories.filter((c) => c.configured && !done[c.id]).reduce((n, c) => n + c.leads, 0) : 0;
 
   return (
     <div className="card p-4 mb-5">
@@ -150,7 +150,15 @@ export default function AzzurReview({ ready }: { ready: boolean }) {
       {error && <div className="mb-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">{error}</div>}
       {review && !review.ready && (
         <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-          Envoi impossible : {review.problem ?? "intégration AZZUR désactivée (AZZUR_WEBHOOK_ENABLED / AZZUR_MER_URL)."}
+          Envoi désactivé : {review.problem ?? "AZZUR_WEBHOOK_ENABLED n'est pas à true."} L&apos;analyse reste possible.
+        </div>
+      )}
+      {review && review.categories.some((c) => !c.configured && c.leads + c.alreadyReceived > 0) && (
+        <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          <b>Liens à configurer avant d&apos;envoyer</b> (section « Liens AZZUR » ci-dessus) :{" "}
+          {review.categories.filter((c) => !c.configured && c.leads + c.alreadyReceived > 0)
+            .map((c) => `${c.label} (${c.leads} fiche(s))`).join(", ")}.
+          Ces appels restent enregistrés en local ; rien n&apos;est envoyé pour ces catégories.
         </div>
       )}
       {review?.truncated && (
@@ -191,7 +199,7 @@ export default function AzzurReview({ ready }: { ready: boolean }) {
                   return (
                     <Row key={c.id} c={c} review={review} open={open === c.id} onToggle={() => setOpen(open === c.id ? null : c.id)}
                       sendingThis={sending === c.id || sending === "ALL"}
-                      disabled={!review.ready || !!sending || c.leads === 0 || !!sent}
+                      disabled={!review.ready || !!sending || c.leads === 0 || !!sent || !c.configured}
                       sentFlag={!!sent}
                       onSend={() => send(c.id, c.label, c.leads)} />
                   );
@@ -206,7 +214,7 @@ export default function AzzurReview({ ready }: { ready: boolean }) {
                   <td className="table-td text-right">
                     <button className="btn-primary" disabled={!review.ready || !!sending || sendable === 0 || !!done.ALL}
                       onClick={() => send("ALL", "toutes", sendable)}>
-                      {sending === "ALL" ? "Envoi…" : done.ALL ? "Tout envoyé ✓" : "Confirmer et envoyer tout"}
+                      {sending === "ALL" ? "Envoi…" : done.ALL ? "Tout envoyé ✓" : `Confirmer et envoyer tout (${sendable})`}
                     </button>
                   </td>
                 </tr>
@@ -241,8 +249,11 @@ function Row({ c, review, open, onToggle, sendingThis, disabled, sentFlag, onSen
       <tr className="hover:bg-slate-50/60">
         <td className="table-td font-semibold whitespace-nowrap">{c.label}</td>
         <td className="table-td text-xs font-mono">
-          {c.target}
-          {!c.dedicated && c.id !== "PRINCIPAL" && <span className="ml-1 badge badge-gray" style={{ fontSize: "10px", padding: "1px 5px" }}>lien principal</span>}
+          {c.target ?? (
+            <span className="font-sans text-amber-700">
+              {c.id === "INCONNU" ? "Aucun lien (équipe non identifiée)" : "Lien non configuré : reste en local"}
+            </span>
+          )}
         </td>
         <td className="table-td text-right">{c.calls}</td>
         <td className="table-td text-right font-semibold">{c.leads}</td>
@@ -252,7 +263,7 @@ function Row({ c, review, open, onToggle, sendingThis, disabled, sentFlag, onSen
         <td className="table-td text-right whitespace-nowrap">
           <button className="text-xs text-brand-600 hover:underline mr-3" onClick={onToggle}>{open ? "Masquer" : "Détails"}</button>
           <button className="btn-secondary" disabled={disabled} onClick={onSend}>
-            {sendingThis ? "Envoi…" : sentFlag ? "Envoyé ✓" : "Envoyer vers AZZUR"}
+            {sendingThis ? "Envoi…" : sentFlag ? "Envoyé ✓" : !c.configured ? "Non configuré" : "Envoyer vers AZZUR"}
           </button>
         </td>
       </tr>

@@ -7,6 +7,8 @@
 import { NextResponse } from "next/server";
 import { handleApiError, requireRole } from "@/lib/api";
 import { readAzzurConfig, recentAzzurResults } from "@/lib/azzur";
+import { loadAzzurRoutes } from "@/lib/azzurRoutesStore";
+import { resolveEndpoint, ROUTE_KEYS } from "@/lib/azzurRouting";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,14 +17,16 @@ export async function GET() {
   try {
     await requireRole("ADMINISTRATEUR");
     const config = readAzzurConfig();
+    const { routes } = await loadAzzurRoutes().catch(() => ({ routes: {} }));
     return NextResponse.json({
       enabled: config.enabled,
       ready: config.ready,
       problem: config.problem,
       // Host and provenance only: the URL's cle_ws is a secret and stays out.
-      host: config.url?.host ?? null,
-      path: config.url?.pathname ?? null,
-      idProv: config.url?.searchParams.get("id_prov") ?? null,
+      // AZZUR_MER_URL is only a reference for reading the documentation, never a destination.
+      referenceHost: config.url?.host ?? null,
+      autoPush: config.autoPush,
+      linksConfigured: ROUTE_KEYS.filter((k) => resolveEndpoint(k, routes).url !== null).length,
       method: config.method,
       retourWs: config.retourWs,
       format: config.format,

@@ -10,6 +10,8 @@
 import { NextResponse } from "next/server";
 import { handleApiError, requireRole, badRequest } from "@/lib/api";
 import { azzurSecret, htmlToText, readAzzurConfig, redactSecrets } from "@/lib/azzur";
+import { loadAzzurRoutes } from "@/lib/azzurRoutesStore";
+import { resolveEndpoint, ROUTE_KEYS, type RouteSettings } from "@/lib/azzurRouting";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,9 +22,16 @@ export async function GET() {
   try {
     await requireRole("ADMINISTRATEUR");
     const config = readAzzurConfig();
-    if (!config.url) throw badRequest(config.problem ?? "AZZUR_MER_URL n'est pas défini");
+    // The documentation is the same for every link; read it through the reference URL
+    // (AZZUR_MER_URL) if there is one, else through the first link that is configured.
+    let base: URL | null = config.url;
+    if (!base) {
+      const { routes } = await loadAzzurRoutes().catch(() => ({ routes: {} as RouteSettings }));
+      base = ROUTE_KEYS.map((k) => resolveEndpoint(k, routes).url).find((u): u is URL => u !== null) ?? null;
+    }
+    if (!base) throw badRequest("Configurez au moins un lien AZZUR (ci-dessus) pour lire la documentation.");
 
-    const url = new URL(config.url.toString());
+    const url = new URL(base.toString());
     // Keep only the three identifying parameters.
     for (const key of [...url.searchParams.keys()]) {
       if (!["ws", "id_prov", "cle_ws"].includes(key)) url.searchParams.delete(key);
@@ -37,7 +46,7 @@ export async function GET() {
       // The page prints the key in its example URL: remove it before it leaves the server.
       const text = redactSecrets(
         /<\s*(html|body|table|div)/i.test(raw) ? htmlToText(raw) : raw.replace(/\s+/g, " ").trim(),
-        azzurSecret(config)
+        azzurSecret({ url: base })
       );
       return NextResponse.json({
         status: res.status,
@@ -48,7 +57,7 @@ export async function GET() {
       });
     } catch (error) {
       const message = error instanceof Error && error.name === "AbortError" ? "délai dépassé" : String(error);
-      throw badRequest(redactSecrets(`Impossible de lire la documentation AZZUR : ${message}`, azzurSecret(config)));
+      throw badRequest(redactSecrets(`Impossible de lire la documentation AZZUR : ${message}`, azzurSecret({ url: base })));
     } finally {
       clearTimeout(timer);
     }
