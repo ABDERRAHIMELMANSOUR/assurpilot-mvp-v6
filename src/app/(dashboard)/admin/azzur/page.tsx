@@ -83,6 +83,19 @@ export default function AzzurPage() {
     } finally { setSavingKey(""); }
   }
 
+  const [creating, setCreating] = useState(false);
+  async function createTable() {
+    if (!window.confirm("Créer la table azzur_routes dans la base de l'application ?\n\nOpération sans risque : elle ajoute seulement cette table (liens et interrupteurs AZZUR), rien n'est modifié ni effacé.")) return;
+    setCreating(true);
+    try {
+      await fetchJson("/api/admin/azzur/setup", { method: "POST" });
+      await Promise.all([loadRoutes(), loadStatus()]);
+      toast.success("Table azzur_routes prête : vous pouvez enregistrer les liens et utiliser les interrupteurs.");
+    } catch (e) {
+      toast.error(errorMessage(e, "Création impossible."));
+    } finally { setCreating(false); }
+  }
+
   async function changeSwitch(name: "autoPush" | "enabled", next: boolean) {
     if (switching) return;
     if (name === "autoPush" && next && !window.confirm(
@@ -181,7 +194,12 @@ export default function AzzurPage() {
           <span className="font-mono">id_prov</span> et <span className="font-mono">cle_ws</span>).
         </p>
         {routesInfo && !routesInfo.tableAvailable && (
-          <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">{routesInfo.migrationHint}</div>
+          <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 flex flex-wrap items-center gap-3">
+            <span className="flex-1 min-w-[240px]">{routesInfo.migrationHint}</span>
+            <button className="btn-primary" disabled={creating} onClick={createTable}>
+              {creating ? "Création…" : "Créer la table maintenant"}
+            </button>
+          </div>
         )}
         <div className="space-y-3">
           {(routesInfo?.routes ?? []).map((r) => (

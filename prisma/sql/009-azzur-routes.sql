@@ -6,6 +6,9 @@
 -- runtime switches of that page (keys "setting:enabled" and "setting:autoPush", url =
 -- "true" / "false"), so no further table is needed.
 --
+-- The same statements also run from the "Créer la table maintenant" button on /admin/azzur
+-- (ensureAzzurRoutesTable in src/lib/azzurRoutesStore.ts): keep the two in step.
+--
 -- Own table: no existing table is touched. Convergent like 006/007 — it creates the table,
 -- or adds whatever a half-made one lacks, and is safe to run any number of times.
 -- The url holds a secret (cle_ws): row-level security is switched on with no policy, so

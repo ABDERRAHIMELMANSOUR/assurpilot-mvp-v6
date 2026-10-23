@@ -397,6 +397,12 @@ depuis `/admin/azzur`, après vérification. Code : `src/lib/azzur*.ts`.
 - **Envoi AZZUR (interrupteur général)** — remplace `AZZUR_WEBHOOK_ENABLED` à chaud : éteint, plus
   rien n'est envoyé, même depuis la vérification (l'analyse reste possible).
 
+**Table absente ?** Si la page affiche « La table azzur_routes n'existe pas encore », le bouton
+**« Créer la table maintenant »** du bandeau la crée depuis l'application (mêmes instructions que
+`009`, ajout pur : aucune autre table ni ligne n'est touchée, ré-exécutable) — plus besoin du SQL
+editor. Une table présente mais incomplète (créée à la main) est signalée comme telle
+(« colonne … manquante ») et le même bouton la complète.
+
 Tant qu'un interrupteur n'a pas été utilisé, la variable d'environnement (`AZZUR_WEBHOOK_ENABLED`,
 `AZZUR_AUTO_PUSH`) s'applique ; ensuite la valeur de la page l'emporte. Les enregistrements
 (liens, interrupteurs) affichent une notification de succès ; si la table est absente, le bandeau

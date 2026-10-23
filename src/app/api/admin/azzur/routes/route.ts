@@ -10,7 +10,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { ApiError, badRequest, handleApiError, readJson, requireRole } from "@/lib/api";
 import { allowedHosts, describeUrl, isRouteKey, parseRouteValue, resolveEndpoint, ROUTE_KEYS, ROUTE_LABEL } from "@/lib/azzurRouting";
-import { isMissingTable, loadAzzurRoutes, MIGRATION_HINT, saveAzzurRoute } from "@/lib/azzurRoutesStore";
+import { isMissingTable, missingTableMessage, loadAzzurRoutes, MIGRATION_HINT, saveAzzurRoute } from "@/lib/azzurRoutesStore";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -55,7 +55,7 @@ export async function PUT(req: NextRequest) {
     try {
       await saveAzzurRoute(body.key, parsed.value, user.userId);
     } catch (error) {
-      if (isMissingTable(error)) throw new ApiError(503, MIGRATION_HINT);
+      if (isMissingTable(error)) throw new ApiError(503, missingTableMessage(error));
       throw error;
     }
     return NextResponse.json({ ok: true, key: body.key, cleared: parsed.value === "" });

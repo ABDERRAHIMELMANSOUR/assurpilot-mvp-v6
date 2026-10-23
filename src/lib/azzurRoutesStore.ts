@@ -67,7 +67,53 @@ export async function saveAzzurRoute(key: RouteKey, value: string, userId: strin
 
 /** The one message shown wherever a save fails because migration 009 has not been run. */
 export const MIGRATION_HINT =
-  "La table azzur_routes n'existe pas encore : exécutez prisma/sql/009-azzur-routes.sql dans le SQL editor de Supabase, puis réessayez.";
+  "La table azzur_routes n'existe pas encore dans la base utilisée par l'application : cliquez sur « Créer la table maintenant » " +
+  "(section Liens AZZUR), ou exécutez prisma/sql/009-azzur-routes.sql dans le SQL editor de Supabase, puis réessayez.";
+
+/**
+ * The precise reason behind a "table not usable" error. P2021 is a missing table; P2022 a
+ * missing COLUMN — the table exists but was made by hand or half-made — which deserves a
+ * different message than "run the migration", or the admin re-runs it convinced it failed.
+ */
+export function missingTableMessage(error: unknown): string {
+  if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2022") {
+    const column = (error.meta as { column?: string } | undefined)?.column;
+    return `La table azzur_routes existe mais est incomplète${column ? ` (colonne ${column} manquante)` : ""} : ` +
+      "cliquez sur « Créer la table maintenant », qui la complète sans rien effacer.";
+  }
+  return MIGRATION_HINT;
+}
+
+/**
+ * Creates (or completes) azzur_routes — the SAME statements as prisma/sql/009-azzur-routes.sql,
+ * kept in step with it. Additive only: CREATE … IF NOT EXISTS / ADD COLUMN IF NOT EXISTS, no row
+ * or other table is touched, safe to run any number of times. Run on an administrator's explicit
+ * request from /admin/azzur, so the SQL-editor step is not required.
+ */
+export async function ensureAzzurRoutesTable(): Promise<{ columns: string[]; schema: string }> {
+  const statements = [
+    `CREATE TABLE IF NOT EXISTS azzur_routes (
+      "key" TEXT NOT NULL,
+      "url" TEXT NOT NULL DEFAULT '',
+      "updatedAt" TIMESTAMP(3) NOT NULL,
+      "updatedById" TEXT,
+      CONSTRAINT "azzur_routes_pkey" PRIMARY KEY ("key")
+    )`,
+    `ALTER TABLE azzur_routes ADD COLUMN IF NOT EXISTS "url" TEXT NOT NULL DEFAULT ''`,
+    `ALTER TABLE azzur_routes ADD COLUMN IF NOT EXISTS "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP`,
+    `ALTER TABLE azzur_routes ALTER COLUMN "updatedAt" DROP DEFAULT`,
+    `ALTER TABLE azzur_routes ADD COLUMN IF NOT EXISTS "updatedById" TEXT`,
+    // Holds secret keys: not reachable through Supabase's REST API with the anon key.
+    `ALTER TABLE azzur_routes ENABLE ROW LEVEL SECURITY`,
+  ];
+  for (const sql of statements) await prisma.$executeRawUnsafe(sql);
+
+  const rows = await prisma.$queryRawUnsafe<Array<{ column_name: string; schema: string }>>(
+    `SELECT column_name, table_schema AS schema FROM information_schema.columns
+     WHERE table_name = 'azzur_routes' AND table_schema = current_schema() ORDER BY ordinal_position`
+  );
+  return { columns: rows.map((r) => r.column_name), schema: rows[0]?.schema ?? "?" };
+}
 
 export { isMissingTable };
 

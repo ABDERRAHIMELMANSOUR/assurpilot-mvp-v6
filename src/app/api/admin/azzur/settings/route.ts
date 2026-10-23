@@ -13,7 +13,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { ApiError, badRequest, handleApiError, readJson, requireRole } from "@/lib/api";
-import { isMissingTable, loadEffectiveConfig, MIGRATION_HINT, saveAzzurSetting, type SwitchName } from "@/lib/azzurRoutesStore";
+import { isMissingTable, missingTableMessage, loadEffectiveConfig, MIGRATION_HINT, saveAzzurSetting, type SwitchName } from "@/lib/azzurRoutesStore";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -34,7 +34,7 @@ export async function PUT(req: NextRequest) {
     try {
       for (const [name, value] of changes) await saveAzzurSetting(name, value, user.userId);
     } catch (error) {
-      if (isMissingTable(error)) throw new ApiError(503, MIGRATION_HINT);
+      if (isMissingTable(error)) throw new ApiError(503, missingTableMessage(error));
       throw error;
     }
 
