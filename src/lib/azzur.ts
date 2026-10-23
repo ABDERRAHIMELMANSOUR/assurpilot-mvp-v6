@@ -34,7 +34,7 @@ export type AzzurCallEvent = {
   /** Label of the standard line the call entered on, e.g. "Ligne santé CPA". */
   lineLabel: string | null;
   /** The adviser who answered, when there is one. */
-  conseiller: { email: string; nom: string; prenom: string } | null;
+  conseiller: { id?: string; email: string; nom: string; prenom: string } | null;
   /** The call's id on our side, sent as num_devis_initial (24 characters at most). */
   externalId?: string;
   /** Name of the adviser's team ("Équipe auto CPA"): decides which AZZUR link the call goes to. */
@@ -64,6 +64,12 @@ export type AzzurConfig = {
   placeholders: { nom: string; prenom: string; date_naissance: string; code_postal: string };
   /** Adviser e-mail (lower case) -> AZZUR id_user, so the fiche lands in that adviser's space. */
   userMap: Record<string, string>;
+  /**
+   * Assurpilot user id -> AZZUR id_user, entered per adviser on /admin/azzur. AZZUR's MER only
+   * accepts its own numeric user id (not a name), so this is what puts the fiche in the right
+   * adviser's space. Takes precedence over the e-mail map of AZZUR_MER_USER_MAP.
+   */
+  userMapById: Record<string, string>;
   /** id_user for advisers absent from the map: "0" = nobody (dispatch board), null = AZZUR's default user. */
   defaultUserId: string | null;
   /** Value of the provenance field: AZZUR's provenance CODE, e.g. "AE" (id 51). */
@@ -220,6 +226,7 @@ export function readAzzurConfig(env: Record<string, string | undefined> = proces
     provenance: (env.AZZUR_MER_PROVENANCE ?? "").trim() || "AE",
     placeholders: readPlaceholders(env.AZZUR_MER_DEFAULTS),
     userMap: readUserMap(env.AZZUR_MER_USER_MAP),
+    userMapById: {},
     defaultUserId: /^\d+$/.test((env.AZZUR_MER_ID_USER ?? "").trim()) ? (env.AZZUR_MER_ID_USER ?? "").trim() : null,
     timeoutMs: positiveInt(env.AZZUR_MER_TIMEOUT_MS, 5000),
     maxAgeHours: positiveInt(env.AZZUR_MER_MAX_AGE_HOURS, 48),
@@ -292,7 +299,10 @@ export function buildAzzurPayload(event: AzzurCallEvent, config: AzzurConfig): R
 
   // The adviser, as AZZUR knows them: its own user id, never ours. Without a
   // mapping the field is left out and AZZUR applies its default user.
-  const mapped = event.conseiller ? config.userMap[event.conseiller.email.trim().toLowerCase()] : undefined;
+  const mapped = event.conseiller
+    ? (event.conseiller.id ? config.userMapById[event.conseiller.id] : undefined) ??
+      config.userMap[event.conseiller.email.trim().toLowerCase()]
+    : undefined;
   const userId = mapped ?? config.defaultUserId;
   if (userId !== undefined && userId !== null) put("id_user", userId);
 

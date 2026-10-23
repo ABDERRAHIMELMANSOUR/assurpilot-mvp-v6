@@ -104,7 +104,7 @@ export async function POST(req: NextRequest) {
         startedAt: startDate,
         isMissed: missed,
         lineLabel: phoneLine.label,
-        conseiller: { email: conseiller.email, nom: conseiller.nom, prenom: conseiller.prenom },
+        conseiller: { id: conseiller.id, email: conseiller.email, nom: conseiller.nom, prenom: conseiller.prenom },
       },
     ]);
 

@@ -1,5 +1,7 @@
 "use client";
-import { useState, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
+import { dispatchAll, type DispatchSummary } from "@/lib/azzurDispatch";
+import { errorMessage } from "@/lib/fetchJson";
 import Link from "next/link";
 
 type PreviewRow = {
@@ -29,6 +31,8 @@ type ImportResult = {
   success:       boolean;
   /** Null when every row was a duplicate: no batch is created for nothing. */
   batchId:       string | null;
+  /** "Envois automatiques" is on: the page dispatches the batch to the CRMs itself. */
+  azzurAutoDispatch?: boolean;
   totalRows:     number;
   importedRows:  number;
   duplicateRows: number;
@@ -138,7 +142,10 @@ export default function ImportAppelsPage() {
             </div>
             <div className="flex-1">
               <h2 className="text-base font-semibold text-slate-900 mb-3">Import terminé</h2>
-              {result.batchId && result.importedRows > 0 && (
+              {result.batchId && result.importedRows > 0 && result.azzurAutoDispatch && (
+                <AutoDispatch batchId={result.batchId} />
+              )}
+              {result.batchId && result.importedRows > 0 && !result.azzurAutoDispatch && (
                 <p className="text-sm text-slate-600 mb-3">
                   Rien n&apos;a été envoyé à AZZUR.{" "}
                   <Link href={`/admin/azzur?source=${encodeURIComponent("batch:" + result.batchId)}`} className="text-brand-600 font-medium hover:underline">
@@ -453,6 +460,78 @@ export default function ImportAppelsPage() {
             </div>
           )}
         </>
+      )}
+    </div>
+  );
+}
+
+const CATEGORY_NAME: Record<string, string> = {
+  AUTO_ALM: "AUTO ALM", SANTE_ALM: "SANTÉ ALM", AUTO_CPA: "AUTO CPA", SANTE_CPA: "SANTÉ CPA",
+};
+
+/** Batches already dispatched in this tab: an effect run twice must never send twice. */
+const dispatched = new Set<string>();
+
+/**
+ * Dispatches a freshly imported batch to the CRMs, by itself, when "Envois automatiques" is on:
+ * one lead per number, owned by the first adviser who took it, each to the link of that
+ * adviser's team and product; categories without a link stay in the database.
+ */
+function AutoDispatch({ batchId }: { batchId: string }) {
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const [summary, setSummary] = useState<DispatchSummary | null>(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (dispatched.has(batchId)) return;
+    dispatched.add(batchId);
+    void (async () => {
+      try {
+        setSummary(await dispatchAll(`batch:${batchId}`, (done, total) => setProgress({ done, total })));
+      } catch (e) {
+        setError(errorMessage(e, "Envoi interrompu."));
+      }
+    })();
+  }, [batchId]);
+
+  const review = `/admin/azzur?source=${encodeURIComponent("batch:" + batchId)}`;
+  return (
+    <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50/60 p-3 text-sm">
+      <p className="font-semibold text-slate-800 mb-1">Envoi automatique vers les CRM</p>
+      {!summary && !error && (
+        <>
+          <p className="text-slate-600 text-xs mb-2">
+            Envoi en cours ({progress ? `${progress.done} / ${progress.total}` : "préparation…"}) — ne fermez pas cette page.
+          </p>
+          <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
+            <div className="h-full bg-brand-500 transition-all" style={{ width: `${progress && progress.total ? Math.round((progress.done / progress.total) * 100) : 5}%` }} />
+          </div>
+        </>
+      )}
+      {error && (
+        <p className="text-rose-700 text-xs">
+          {error} Les fiches non envoyées peuvent l&apos;être depuis{" "}
+          <Link href={review} className="underline">la vérification</Link> (les CRM reconnaissent les doublons).
+        </p>
+      )}
+      {summary && (
+        <div className="text-xs text-slate-700 space-y-1">
+          <p>
+            <b>{summary.sent}</b> fiche(s) envoyée(s) · {summary.duplicates} déjà présente(s) ·{" "}
+            <b className={summary.failed ? "text-rose-600" : ""}>{summary.failed}</b> échec(s)
+            {summary.keptLocal > 0 && <> · <b className="text-amber-700">{summary.keptLocal}</b> gardée(s) en local (lien non configuré ou équipe inconnue)</>}
+          </p>
+          {Object.entries(summary.byCategory).map(([k, c]) => (
+            <p key={k}>{CATEGORY_NAME[k] ?? k} : {c.sent} envoyée(s){c.duplicates ? `, ${c.duplicates} doublon(s)` : ""}{c.failed ? `, ${c.failed} échec(s)` : ""}</p>
+          ))}
+          {summary.problems.slice(0, 5).map((p) => (
+            <p key={p.reference} className="font-mono text-rose-700 break-all">{CATEGORY_NAME[p.category] ?? p.category} — {p.detail}</p>
+          ))}
+          <p>
+            Les numéros répétés ne sont envoyés qu&apos;une fois, au premier conseiller qui les a reçus.{" "}
+            <Link href={review} className="text-brand-600 hover:underline">Voir le détail par lien →</Link>
+          </p>
+        </div>
       )}
     </div>
   );

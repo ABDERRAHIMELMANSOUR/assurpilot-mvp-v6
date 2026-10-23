@@ -153,6 +153,34 @@ export async function saveAzzurSetting(name: SwitchName, value: boolean, userId:
   });
 }
 
+// ── Adviser -> AZZUR id_user ─────────────────────────────────────────────────────────
+// Rows keyed "user:<Assurpilot user id>", url = the AZZUR id_user (digits).
+const USER_PREFIX = "user:";
+
+export async function loadAzzurUserMap(): Promise<Record<string, string>> {
+  try {
+    const rows = await prisma.azzurRoute.findMany({ where: { key: { startsWith: USER_PREFIX } } });
+    return Object.fromEntries(rows.filter((r) => /^\d+$/.test(r.url)).map((r) => [r.key.slice(USER_PREFIX.length), r.url]));
+  } catch (error) {
+    if (isMissingTable(error)) return {};
+    throw error;
+  }
+}
+
+/** Sets (digits) or clears ("") the AZZUR id_user of one adviser. */
+export async function saveAzzurUserId(userId: string, azzurId: string, by: string | null): Promise<void> {
+  const key = `${USER_PREFIX}${userId}`;
+  if (!azzurId) {
+    await prisma.azzurRoute.deleteMany({ where: { key } });
+    return;
+  }
+  await prisma.azzurRoute.upsert({
+    where: { key },
+    create: { key, url: azzurId, updatedById: by },
+    update: { url: azzurId, updatedById: by },
+  });
+}
+
 export type EffectiveConfig = {
   config: AzzurConfig;
   tableAvailable: boolean;
@@ -173,10 +201,16 @@ export async function loadEffectiveConfig(env: Record<string, string | undefined
   } catch {
     // Unreadable: fall back to the environment.
   }
+  let userMapById: Record<string, string> = {};
+  try {
+    userMapById = await loadAzzurUserMap();
+  } catch {
+    // Unreadable: no per-adviser ids, AZZUR applies its default user.
+  }
   const enabled = settings.enabled ?? base.enabled;
   const autoPush = settings.autoPush ?? base.autoPush;
   return {
-    config: { ...base, enabled, ready: enabled, autoPush },
+    config: { ...base, enabled, ready: enabled, autoPush, userMapById },
     tableAvailable: settings.tableAvailable,
     source: { enabled: settings.enabled === null ? "env" : "base", autoPush: settings.autoPush === null ? "env" : "base" },
   };

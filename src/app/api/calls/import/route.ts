@@ -6,6 +6,7 @@ import * as XLSX from "xlsx";
 import { prisma } from "@/lib/prisma";
 import { badRequest, handleApiError, requireRole } from "@/lib/api";
 import { normalizePhone, routeForNumber } from "@/lib/phone";
+import { loadEffectiveConfig } from "@/lib/azzurRoutesStore";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -540,12 +541,22 @@ export async function POST(req: NextRequest) {
       data: { importedRows },
     });
 
-    // Nothing is sent to AZZUR here. The admin reviews the split by link and the repeated
-    // numbers on /admin/azzur (the response's batchId opens that review), then sends.
+    // Nothing is sent from here. When "Envois automatiques" is on, the import page dispatches
+    // the batch at once through /api/admin/azzur/send (same rules as the review: one lead per
+    // number, first adviser, configured links only), in slices so a large file fits the time
+    // limit. Otherwise the admin reviews and sends from /admin/azzur.
+    let azzurAutoDispatch = false;
+    try {
+      const { config } = await loadEffectiveConfig();
+      azzurAutoDispatch = config.ready && config.autoPush;
+    } catch {
+      // Unknown: fall back to the manual review.
+    }
 
     return NextResponse.json({
       success: true,
       batchId: batch.id,
+      azzurAutoDispatch,
       totalRows: parsed.length,
       importedRows,
       duplicateRows: duplicateRows.length,

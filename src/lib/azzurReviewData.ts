@@ -126,7 +126,7 @@ export function eventForLead(lead: Lead): AzzurCallEvent {
     startedAt: c.startedAt,
     isMissed: c.isMissed,
     lineLabel: c.lineLabel,
-    conseiller: c.conseiller ? { email: c.conseiller.email, nom: c.conseiller.nom, prenom: c.conseiller.prenom } : null,
+    conseiller: c.conseiller ? { id: c.conseiller.id, email: c.conseiller.email, nom: c.conseiller.nom, prenom: c.conseiller.prenom } : null,
     teamName: c.teamName,
   };
 }

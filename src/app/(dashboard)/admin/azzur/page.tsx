@@ -99,8 +99,9 @@ export default function AzzurPage() {
   async function changeSwitch(name: "autoPush" | "enabled", next: boolean) {
     if (switching) return;
     if (name === "autoPush" && next && !window.confirm(
-      "Activer les envois automatiques ?\n\nUn appel saisi à la main sera envoyé vers AZZUR dès son enregistrement " +
-      "(seulement si le lien de sa catégorie est configuré). Les imports Excel passent toujours par la vérification.")) return;
+      "Activer les envois automatiques ?\n\nAprès chaque import Excel, les appels seront envoyés tout seuls vers le CRM de leur " +
+      "catégorie (un numéro = une fiche, au premier conseiller qui l'a reçu), et un appel saisi à la main dès son " +
+      "enregistrement. Seules les catégories dont le lien est configuré envoient.")) return;
     setSwitching(name);
     try {
       await fetchJson("/api/admin/azzur/settings", {
@@ -139,7 +140,7 @@ export default function AzzurPage() {
               busy={switching === "autoPush"}
               onChange={(next) => changeSwitch("autoPush", next)}
               hint={status.autoPush
-                ? "Un appel saisi à la main est envoyé dès son enregistrement. Les imports Excel passent toujours par la vérification ci-dessous."
+                ? "Après chaque import Excel, les fiches partent toutes seules vers le CRM de leur catégorie (la page d'import affiche le résultat) ; un appel saisi à la main part dès son enregistrement."
                 : "Les appels restent enregistrés en local ; l'envoi se fait à la demande, depuis la vérification ci-dessous."}
             />
             <Switch
@@ -242,6 +243,8 @@ export default function AzzurPage() {
         </div>
       </div>
 
+      <AdvisersCrm reloadKey={routesInfo} />
+
       <AzzurReview ready={!!status?.ready} />
 
       <div className="card p-4 mb-5">
@@ -284,6 +287,117 @@ function ResultTable({ rows }: { rows: Result[] }) {
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+type AdviserRow = {
+  id: string; name: string; role: string; line: string; team: string | null;
+  category: string | null; linkKind: "mer" | "template" | null; azzurId: string;
+};
+
+/**
+ * Advisers as the CRMs must know them. AZZUR (MER) only files a fiche under an adviser through
+ * its own numeric user id (id_user), so each adviser of an AZZUR link needs that number once;
+ * supplier scripts (ProAssur…) receive the name as it is in Assurpilot. Names are never edited here.
+ */
+function AdvisersCrm({ reloadKey }: { reloadKey: unknown }) {
+  const toast = useToast();
+  const [rows, setRows] = useState<AdviserRow[] | null>(null);
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState("");
+
+  const load = useCallback(async () => {
+    try { setRows((await fetchJson<{ advisers: AdviserRow[] }>("/api/admin/azzur/users")).advisers); }
+    catch (e) { toast.error(errorMessage(e)); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => { load(); }, [load, reloadKey]);
+
+  async function save(row: AdviserRow) {
+    const value = (drafts[row.id] ?? row.azzurId).trim();
+    setSaving(row.id);
+    try {
+      await fetchJson("/api/admin/azzur/users", {
+        method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: row.id, azzurId: value }),
+      });
+      setDrafts((d) => { const n = { ...d }; delete n[row.id]; return n; });
+      await load();
+      toast.success(value ? `${row.name} : id AZZUR ${value} enregistré.` : `${row.name} : id AZZUR effacé.`);
+    } catch (e) { toast.error(errorMessage(e, "Enregistrement impossible.")); }
+    finally { setSaving(""); }
+  }
+
+  const needsId = (r: AdviserRow) => r.linkKind === "mer";
+  const missing = (rows ?? []).filter((r) => needsId(r) && !r.azzurId);
+  const noTeam = (rows ?? []).filter((r) => !r.category);
+
+  return (
+    <div className="card p-4 mb-5">
+      <h2 className="text-sm font-semibold text-slate-800 mb-1">Conseillers dans les CRM</h2>
+      <p className="text-xs text-slate-500 mb-3">
+        Les noms restent exactement ceux d&apos;Assurpilot. <b>ProAssur</b> (script fournisseur) reçoit le nom tel quel
+        (<span className="font-mono">$conseiller</span>). <b>AZZUR</b> ne reconnaît pas les noms : il range la fiche chez le conseiller
+        grâce à <b>son numéro d&apos;utilisateur AZZUR</b> (id_user), à saisir une fois ci-dessous. Sans numéro, la fiche arrive chez
+        l&apos;utilisateur par défaut d&apos;AZZUR.
+      </p>
+      {missing.length > 0 && (
+        <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          {missing.length} conseiller(s) d&apos;un lien AZZUR sans id AZZUR : leurs fiches n&apos;arriveront pas dans leur espace.
+        </div>
+      )}
+      {noTeam.length > 0 && (
+        <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          {noTeam.length} conseiller(s) sans équipe ALM/CPA Auto/Santé ({noTeam.slice(0, 4).map((r) => r.name).join(", ")}{noTeam.length > 4 ? "…" : ""}) :
+          leurs appels ne peuvent être envoyés à aucun CRM. Donnez-leur une équipe dans Utilisateurs.
+        </div>
+      )}
+      {!rows ? <p className="text-sm text-slate-400">Chargement…</p> : (
+        <div className="overflow-x-auto max-h-[480px] overflow-y-auto">
+          <table className="w-full" style={{ minWidth: "760px" }}>
+            <thead className="bg-slate-50/70 border-b border-slate-100 sticky top-0">
+              <tr>
+                <th className="table-th">Conseiller</th>
+                <th className="table-th">Ligne</th>
+                <th className="table-th">Équipe</th>
+                <th className="table-th">Lien</th>
+                <th className="table-th">Dans le CRM</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {rows.map((r) => (
+                <tr key={r.id}>
+                  <td className="table-td whitespace-nowrap">{r.name}{r.role === "SUPERVISEUR" && <span className="ml-1 text-[10px] text-slate-400">(coach)</span>}</td>
+                  <td className="table-td font-mono text-xs">{r.line || "—"}</td>
+                  <td className="table-td text-xs">{r.team ?? <span className="text-amber-700">aucune</span>}</td>
+                  <td className="table-td text-xs whitespace-nowrap">{r.category ?? "—"}</td>
+                  <td className="table-td text-xs">
+                    {r.linkKind === "template" ? (
+                      <>Script fournisseur : nom envoyé « <b>{r.name}</b> »</>
+                    ) : !r.category ? (
+                      <span className="text-slate-400">—</span>
+                    ) : r.linkKind === null && !r.category.startsWith("SANTÉ") ? (
+                      <span className="text-slate-400">Lien non configuré</span>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <span className="whitespace-nowrap">id AZZUR</span>
+                        <input
+                          inputMode="numeric" value={drafts[r.id] ?? r.azzurId} placeholder="ex. 123"
+                          onChange={(e) => setDrafts((d) => ({ ...d, [r.id]: e.target.value }))}
+                          className="w-20 px-2 py-1 border border-slate-200 rounded-lg text-xs font-mono"
+                        />
+                        <button className="btn-secondary" disabled={saving === r.id || (drafts[r.id] ?? r.azzurId) === r.azzurId}
+                          onClick={() => save(r)}>{saving === r.id ? "…" : "Enregistrer"}</button>
+                        {r.linkKind === null && <span className="text-[10px] text-slate-400">(lien non configuré)</span>}
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

@@ -388,12 +388,29 @@ manuelle n'envoient quoi que ce soit à AZZUR par défaut (l'interrupteur « Env
 désactivé, est le seul réglage qui rétablirait un envoi à l'enregistrement d'un appel). Les envois se font à la demande,
 depuis `/admin/azzur`, après vérification. Code : `src/lib/azzur*.ts`.
 
+**Organisation des CRM** (exemple réel) : la **Santé** va dans **AZZUR**, l'**Auto** dans **ProAssur**, chaque CRM
+ayant un lien **ALM** et un lien **CPA**. Les quatre liens de `/admin/azzur` correspondent donc à
+SANTÉ ALM / SANTÉ CPA (liens AZZUR MER) et AUTO ALM / AUTO CPA (scripts ProAssur), et chaque appel part
+uniquement vers le lien de l'équipe (ALM/CPA) et du produit (Auto/Santé) de son conseiller.
+
+**Envoi automatique après import** : avec « Envois automatiques » activé, la page d'import envoie
+d'elle-même le fichier qui vient d'être importé (mêmes règles que la vérification : un numéro = une
+fiche, au premier conseiller qui l'a reçu ; seuls les liens configurés envoient), par lots, avec la
+progression et le bilan par lien (garder la page ouverte pendant l'envoi). Désactivé : le lien
+« Vérifier la répartition et envoyer » mène à la vérification manuelle.
+
+**Le bon conseiller dans le CRM** : les noms ne sont jamais modifiés. ProAssur reçoit le nom tel qu'il
+est dans Assurpilot (`$conseiller`). **AZZUR ne range pas une fiche par nom** mais par son propre
+numéro d'utilisateur (`id_user`) : la carte « Conseillers dans les CRM » de `/admin/azzur` liste les
+conseillers (équipe, lien) et permet de saisir une fois l'id AZZUR de chacun (stocké dans
+`azzur_routes`, clés `user:<id>`). Sans id, la fiche arrive chez l'utilisateur par défaut d'AZZUR. Un
+conseiller sans équipe ALM/CPA Auto/Santé est signalé : ses appels ne peuvent aller dans aucun CRM.
+
 **Interrupteurs sur `/admin/azzur`** (effet immédiat, sans redéploiement, enregistrés dans la table
 `azzur_routes`, donc `prisma/sql/009-azzur-routes.sql` requis) :
-- **Envois automatiques** — badge vert « Activés » / gris « Désactivés ». Activé, un appel saisi à la
-  main est envoyé dès son enregistrement (si le lien de sa catégorie est configuré ; une
-  confirmation est demandée à l'activation). Les imports Excel passent **toujours** par la
-  vérification, quel que soit ce réglage.
+- **Envois automatiques** — badge vert « Activés » / gris « Désactivés ». Activé, chaque import Excel est
+  envoyé automatiquement (voir ci-dessus) et un appel saisi à la main l'est dès son enregistrement
+  (si le lien de sa catégorie est configuré ; une confirmation est demandée à l'activation).
 - **Envoi AZZUR (interrupteur général)** — remplace `AZZUR_WEBHOOK_ENABLED` à chaud : éteint, plus
   rien n'est envoyé, même depuis la vérification (l'analyse reste possible).
 
