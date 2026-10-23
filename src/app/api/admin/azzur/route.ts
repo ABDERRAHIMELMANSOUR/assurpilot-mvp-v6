@@ -7,7 +7,7 @@
 import { NextResponse } from "next/server";
 import { handleApiError, requireRole } from "@/lib/api";
 import { recentAzzurResults } from "@/lib/azzur";
-import { loadAzzurRoutes, loadEffectiveConfig, MIGRATION_HINT } from "@/lib/azzurRoutesStore";
+import { azzurRoutesTableProblem, loadAzzurRoutes, loadEffectiveConfig } from "@/lib/azzurRoutesStore";
 import { resolveEndpoint, ROUTE_KEYS } from "@/lib/azzurRouting";
 
 export const runtime = "nodejs";
@@ -16,7 +16,9 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     await requireRole("ADMINISTRATEUR");
-    const { config, source, tableAvailable } = await loadEffectiveConfig();
+    const { config, source } = await loadEffectiveConfig();
+    const tableProblem = await azzurRoutesTableProblem().catch(() => null);
+    const tableAvailable = tableProblem === null;
     const { routes } = await loadAzzurRoutes().catch(() => ({ routes: {} }));
     return NextResponse.json({
       enabled: config.enabled,
@@ -29,7 +31,7 @@ export async function GET() {
       // Where each switch's value comes from: the page ("base") or the environment ("env").
       switchSource: source,
       tableAvailable,
-      migrationHint: tableAvailable ? null : MIGRATION_HINT,
+      migrationHint: tableProblem,
       linksConfigured: ROUTE_KEYS.filter((k) => resolveEndpoint(k, routes).url !== null).length,
       method: config.method,
       retourWs: config.retourWs,

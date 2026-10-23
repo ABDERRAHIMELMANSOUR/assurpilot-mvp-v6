@@ -20,7 +20,9 @@ export type LoadedRoutes = {
 };
 
 function isMissingTable(error: unknown): boolean {
-  return error instanceof Prisma.PrismaClientKnownRequestError && (error.code === "P2021" || error.code === "P2022");
+  // P2021 table missing, P2022 column missing, P2011 a required column the app does not fill
+  // (a table of that name made by another tool).
+  return error instanceof Prisma.PrismaClientKnownRequestError && ["P2021", "P2022", "P2011"].includes(error.code);
 }
 
 /** Database value first, then the AZZUR_MER_URL_<KEY> environment variable. */
@@ -67,7 +69,7 @@ export async function saveAzzurRoute(key: RouteKey, value: string, userId: strin
 
 /** The one message shown wherever a save fails because migration 009 has not been run. */
 export const MIGRATION_HINT =
-  "La table azzur_routes n'existe pas encore dans la base utilisée par l'application : cliquez sur « Créer la table maintenant » " +
+  "La table azzur_routes n'existe pas encore dans la base utilisée par l'application : cliquez sur « Créer / réparer la table » " +
   "(section Liens AZZUR), ou exécutez prisma/sql/009-azzur-routes.sql dans le SQL editor de Supabase, puis réessayez.";
 
 /**
@@ -76,41 +78,105 @@ export const MIGRATION_HINT =
  * different message than "run the migration", or the admin re-runs it convinced it failed.
  */
 export function missingTableMessage(error: unknown): string {
+  if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2011") return WRONG_SHAPE_HINT;
   if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2022") {
     const column = (error.meta as { column?: string } | undefined)?.column;
     return `La table azzur_routes existe mais est incomplète${column ? ` (colonne ${column} manquante)` : ""} : ` +
-      "cliquez sur « Créer la table maintenant », qui la complète sans rien effacer.";
+      "cliquez sur « Créer / réparer la table », qui la complète sans rien effacer.";
   }
   return MIGRATION_HINT;
 }
 
 /**
- * Creates (or completes) azzur_routes — the SAME statements as prisma/sql/009-azzur-routes.sql,
- * kept in step with it. Additive only: CREATE … IF NOT EXISTS / ADD COLUMN IF NOT EXISTS, no row
- * or other table is touched, safe to run any number of times. Run on an administrator's explicit
- * request from /admin/azzur, so the SQL-editor step is not required.
+ * The ONE statement that brings azzur_routes to the shape the app needs, from any starting
+ * point. Same text as prisma/sql/009-azzur-routes.sql — keep the two in step.
+ *
+ * A table of that name made by hand or by another tool (an "id" column that is required with no
+ * default, a primary key on something other than "key"…) makes every save fail with a NULL
+ * violation. Such a table is not modified: it is RENAMED azzur_routes_old_<timestamp> (its
+ * constraints renamed too, so their names are free), a correct table is created, and every
+ * key/url pair it held is copied across. Nothing is deleted. On a table that is already right
+ * this only adds what is missing — safe to run any number of times.
  */
-export async function ensureAzzurRoutesTable(): Promise<{ columns: string[]; schema: string }> {
-  const statements = [
-    `CREATE TABLE IF NOT EXISTS azzur_routes (
-      "key" TEXT NOT NULL,
-      "url" TEXT NOT NULL DEFAULT '',
-      "updatedAt" TIMESTAMP(3) NOT NULL,
-      "updatedById" TEXT,
-      CONSTRAINT "azzur_routes_pkey" PRIMARY KEY ("key")
-    )`,
-    `ALTER TABLE azzur_routes ADD COLUMN IF NOT EXISTS "url" TEXT NOT NULL DEFAULT ''`,
-    `ALTER TABLE azzur_routes ADD COLUMN IF NOT EXISTS "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP`,
-    `ALTER TABLE azzur_routes ALTER COLUMN "updatedAt" DROP DEFAULT`,
-    `ALTER TABLE azzur_routes ADD COLUMN IF NOT EXISTS "updatedById" TEXT`,
-    // Holds secret keys: not reachable through Supabase's REST API with the anon key.
-    `ALTER TABLE azzur_routes ENABLE ROW LEVEL SECURITY`,
-  ];
-  for (const sql of statements) await prisma.$executeRawUnsafe(sql);
+export const AZZUR_ROUTES_REPAIR_SQL = `DO $repair$
+DECLARE
+  v_old text;
+  v_suffix text := to_char(clock_timestamp(), 'YYYYMMDDHH24MISS');
+  v_bad boolean := false;
+  r record;
+BEGIN
+  IF to_regclass('public.azzur_routes') IS NOT NULL THEN
+    -- Unusable shape: no "key" column, a required column the app never fills, or a primary key
+    -- that is not exactly ("key").
+    v_bad := NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'azzur_routes' AND column_name = 'key')
+      OR EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'azzur_routes'
+                 AND column_name NOT IN ('key', 'url', 'updatedAt', 'updatedById') AND is_nullable = 'NO' AND column_default IS NULL)
+      OR NOT EXISTS (SELECT 1 FROM pg_constraint c WHERE c.conrelid = 'public.azzur_routes'::regclass AND c.contype = 'p'
+                     AND array_length(c.conkey, 1) = 1
+                     AND (SELECT a.attname FROM pg_attribute a WHERE a.attrelid = c.conrelid AND a.attnum = c.conkey[1]) = 'key');
+    IF v_bad THEN
+      v_old := 'azzur_routes_old_' || v_suffix;
+      EXECUTE format('ALTER TABLE public.azzur_routes RENAME TO %I', v_old);
+      FOR r IN SELECT conname FROM pg_constraint WHERE conrelid = format('public.%I', v_old)::regclass LOOP
+        EXECUTE format('ALTER TABLE public.%I RENAME CONSTRAINT %I TO %I', v_old, r.conname, left(r.conname, 40) || '_old_' || v_suffix);
+      END LOOP;
+      RAISE NOTICE 'azzur_routes avait une autre forme : renommée % (rien n''est supprimé)', v_old;
+    END IF;
+  END IF;
 
+  CREATE TABLE IF NOT EXISTS public.azzur_routes (
+    "key" TEXT NOT NULL,
+    "url" TEXT NOT NULL DEFAULT '',
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "updatedById" TEXT,
+    CONSTRAINT "azzur_routes_pkey" PRIMARY KEY ("key")
+  );
+  ALTER TABLE public.azzur_routes ADD COLUMN IF NOT EXISTS "url" TEXT NOT NULL DEFAULT '';
+  ALTER TABLE public.azzur_routes ADD COLUMN IF NOT EXISTS "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP;
+  ALTER TABLE public.azzur_routes ALTER COLUMN "updatedAt" DROP DEFAULT;
+  ALTER TABLE public.azzur_routes ADD COLUMN IF NOT EXISTS "updatedById" TEXT;
+  -- Holds secret keys: not reachable through Supabase's REST API with the anon key.
+  ALTER TABLE public.azzur_routes ENABLE ROW LEVEL SECURITY;
+
+  -- Keep whatever links the set-aside table held.
+  IF v_old IS NOT NULL
+     AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = v_old AND column_name = 'key')
+     AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = v_old AND column_name = 'url') THEN
+    EXECUTE format('INSERT INTO public.azzur_routes ("key", "url", "updatedAt") SELECT DISTINCT ON ("key") "key"::text, "url"::text, CURRENT_TIMESTAMP FROM public.%I WHERE "key" IS NOT NULL AND COALESCE("url"::text, %L) <> %L ON CONFLICT ("key") DO NOTHING', v_old, '', '');
+  END IF;
+END
+$repair$`;
+
+/** Why the table cannot be written to as it stands, or null when it can. */
+export async function azzurRoutesTableProblem(): Promise<string | null> {
+  const rows = await prisma.$queryRawUnsafe<Array<{ problem: string | null }>>(
+    `SELECT CASE
+       WHEN to_regclass('public.azzur_routes') IS NULL THEN 'missing'
+       WHEN EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'azzur_routes'
+                    AND column_name NOT IN ('key', 'url', 'updatedAt', 'updatedById') AND is_nullable = 'NO' AND column_default IS NULL)
+         THEN 'extra-required'
+       WHEN NOT EXISTS (SELECT 1 FROM pg_constraint c WHERE c.conrelid = 'public.azzur_routes'::regclass AND c.contype = 'p'
+                        AND array_length(c.conkey, 1) = 1
+                        AND (SELECT a.attname FROM pg_attribute a WHERE a.attrelid = c.conrelid AND a.attnum = c.conkey[1]) = 'key')
+         THEN 'wrong-key'
+       ELSE NULL END AS problem`
+  );
+  const p = rows[0]?.problem ?? null;
+  if (p === "missing") return MIGRATION_HINT;
+  if (p) return WRONG_SHAPE_HINT;
+  return null;
+}
+
+export const WRONG_SHAPE_HINT =
+  "La table azzur_routes existe mais n'a pas la forme attendue (créée par un autre outil : colonne id obligatoire, autre clé…), " +
+  "donc aucun enregistrement n'est possible. Cliquez sur « Créer / réparer la table » : l'ancienne table est mise de côté " +
+  "(renommée, rien n'est supprimé), la bonne est créée et les liens déjà présents sont recopiés.";
+
+export async function ensureAzzurRoutesTable(): Promise<{ columns: string[]; schema: string }> {
+  await prisma.$executeRawUnsafe(AZZUR_ROUTES_REPAIR_SQL);
   const rows = await prisma.$queryRawUnsafe<Array<{ column_name: string; schema: string }>>(
     `SELECT column_name, table_schema AS schema FROM information_schema.columns
-     WHERE table_name = 'azzur_routes' AND table_schema = current_schema() ORDER BY ordinal_position`
+     WHERE table_name = 'azzur_routes' AND table_schema = 'public' ORDER BY ordinal_position`
   );
   return { columns: rows.map((r) => r.column_name), schema: rows[0]?.schema ?? "?" };
 }

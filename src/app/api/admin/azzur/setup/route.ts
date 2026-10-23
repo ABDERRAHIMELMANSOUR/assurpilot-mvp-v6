@@ -1,11 +1,12 @@
 // src/app/api/admin/azzur/setup/route.ts
 //
-// Creates (or completes) the azzur_routes table on an administrator's request, from the
-// "Créer la table maintenant" button on /admin/azzur — the same statements as
-// prisma/sql/009-azzur-routes.sql, additive only. ADMIN ONLY.
+// Creates, completes or REPAIRS the azzur_routes table on an administrator's request, from the
+// "Créer / réparer la table" button on /admin/azzur — the same statement as
+// prisma/sql/009-azzur-routes.sql. A table of another shape is renamed aside, never deleted.
+// ADMIN ONLY.
 import { NextResponse } from "next/server";
 import { ApiError, handleApiError, requireRole } from "@/lib/api";
-import { ensureAzzurRoutesTable } from "@/lib/azzurRoutesStore";
+import { azzurRoutesTableProblem, ensureAzzurRoutesTable } from "@/lib/azzurRoutesStore";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,6 +28,8 @@ export async function POST() {
     if (missing.length) {
       throw new ApiError(500, `La table azzur_routes reste incomplète (colonnes manquantes : ${missing.join(", ")}).`);
     }
+    const problem = await azzurRoutesTableProblem();
+    if (problem) throw new ApiError(500, `La réparation n'a pas suffi : ${problem}`);
     return NextResponse.json({ ok: true, schema: result.schema, columns: result.columns });
   } catch (error) {
     return handleApiError(error, "POST /api/admin/azzur/setup");

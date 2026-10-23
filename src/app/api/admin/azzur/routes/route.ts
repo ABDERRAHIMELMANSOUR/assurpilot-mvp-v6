@@ -10,7 +10,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { ApiError, badRequest, handleApiError, readJson, requireRole } from "@/lib/api";
 import { allowedHosts, describeEndpoint, isRouteKey, parseRouteValue, resolveEndpoint, ROUTE_KEYS, ROUTE_LABEL } from "@/lib/azzurRouting";
-import { isMissingTable, missingTableMessage, loadAzzurRoutes, MIGRATION_HINT, saveAzzurRoute } from "@/lib/azzurRoutesStore";
+import { azzurRoutesTableProblem, isMissingTable, missingTableMessage, loadAzzurRoutes, saveAzzurRoute } from "@/lib/azzurRoutesStore";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,11 +18,14 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     await requireRole("ADMINISTRATEUR");
-    const { routes, tableAvailable, origin } = await loadAzzurRoutes();
+    const { routes, origin } = await loadAzzurRoutes();
+    // Missing, or present but unusable (made by another tool): either way saving cannot work.
+    const tableProblem = await azzurRoutesTableProblem().catch(() => null);
+    const tableAvailable = tableProblem === null;
 
     return NextResponse.json({
       tableAvailable,
-      migrationHint: tableAvailable ? null : MIGRATION_HINT,
+      migrationHint: tableProblem,
       allowedHosts: allowedHosts(),
       routes: ROUTE_KEYS.map((key) => {
         const ep = resolveEndpoint(key, routes);

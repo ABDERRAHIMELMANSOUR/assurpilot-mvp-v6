@@ -414,11 +414,12 @@ conseiller sans équipe ALM/CPA Auto/Santé est signalé : ses appels ne peuvent
 - **Envoi AZZUR (interrupteur général)** — remplace `AZZUR_WEBHOOK_ENABLED` à chaud : éteint, plus
   rien n'est envoyé, même depuis la vérification (l'analyse reste possible).
 
-**Table absente ?** Si la page affiche « La table azzur_routes n'existe pas encore », le bouton
-**« Créer la table maintenant »** du bandeau la crée depuis l'application (mêmes instructions que
-`009`, ajout pur : aucune autre table ni ligne n'est touchée, ré-exécutable) — plus besoin du SQL
-editor. Une table présente mais incomplète (créée à la main) est signalée comme telle
-(« colonne … manquante ») et le même bouton la complète.
+**Table absente ou de mauvaise forme ?** Si la page signale que la table `azzur_routes` n'existe pas, ou
+qu'elle existe « sans la forme attendue » (par ex. créée par un autre outil avec une colonne `id`
+obligatoire, ce qui fait échouer chaque enregistrement), le bouton **« Créer / réparer la table »** la
+crée ou la répare depuis l'application : une table de mauvaise forme est **renommée**
+`azzur_routes_old_<date>` (rien n'est supprimé), la bonne est créée et les liens qu'elle contenait sont
+recopiés. Même instruction que `prisma/sql/009-azzur-routes.sql`, ré-exécutable sans effet.
 
 Tant qu'un interrupteur n'a pas été utilisé, la variable d'environnement (`AZZUR_WEBHOOK_ENABLED`,
 `AZZUR_AUTO_PUSH`) s'applique ; ensuite la valeur de la page l'emporte. Les enregistrements

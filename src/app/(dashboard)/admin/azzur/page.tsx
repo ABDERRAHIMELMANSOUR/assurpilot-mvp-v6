@@ -85,7 +85,7 @@ export default function AzzurPage() {
 
   const [creating, setCreating] = useState(false);
   async function createTable() {
-    if (!window.confirm("Créer la table azzur_routes dans la base de l'application ?\n\nOpération sans risque : elle ajoute seulement cette table (liens et interrupteurs AZZUR), rien n'est modifié ni effacé.")) return;
+    if (!window.confirm("Créer ou réparer la table azzur_routes ?\n\nSans risque : si une table de ce nom existe avec une autre forme, elle est mise de côté (renommée, rien n'est supprimé) et ses liens sont recopiés ; aucune autre table n'est touchée.")) return;
     setCreating(true);
     try {
       await fetchJson("/api/admin/azzur/setup", { method: "POST" });
@@ -208,7 +208,7 @@ export default function AzzurPage() {
           <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 flex flex-wrap items-center gap-3">
             <span className="flex-1 min-w-[240px]">{routesInfo.migrationHint}</span>
             <button className="btn-primary" disabled={creating} onClick={createTable}>
-              {creating ? "Création…" : "Créer la table maintenant"}
+              {creating ? "Réparation…" : "Créer / réparer la table"}
             </button>
           </div>
         )}
