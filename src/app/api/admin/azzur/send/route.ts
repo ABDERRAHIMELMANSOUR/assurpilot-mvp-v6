@@ -17,8 +17,8 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { badRequest, handleApiError, readJson, requireRole } from "@/lib/api";
-import { mapPool, pushCallToAzzur, readAzzurConfig } from "@/lib/azzur";
-import { loadAzzurRoutes } from "@/lib/azzurRoutesStore";
+import { mapPool, pushCallToAzzur } from "@/lib/azzur";
+import { loadAzzurRoutes, loadEffectiveConfig } from "@/lib/azzurRoutesStore";
 import { CATEGORY_ORDER, CATEGORY_LABEL, type CategoryId } from "@/lib/azzurReview";
 import { ROUTE_KEYS, resolveEndpoint, type RouteKey } from "@/lib/azzurRouting";
 import { eventForLead, loadReview, parseSource } from "@/lib/azzurReviewData";
@@ -47,9 +47,9 @@ export async function POST(req: NextRequest) {
     const offset = Math.max(0, Math.floor(Number(body.offset ?? 0)) || 0);
     const limit = Math.min(MAX_SLICE, Math.max(1, Math.floor(Number(body.limit ?? 50)) || 50));
 
-    const config = readAzzurConfig();
+    const { config } = await loadEffectiveConfig();
     if (!config.ready) {
-      throw badRequest(config.problem ?? "Intégration AZZUR désactivée : définissez AZZUR_WEBHOOK_ENABLED=true.");
+      throw badRequest(config.problem ?? "L'envoi AZZUR est désactivé : activez l'interrupteur « Envoi AZZUR » en haut de cette page.");
     }
 
     // Which categories have a link. Everything else is never sent.

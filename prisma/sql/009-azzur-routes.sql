@@ -2,7 +2,9 @@
 --
 -- The four AZZUR web-service links, one per team and product (AUTO_ALM, SANTE_ALM,
 -- AUTO_CPA, SANTE_CPA), edited from /admin/azzur. A key with no row (or an empty url)
--- means "use the main AZZUR_MER_URL".
+-- means no link: nothing is sent for that category. The same table also holds the two
+-- runtime switches of that page (keys "setting:enabled" and "setting:autoPush", url =
+-- "true" / "false"), so no further table is needed.
 --
 -- Own table: no existing table is touched. Convergent like 006/007 — it creates the table,
 -- or adds whatever a half-made one lacks, and is safe to run any number of times.

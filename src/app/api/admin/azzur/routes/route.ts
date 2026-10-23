@@ -10,12 +10,10 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { ApiError, badRequest, handleApiError, readJson, requireRole } from "@/lib/api";
 import { allowedHosts, describeUrl, isRouteKey, parseRouteValue, resolveEndpoint, ROUTE_KEYS, ROUTE_LABEL } from "@/lib/azzurRouting";
-import { isMissingTable, loadAzzurRoutes, saveAzzurRoute } from "@/lib/azzurRoutesStore";
+import { isMissingTable, loadAzzurRoutes, MIGRATION_HINT, saveAzzurRoute } from "@/lib/azzurRoutesStore";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const MIGRATION_HINT = "Exécutez prisma/sql/009-azzur-routes.sql dans Supabase pour pouvoir enregistrer les liens.";
 
 export async function GET() {
   try {

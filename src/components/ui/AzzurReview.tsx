@@ -150,7 +150,7 @@ export default function AzzurReview({ ready }: { ready: boolean }) {
       {error && <div className="mb-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">{error}</div>}
       {review && !review.ready && (
         <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-          Envoi désactivé : {review.problem ?? "AZZUR_WEBHOOK_ENABLED n'est pas à true."} L&apos;analyse reste possible.
+          Envoi désactivé : {review.problem ?? "l'interrupteur « Envoi AZZUR » est désactivé en haut de la page."} L&apos;analyse reste possible.
         </div>
       )}
       {review && review.categories.some((c) => !c.configured && c.leads + c.alreadyReceived > 0) && (

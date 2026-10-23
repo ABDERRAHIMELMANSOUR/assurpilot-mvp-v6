@@ -5,11 +5,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { errorMessage, fetchJson } from "@/lib/fetchJson";
 import AzzurReview from "@/components/ui/AzzurReview";
+import { useToast } from "@/components/ui/Toast";
 
 type Result = { route?: string; reference: string; outcome: "sent" | "duplicate" | "skipped" | "failed"; status?: number; attempts?: number; detail: string; at: string };
 type Status = {
   enabled: boolean; ready: boolean; problem: string | null;
   referenceHost: string | null; autoPush: boolean; linksConfigured: number;
+  switchSource: { enabled: "base" | "env"; autoPush: "base" | "env" }; tableAvailable: boolean; migrationHint: string | null;
   method: string; format: string; fields: Record<string, string>; provenance: string; placeholders: Record<string, string>; mappedAdvisers: number; defaultUserId: string | null;
   timeoutMs: number; maxAgeHours: number; onlyAnswered: boolean; recent: Result[];
 };
@@ -18,7 +20,33 @@ type RoutesInfo = { tableAvailable: boolean; migrationHint: string | null; allow
 
 const BADGE: Record<Result["outcome"], string> = { sent: "badge-green", duplicate: "badge-yellow", failed: "badge-red", skipped: "badge-gray" };
 
+/** An on/off switch with its state spelled out: GREEN badge when on, GRAY when off. */
+function Switch({ label, hint, on, busy, onChange }: {
+  label: string; hint: string; on: boolean; busy: boolean; onChange: (next: boolean) => void;
+}) {
+  return (
+    <div className="flex items-start gap-3">
+      <button
+        type="button" role="switch" aria-checked={on} aria-label={label} disabled={busy}
+        onClick={() => onChange(!on)}
+        className={`relative mt-0.5 inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-brand-400 disabled:opacity-60 ${on ? "bg-emerald-500" : "bg-slate-300"}`}
+      >
+        <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${on ? "translate-x-5" : "translate-x-0.5"}`} />
+      </button>
+      <div>
+        <p className="text-sm font-semibold text-slate-800">
+          {label}{" "}
+          <span className={`badge ${on ? "badge-green" : "badge-gray"}`}>{busy ? "…" : on ? "Activés" : "Désactivés"}</span>
+        </p>
+        <p className="text-xs text-slate-500 mt-0.5">{hint}</p>
+      </div>
+    </div>
+  );
+}
+
 export default function AzzurPage() {
+  const toast = useToast();
+  const [switching, setSwitching] = useState<"" | "autoPush" | "enabled">("");
   const [status, setStatus] = useState<Status | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -39,16 +67,39 @@ export default function AzzurPage() {
   }, []);
   useEffect(() => { loadRoutes(); }, [loadRoutes]);
 
-  async function saveRoute(key: string, value: string) {
-    setSavingKey(key); setError("");
+  async function saveRoute(key: string, label: string, value: string) {
+    setSavingKey(key);
     try {
       await fetchJson("/api/admin/azzur/routes", {
         method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key, value }),
       });
       setDrafts((d) => { const next = { ...d }; delete next[key]; return next; });
-      await loadRoutes();
-    } catch (e) { setError(errorMessage(e)); }
-    finally { setSavingKey(""); }
+      await Promise.all([loadRoutes(), loadStatus()]);
+      toast.success(value ? `Lien ${label} enregistré : les appels de cette catégorie pourront être envoyés.` : `Lien ${label} supprimé : ses appels restent en local.`);
+    } catch (e) {
+      // The table-missing case arrives as a 503 carrying the "run 009" message; validation
+      // refusals (bad host, masked key…) arrive as 400s with their own explanation.
+      toast.error(errorMessage(e, "Enregistrement impossible."));
+    } finally { setSavingKey(""); }
+  }
+
+  async function changeSwitch(name: "autoPush" | "enabled", next: boolean) {
+    if (switching) return;
+    if (name === "autoPush" && next && !window.confirm(
+      "Activer les envois automatiques ?\n\nUn appel saisi à la main sera envoyé vers AZZUR dès son enregistrement " +
+      "(seulement si le lien de sa catégorie est configuré). Les imports Excel passent toujours par la vérification.")) return;
+    setSwitching(name);
+    try {
+      await fetchJson("/api/admin/azzur/settings", {
+        method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ [name]: next }),
+      });
+      await loadStatus();
+      toast.success(name === "autoPush"
+        ? (next ? "Envois automatiques activés." : "Envois automatiques désactivés : les appels restent en local.")
+        : (next ? "Envoi AZZUR activé." : "Envoi AZZUR désactivé : plus rien n'est envoyé."));
+    } catch (e) {
+      toast.error(errorMessage(e, "Réglage impossible."));
+    } finally { setSwitching(""); }
   }
 
   async function loadDoc() {
@@ -66,18 +117,44 @@ export default function AzzurPage() {
       {error && <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>}
 
       <div className="card p-4 mb-5">
+        <h2 className="text-sm font-semibold text-slate-800 mb-3">Envois vers AZZUR</h2>
+        {!status ? <p className="text-sm text-slate-400">Chargement…</p> : (
+          <div className="space-y-4">
+            <Switch
+              label="Envois automatiques"
+              on={status.autoPush}
+              busy={switching === "autoPush"}
+              onChange={(next) => changeSwitch("autoPush", next)}
+              hint={status.autoPush
+                ? "Un appel saisi à la main est envoyé dès son enregistrement. Les imports Excel passent toujours par la vérification ci-dessous."
+                : "Les appels restent enregistrés en local ; l'envoi se fait à la demande, depuis la vérification ci-dessous."}
+            />
+            <Switch
+              label="Envoi AZZUR (interrupteur général)"
+              on={status.enabled}
+              busy={switching === "enabled"}
+              onChange={(next) => changeSwitch("enabled", next)}
+              hint={status.enabled
+                ? "Les envois sont possibles (manuels depuis la vérification, et automatiques si activés). Une catégorie sans lien n'envoie jamais rien."
+                : "Aucun envoi, même manuel. L'analyse des appels reste possible."}
+            />
+            <p className="text-[11px] text-slate-400">
+              Appliqué immédiatement, sans redéploiement.
+              {status.switchSource.autoPush === "env" || status.switchSource.enabled === "env"
+                ? " Tant qu'un interrupteur n'a pas été utilisé ici, la valeur des variables d'environnement s'applique."
+                : ""}
+              {!status.tableAvailable ? " Pour enregistrer un réglage, la table azzur_routes doit exister (prisma/sql/009-azzur-routes.sql)." : ""}
+            </p>
+          </div>
+        )}
+      </div>
+
+      <div className="card p-4 mb-5">
         <h2 className="text-sm font-semibold text-slate-800 mb-2">Configuration</h2>
         {!status ? <p className="text-sm text-slate-400">Chargement…</p> : (
           <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-1.5 text-sm">
-            <div><dt className="inline text-slate-400">AZZUR_WEBHOOK_ENABLED : </dt>
-              <dd className="inline"><span className={`badge ${status.enabled ? "badge-green" : "badge-red"}`}>{status.enabled ? "true" : "false"}</span></dd></div>
             <div><dt className="inline text-slate-400">Liens configurés : </dt>
               <dd className="inline"><span className={`badge ${status.linksConfigured === 4 ? "badge-green" : status.linksConfigured === 0 ? "badge-red" : "badge-yellow"}`}>{status.linksConfigured} / 4</span></dd></div>
-            <div><dt className="inline text-slate-400">Envois automatiques : </dt>
-              <dd className="inline"><span className={`badge ${status.autoPush ? "badge-yellow" : "badge-gray"}`}>{status.autoPush ? "activés" : "désactivés"}</span>
-                <span className="text-xs text-slate-400"> {status.autoPush ? "" : "— les appels restent en local, envoi manuel ci-dessous"}</span></dd></div>
-            <div><dt className="inline text-slate-400">Envoi activé : </dt>
-              <dd className="inline"><span className={`badge ${status.ready ? "badge-green" : "badge-red"}`}>{status.ready ? "oui" : "non"}</span></dd></div>
             <div><dt className="inline text-slate-400">Requête : </dt><dd className="inline font-mono">{status.method} {status.format}</dd></div>
             <div className="sm:col-span-2"><dt className="inline text-slate-400">Champs : </dt>
               <dd className="inline font-mono text-xs">{Object.entries(status.fields).map(([k, v]) => `${k}→${v || "(désactivé)"}`).join("  ")}</dd></div>
@@ -125,11 +202,11 @@ export default function AzzurPage() {
                 </p>
               </div>
               <div className="flex gap-2">
-                <button className="btn-primary" disabled={!!savingKey || !(drafts[r.key] ?? "").trim() || !routesInfo?.tableAvailable}
-                  onClick={() => saveRoute(r.key, drafts[r.key])}>{savingKey === r.key ? "…" : "Enregistrer"}</button>
+                <button className="btn-primary" disabled={!!savingKey || !(drafts[r.key] ?? "").trim()}
+                  onClick={() => saveRoute(r.key, r.label, drafts[r.key])}>{savingKey === r.key ? "Enregistrement…" : "Enregistrer"}</button>
                 {r.configured && r.origin === "base" && (
                   <button className="btn-secondary" disabled={!!savingKey}
-                    onClick={() => { if (window.confirm(`Supprimer le lien ${r.label} ? Ses appels resteront en local et ne seront plus envoyés.`)) saveRoute(r.key, ""); }}>Effacer</button>
+                    onClick={() => { if (window.confirm(`Supprimer le lien ${r.label} ? Ses appels resteront en local et ne seront plus envoyés.`)) saveRoute(r.key, r.label, ""); }}>Effacer</button>
                 )}
               </div>
             </div>

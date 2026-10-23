@@ -531,17 +531,20 @@ async function pool<T>(items: T[], limit: number, worker: (item: T) => Promise<u
 export function scheduleAzzurPush(events: AzzurCallEvent[]): void {
   try {
     if (!events.length) return;
-    const config = readAzzurConfig();
-    // Automatic pushes are switched off: calls are only saved locally, and sent on request
-    // from the review on /admin/azzur. AZZUR_AUTO_PUSH=true turns this path back on.
-    if (!config.ready || !config.autoPush) return;
 
     const work = (async () => {
+      // The switches are read now, not at startup: "Envois automatiques" on /admin/azzur
+      // (or AZZUR_AUTO_PUSH) decides, and by default calls are only saved locally and sent
+      // on request from the review.
+      const store = await import("@/lib/azzurRoutesStore");
+      const { config } = await store.loadEffectiveConfig();
+      if (!config.ready || !config.autoPush) return;
+
       // One lookup of the four links for the whole batch. If it fails, no link is known
       // and nothing is sent (the calls stay in the database).
       let routes: RouteSettings = {};
       try {
-        routes = (await (await import("@/lib/azzurRoutesStore")).loadAzzurRoutes()).routes;
+        routes = (await store.loadAzzurRoutes()).routes;
       } catch (error) {
         console.error(redactSecrets(`[azzur] liens par équipe illisibles, rien n'est envoyé: ${error instanceof Error ? error.message : String(error)}`));
       }

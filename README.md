@@ -384,9 +384,23 @@ des deux côtés : deux appelants anonymes ne sont pas une même personne.
 ### Envoi des appels vers AZZUR (CRM)
 
 **Les appels sont enregistrés en local uniquement** : ni la création, ni l'import Excel, ni la saisie
-manuelle n'envoient quoi que ce soit à AZZUR (`AZZUR_AUTO_PUSH`, désactivé par défaut, est le
-seul interrupteur qui rétablirait un envoi à l'enregistrement). Les envois se font à la demande,
+manuelle n'envoient quoi que ce soit à AZZUR par défaut (l'interrupteur « Envois automatiques »,
+désactivé, est le seul réglage qui rétablirait un envoi à l'enregistrement d'un appel). Les envois se font à la demande,
 depuis `/admin/azzur`, après vérification. Code : `src/lib/azzur*.ts`.
+
+**Interrupteurs sur `/admin/azzur`** (effet immédiat, sans redéploiement, enregistrés dans la table
+`azzur_routes`, donc `prisma/sql/009-azzur-routes.sql` requis) :
+- **Envois automatiques** — badge vert « Activés » / gris « Désactivés ». Activé, un appel saisi à la
+  main est envoyé dès son enregistrement (si le lien de sa catégorie est configuré ; une
+  confirmation est demandée à l'activation). Les imports Excel passent **toujours** par la
+  vérification, quel que soit ce réglage.
+- **Envoi AZZUR (interrupteur général)** — remplace `AZZUR_WEBHOOK_ENABLED` à chaud : éteint, plus
+  rien n'est envoyé, même depuis la vérification (l'analyse reste possible).
+
+Tant qu'un interrupteur n'a pas été utilisé, la variable d'environnement (`AZZUR_WEBHOOK_ENABLED`,
+`AZZUR_AUTO_PUSH`) s'applique ; ensuite la valeur de la page l'emporte. Les enregistrements
+(liens, interrupteurs) affichent une notification de succès ; si la table est absente, le bandeau
+reste et chaque bouton explique qu'il faut exécuter le fichier 009.
 
 **Aucun lien par défaut.** Les quatre liens — AUTO ALM, SANTÉ ALM, AUTO CPA, SANTÉ CPA — se
 configurent chacun sur `/admin/azzur` (URL MER complète). Une catégorie sans lien **n'envoie rien,

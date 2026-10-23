@@ -11,8 +11,8 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { handleApiError, readJson, requireRole } from "@/lib/api";
-import { buildAzzurPayload, readAzzurConfig } from "@/lib/azzur";
-import { loadAzzurRoutes } from "@/lib/azzurRoutesStore";
+import { buildAzzurPayload } from "@/lib/azzur";
+import { loadAzzurRoutes, loadEffectiveConfig } from "@/lib/azzurRoutesStore";
 import { describeUrl, resolveEndpoint, type RouteKey } from "@/lib/azzurRouting";
 import { eventForLead, loadReview, parseSource } from "@/lib/azzurReviewData";
 import { ROUTE_KEYS } from "@/lib/azzurRouting";
@@ -31,7 +31,8 @@ export async function POST(req: NextRequest) {
     const source = parseSource(body.source);
     const includeHistory = body.includeHistory === true;
 
-    const config = readAzzurConfig();
+    // The settings as they are now, including the switches saved from /admin/azzur.
+    const { config } = await loadEffectiveConfig();
 
     const { review, selection, historyDays, truncated } = await loadReview(source, includeHistory);
     const { routes } = await loadAzzurRoutes();

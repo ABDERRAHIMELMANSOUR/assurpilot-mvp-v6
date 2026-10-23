@@ -6,8 +6,8 @@
 // fiche in the CRM.
 import { NextResponse } from "next/server";
 import { handleApiError, requireRole } from "@/lib/api";
-import { readAzzurConfig, recentAzzurResults } from "@/lib/azzur";
-import { loadAzzurRoutes } from "@/lib/azzurRoutesStore";
+import { recentAzzurResults } from "@/lib/azzur";
+import { loadAzzurRoutes, loadEffectiveConfig, MIGRATION_HINT } from "@/lib/azzurRoutesStore";
 import { resolveEndpoint, ROUTE_KEYS } from "@/lib/azzurRouting";
 
 export const runtime = "nodejs";
@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     await requireRole("ADMINISTRATEUR");
-    const config = readAzzurConfig();
+    const { config, source, tableAvailable } = await loadEffectiveConfig();
     const { routes } = await loadAzzurRoutes().catch(() => ({ routes: {} }));
     return NextResponse.json({
       enabled: config.enabled,
@@ -26,6 +26,10 @@ export async function GET() {
       // AZZUR_MER_URL is only a reference for reading the documentation, never a destination.
       referenceHost: config.url?.host ?? null,
       autoPush: config.autoPush,
+      // Where each switch's value comes from: the page ("base") or the environment ("env").
+      switchSource: source,
+      tableAvailable,
+      migrationHint: tableAvailable ? null : MIGRATION_HINT,
       linksConfigured: ROUTE_KEYS.filter((k) => resolveEndpoint(k, routes).url !== null).length,
       method: config.method,
       retourWs: config.retourWs,
