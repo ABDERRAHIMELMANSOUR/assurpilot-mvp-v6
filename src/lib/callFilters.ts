@@ -3,7 +3,7 @@
 // The filter set shared by GET /api/calls and the Excel export, so an export
 // always contains exactly the rows the screen is showing.
 import type { Prisma } from "@prisma/client";
-import { buildDateRange } from "@/lib/dates";
+import { buildDateRange, defaultPeriodFor } from "@/lib/dates";
 import { callEntityWhere, callSubTeamWhere, callTeamWhere, isEntity, parseSubTeam } from "@/lib/entity";
 import { badRequest } from "@/lib/api";
 
@@ -24,10 +24,11 @@ function readSubTeam(params: URLSearchParams) {
 }
 
 /** Builds the optional `where` clauses from query params (no auth scoping). */
-export function callFilterClauses(params: URLSearchParams): Prisma.CallWhereInput[] {
+export function callFilterClauses(params: URLSearchParams, role?: string | null): Prisma.CallWhereInput[] {
   const clauses: Prisma.CallWhereInput[] = [];
 
-  const range = buildDateRange(params);
+  // A coach who names no period gets the current month (see defaultPeriodFor).
+  const range = buildDateRange(params, { defaultPeriod: defaultPeriodFor(role) });
   if (range) clauses.push({ startedAt: range });
 
   const entity = params.get("entity");

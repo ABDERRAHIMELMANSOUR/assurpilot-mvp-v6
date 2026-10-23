@@ -8,7 +8,8 @@
 // last month's caller numbers, and a coach's review window is a working week.
 //
 //   CONSEILLER    startedAt >= today 00:00 − 3 days
-//   SUPERVISEUR   startedAt >= today 00:00 − 5 days
+//   SUPERVISEUR   startedAt >= the EARLIER of (today 00:00 − 5 days) and (the 1st of
+//                 the month, 00:00) — the whole current month, never less than 5 days
 //   ADMINISTRATEUR  unrestricted
 //
 // The floor is the START of the day N days back, not "now minus N×24h", so the
@@ -42,6 +43,17 @@ export function retentionFloorFor(role: string | null | undefined): Date | null 
   const floor = new Date();
   floor.setHours(0, 0, 0, 0);
   floor.setDate(floor.getDate() - days);
+
+  // Coaches review their team over the current month ("Ce mois" is their default
+  // view), so their window reaches back to the 1st if that is earlier than the
+  // rolling days. Early in the month the rolling days still win, so the window
+  // is never shorter than before.
+  if (role === "SUPERVISEUR") {
+    const monthStart = new Date();
+    monthStart.setHours(0, 0, 0, 0);
+    monthStart.setDate(1);
+    if (monthStart < floor) return monthStart;
+  }
   return floor;
 }
 

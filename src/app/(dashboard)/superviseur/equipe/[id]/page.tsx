@@ -14,6 +14,7 @@ export default function CoachConseillerCallsPage({ params }: { params: { id: str
       backLabel="Mon équipe"
       currentUserId={currentUserId}
       allowTransfer
+      defaultPeriod="month"
     />
   );
 }

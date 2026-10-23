@@ -9,6 +9,8 @@ export type DateFilterState = {
 interface Props {
   value: DateFilterState;
   onChange: (v: DateFilterState) => void;
+  /** Show the "Tout" (no period) button. Coaches' views start on a period and omit it. */
+  allowAll?: boolean;
 }
 
 const PERIODS = [
@@ -30,7 +32,7 @@ export function buildQueryString(f: DateFilterState): string {
   return "?" + p.toString();
 }
 
-export default function DateFilter({ value, onChange }: Props) {
+export default function DateFilter({ value, onChange, allowAll = true }: Props) {
   function setPeriod(period: DateFilterState["period"]) {
     onChange({ period, dateFrom: "", dateTo: "" });
   }
@@ -39,14 +41,16 @@ export default function DateFilter({ value, onChange }: Props) {
     <div className="flex flex-wrap items-center gap-2">
       {/* Quick period buttons */}
       <div className="flex gap-1 bg-slate-100 rounded-lg p-0.5">
-        <button
-          onClick={() => onChange({ period: "", dateFrom: "", dateTo: "" })}
-          className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-            !value.period ? "bg-white shadow-sm text-slate-900" : "text-slate-500 hover:text-slate-700"
-          }`}
-        >
-          Tout
-        </button>
+        {allowAll && (
+          <button
+            onClick={() => onChange({ period: "", dateFrom: "", dateTo: "" })}
+            className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+              !value.period ? "bg-white shadow-sm text-slate-900" : "text-slate-500 hover:text-slate-700"
+            }`}
+          >
+            Tout
+          </button>
+        )}
         {PERIODS.map((p) => (
           <button
             key={p.key}

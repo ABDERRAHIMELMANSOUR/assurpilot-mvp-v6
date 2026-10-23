@@ -45,6 +45,7 @@ export default function CoachDirectCallsPage() {
       subtitle="Appels reçus sur votre ligne, y compris ceux transférés à un conseiller"
       currentUserId={currentUserId}
       allowTransfer
+      defaultPeriod="month"
     />
   );
 }

@@ -209,8 +209,15 @@ Trois règles s'appliquent **côté serveur**, dans le `where` de chaque requêt
 elles ne peuvent pas être contournées par un paramètre d'URL forgé.
 
 **Profondeur d'historique** (`src/lib/retention.ts`) : un conseiller voit les
-appels des **3 derniers jours**, un coach des **5 derniers jours**, un
-administrateur tout l'historique. La borne est le début du jour J−N, pas
+appels des **3 derniers jours**, un coach de **tout le mois en cours** (au moins les
+5 derniers jours : le 3 du mois, la fenêtre remonte au 28 du mois précédent), un
+administrateur tout l'historique.
+
+**Période par défaut du coach** : « Ce mois » partout (tableau de bord, « Tous les appels »,
+« Mes appels », fiche d'un conseiller), sans bouton « Tout ». Côté API, `/api/analytics`,
+`/api/calls` et l'export appliquent le mois en cours à un coach qui ne précise ni
+`period` ni dates (`defaultPeriodFor` dans `src/lib/dates.ts`) ; une période ou des dates
+explicites l'emportent toujours. La borne est le début du jour J−N, pas
 « maintenant moins N×24 h », pour que la fenêtre ne glisse pas en cours de
 journée. Un `?dateFrom=` plus ancien réduit la fenêtre, il ne l'élargit jamais.
 

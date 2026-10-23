@@ -38,6 +38,8 @@ interface Props {
   currentUserId?: string;
   allowTransfer?: boolean;
   isAdmin?: boolean;
+  /** Period the history opens on; set for coaches ("month"), who then have no "Tout". */
+  defaultPeriod?: "month";
 }
 
 /**
@@ -46,11 +48,13 @@ interface Props {
  */
 export default function UserCallHistory({
   userId, backHref, backLabel, heading, subtitle,
-  currentUserId, allowTransfer = false, isAdmin = false,
+  currentUserId, allowTransfer = false, isAdmin = false, defaultPeriod,
 }: Props) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [calls,   setCalls]   = useState<any[]>([]);
-  const [filter,  setFilter]  = useState<DateFilterState>({ period: "", dateFrom: "", dateTo: "" });
+  const [filter,  setFilter]  = useState<DateFilterState>({
+    period: defaultPeriod ?? "", dateFrom: "", dateTo: "",
+  });
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState("");
 
@@ -118,7 +122,7 @@ export default function UserCallHistory({
             </p>
           </div>
         </div>
-        <DateFilter value={filter} onChange={setFilter} />
+        <DateFilter value={filter} onChange={setFilter} allowAll={!defaultPeriod} />
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">

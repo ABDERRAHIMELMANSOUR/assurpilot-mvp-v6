@@ -85,7 +85,7 @@ export default function CoachDashboardPage() {
           <h1 className="text-xl font-semibold text-slate-900">Vue d&apos;ensemble — {team?.nom ?? "Équipe"}</h1>
           <p className="text-sm text-slate-500 mt-0.5">Appels reçus et conseillers de votre équipe</p>
         </div>
-        <DateFilter value={filter} onChange={setFilter} />
+        <DateFilter value={filter} onChange={setFilter} allowAll={false} />
       </div>
 
       {error && (

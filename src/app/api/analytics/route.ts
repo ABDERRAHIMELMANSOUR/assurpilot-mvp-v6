@@ -4,7 +4,7 @@ import type { NextRequest } from "next/server";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { handleApiError, requireUser } from "@/lib/api";
-import { buildDateRange } from "@/lib/dates";
+import { buildDateRange, defaultPeriodFor } from "@/lib/dates";
 import { directReportsWhere } from "@/lib/scope";
 import {
   entityOfTeamName,
@@ -91,7 +91,8 @@ export async function GET(req: NextRequest) {
   try {
     const user = await requireUser();
     const params = new URL(req.url).searchParams;
-    const range = buildDateRange(params);
+    // Coaches get the current month when no period is given.
+    const range = buildDateRange(params, { defaultPeriod: defaultPeriodFor(user.role) });
     // The role's history floor applies to the figures exactly as it applies to
     // the lists: a coach's dashboard must not total up calls their call log
     // will not show them.

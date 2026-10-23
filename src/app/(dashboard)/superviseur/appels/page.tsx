@@ -7,7 +7,8 @@ import GroupToggle from "@/components/ui/GroupToggle";
 import { errorMessage } from "@/lib/fetchJson";
 import { withGroup } from "@/lib/query";
 
-const EMPTY: DateFilterState = { period: "", dateFrom: "", dateTo: "" };
+// Coaches start on the current month (the API applies the same default).
+const EMPTY: DateFilterState = { period: "month", dateFrom: "", dateTo: "" };
 
 type Scope = "all" | "mine" | "transferred";
 
@@ -73,7 +74,7 @@ export default function SuperviseurAppelsPage() {
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <GroupToggle value={grouped} onChange={setGrouped} />
-          <DateFilter value={filter} onChange={setFilter} />
+          <DateFilter value={filter} onChange={setFilter} allowAll={false} />
         </div>
       </div>
 

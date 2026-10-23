@@ -61,7 +61,7 @@ export async function GET(req: NextRequest) {
 
     // entity, lineType / pole / subTeam, teamId, lineId, statut,
     // period or dateFrom/dateTo (aliased startDate/endDate).
-    clauses.push(...callFilterClauses(params));
+    clauses.push(...callFilterClauses(params, user.role));
 
     const calls = await prisma.call.findMany({
       where: { AND: clauses },

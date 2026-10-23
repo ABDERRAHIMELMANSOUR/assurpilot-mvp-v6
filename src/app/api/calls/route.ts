@@ -103,7 +103,7 @@ export async function GET(req: NextRequest) {
     if (coachId) clauses.push(await filterForCoach(user, coachId));
 
     // Date range, entity / line, team, phone line, statut.
-    clauses.push(...callFilterClauses(params));
+    clauses.push(...callFilterClauses(params, user.role));
 
     // AND of the scope, the optional person filter and the optional date range —
     // combining them by assignment would let one clobber another's OR block.

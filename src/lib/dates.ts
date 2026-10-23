@@ -13,13 +13,20 @@ function parseIsoDate(raw: string, label: string): Date {
  * Builds a Prisma date filter from `?period=today|week|month` or an explicit
  * `?dateFrom=&dateTo=` pair. Returns `undefined` when no filter was requested.
  */
-export function buildDateRange(searchParams: URLSearchParams): DateRange | undefined {
-  const period = searchParams.get("period");
+export function buildDateRange(
+  searchParams: URLSearchParams,
+  options: { defaultPeriod?: "today" | "week" | "month" } = {}
+): DateRange | undefined {
+  let period = searchParams.get("period");
   // `startDate`/`endDate` are accepted as aliases: the export links and the
   // dashboards were built against both spellings, and a silently ignored
   // parameter would hand back an unfiltered workbook.
   const dateFrom = searchParams.get("dateFrom") ?? searchParams.get("startDate");
   const dateTo = searchParams.get("dateTo") ?? searchParams.get("endDate");
+
+  // No range asked for at all: fall back to the caller's default period, if any.
+  // An explicit period or either date always wins.
+  if (!period && !dateFrom && !dateTo && options.defaultPeriod) period = options.defaultPeriod;
 
   let startDate: Date | undefined;
   let endDate: Date | undefined;
@@ -67,4 +74,13 @@ export function buildDateRange(searchParams: URLSearchParams): DateRange | undef
   if (startDate) range.gte = startDate;
   if (endDate) range.lte = endDate;
   return range;
+}
+
+/**
+ * The period a role's views start on when the request names none. Coaches
+ * review their team over the whole current month; everyone else keeps the
+ * unbounded default (still capped by the role's history floor).
+ */
+export function defaultPeriodFor(role: string | null | undefined): "month" | undefined {
+  return role === "SUPERVISEUR" ? "month" : undefined;
 }
