@@ -433,6 +433,20 @@ sont à **compléter par le conseiller** dans AZZUR (le commentaire le dit) : au
 doit être fait sur 1900 / 00000. Une valeur vide dans `AZZUR_MER_DEFAULTS` n'envoie pas le
 champ. Les fiches AZZUR de ce service sont de type Santé (seul type documenté).
 
+**Un lien par équipe et produit** (`/admin/azzur`, `src/lib/azzurRouting.ts`) : chaque appel part
+vers le lien de l'**équipe et du produit de son conseiller** — `AUTO ALM`, `SANTÉ ALM`,
+`AUTO CPA`, `SANTÉ CPA` — lus dans le nom de son équipe (« Équipe auto CPA »), à défaut dans le
+libellé de la ligne d'arrivée. Chaque lien se saisit sur la page : URL MER complète (avec
+`id_prov` et `cle_ws`) **ou** un simple `id_prov` (lien principal avec cette provenance). Un lien non
+défini — ou un conseiller sans équipe identifiable — utilise le **lien principal** `AZZUR_MER_URL`.
+Les paramètres standard (`ws=mer`, `id_prov`, `cle_ws`, `nom`, `prenom`, `cp`, `date_naissance`,
+`tel`, `port`, `commentaire`…) sont identiques sur les quatre. Les liens sont dans la table
+`azzur_routes` (`prisma/sql/009-azzur-routes.sql`, à exécuter une fois ; sans elle tout part vers le
+lien principal et la page l'indique) ; la clé n'est jamais renvoyée au navigateur, et une URL doit
+être sur le **même serveur** que le lien principal. Variables de secours :
+`AZZUR_MER_URL_AUTO_ALM`, `_SANTE_ALM`, `_AUTO_CPA`, `_SANTE_CPA`. L'aperçu et les résultats
+indiquent le lien utilisé pour chaque appel.
+
 **Vérifier et tester** : page admin `/admin/azzur` (menu Configuration › Intégration
 AZZUR) — état de la configuration, **Aperçu** (rien n'est envoyé : nombre d'appels du
 jour et charge utile exacte) puis **Envoyer** les N premiers appels **d'aujourd'hui**

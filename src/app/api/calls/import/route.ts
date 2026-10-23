@@ -550,6 +550,8 @@ export async function POST(req: NextRequest) {
         reference: `import:${batch.id}#${index + 1}`,
         // 24 characters at most: end of the batch id + row number.
         externalId: `${batch.id.slice(-16)}-${index + 1}`.slice(-24),
+        // The adviser's team (ALM/CPA, Auto/Santé) picks the AZZUR link.
+        teamName: row.teamName,
         callerNumber: row.callerNumber,
         startedAt: row.startedAt!,
         isMissed: row.isMissed,

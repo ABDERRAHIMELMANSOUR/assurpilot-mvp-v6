@@ -21,6 +21,7 @@
 // AZZUR_MER_FIELDS (JSON) without touching code.
 import { waitUntil } from "@vercel/functions";
 import { normalizePhone } from "@/lib/phone";
+import { resolveEndpoint, routeKeyFor, type RouteSettings } from "@/lib/azzurRouting";
 
 /** What the caller knows about a freshly recorded call. */
 export type AzzurCallEvent = {
@@ -35,6 +36,8 @@ export type AzzurCallEvent = {
   conseiller: { email: string; nom: string; prenom: string } | null;
   /** The call's id on our side, sent as num_devis_initial (24 characters at most). */
   externalId?: string;
+  /** Name of the adviser's team ("Équipe auto CPA"): decides which AZZUR link the call goes to. */
+  teamName?: string | null;
 };
 
 export type AzzurConfig = {
@@ -330,11 +333,13 @@ export function htmlToText(html: string): string {
 }
 
 /** Strips the secret key (and any other query-string secret) from text bound for the logs. */
-export function redactSecrets(text: string, secret?: string | null): string {
+export function redactSecrets(text: string, secret?: string | null | Array<string | null>): string {
   let out = text.replace(/(cle_ws=)[^&\s"']+/gi, "$1***");
   // AZZUR's documentation page prints the key on its own too (not only as cle_ws=),
-  // so the configured value is removed wherever it appears.
-  if (secret && secret.length >= 8) out = out.split(secret).join("***");
+  // so every configured key (the main one and each team's) is removed wherever it appears.
+  for (const s of Array.isArray(secret) ? secret : [secret]) {
+    if (s && s.length >= 8) out = out.split(s).join("***");
+  }
   return out;
 }
 
@@ -357,6 +362,8 @@ export type PushResult = {
   attempts?: number;
   detail: string;
   at: string;
+  /** The link used: AUTO_ALM … or "principal" (the main AZZUR_MER_URL). */
+  route?: string;
 };
 
 /** Last results seen by THIS server instance, for the admin status endpoint. */
@@ -382,24 +389,28 @@ type FetchLike = typeof fetch;
  */
 export async function pushCallToAzzur(
   event: AzzurCallEvent,
-  options: { config?: AzzurConfig; fetchImpl?: FetchLike; now?: Date } = {}
+  options: { config?: AzzurConfig; fetchImpl?: FetchLike; now?: Date; routes?: RouteSettings } = {}
 ): Promise<PushResult> {
   const config = options.config ?? readAzzurConfig();
   const fetchImpl = options.fetchImpl ?? fetch;
   const now = options.now ?? new Date();
+  // Keys to scrub from anything shown or logged: the main one, plus the one of the
+  // link actually used once it is known (each team has its own cle_ws).
+  const secrets: Array<string | null> = [azzurSecret(config)];
+  let routeName: string | undefined;
   const finish = (r: Omit<PushResult, "reference" | "at">): PushResult => {
     // The detail can be AZZUR's documentation page, which contains the key: it is
     // scrubbed BEFORE it is stored or shown, not only before it is logged.
     const result: PushResult = {
-      reference: event.reference, at: new Date().toISOString(), ...r,
-      detail: redactSecrets(r.detail, azzurSecret(config)),
+      reference: event.reference, at: new Date().toISOString(), route: routeName, ...r,
+      detail: redactSecrets(r.detail, secrets),
     };
     remember(result);
-    const line = `[azzur] ${result.outcome} ref=${event.reference} tel=${maskForLog(event.callerNumber)}` +
+    const line = `[azzur] ${result.outcome} ref=${event.reference}${routeName ? ` route=${routeName}` : ""} tel=${maskForLog(event.callerNumber)}` +
       `${result.status ? ` status=${result.status}` : ""}${result.attempts ? ` attempts=${result.attempts}` : ""}` +
       ` ${result.detail.length > 400 ? `${result.detail.slice(0, 400)}…` : result.detail}`;
-    if (result.outcome === "failed") console.error(redactSecrets(line, azzurSecret(config)));
-    else console.log(redactSecrets(line, azzurSecret(config)));
+    if (result.outcome === "failed") console.error(redactSecrets(line, secrets));
+    else console.log(redactSecrets(line, secrets));
     return result;
   };
 
@@ -413,7 +424,11 @@ export async function pushCallToAzzur(
     }
 
     const payload = buildAzzurPayload(event, config);
-    const url = new URL(config.url.toString());
+    // Which AZZUR link: the one of the adviser's team and product, else the main one.
+    const endpoint = resolveEndpoint(routeKeyFor(event.teamName, event.lineLabel), options.routes ?? {}, config.url);
+    routeName = endpoint.source === "dedicated" ? endpoint.routeKey! : "principal";
+    secrets.push(endpoint.url.searchParams.get("cle_ws"));
+    const url = new URL(endpoint.url.toString());
     // ws=mer selects the mise-en-relation service; the documentation lists it as
     // required, so it is always present whatever the configured URL says.
     url.searchParams.set("ws", "mer");
@@ -504,7 +519,17 @@ export function scheduleAzzurPush(events: AzzurCallEvent[]): void {
     const config = readAzzurConfig();
     if (!config.ready) return;
 
-    const work = pool(events, 4, (event) => pushCallToAzzur(event, { config })).catch((error) =>
+    const work = (async () => {
+      // One lookup of the four links for the whole batch. A failure here must not
+      // lose the calls: they go to the main link.
+      let routes: RouteSettings = {};
+      try {
+        routes = (await (await import("@/lib/azzurRoutesStore")).loadAzzurRoutes()).routes;
+      } catch (error) {
+        console.error(redactSecrets(`[azzur] liens par équipe illisibles, lien principal utilisé: ${error instanceof Error ? error.message : String(error)}`));
+      }
+      await pool(events, 4, (event) => pushCallToAzzur(event, { config, routes }));
+    })().catch((error) =>
       console.error(redactSecrets(`[azzur] erreur inattendue: ${error instanceof Error ? error.message : String(error)}`))
     );
     try {

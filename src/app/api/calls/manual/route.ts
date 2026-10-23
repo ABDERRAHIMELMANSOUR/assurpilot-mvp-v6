@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
     const [conseiller, phoneLine] = await Promise.all([
       prisma.user.findUnique({
         where: { id: assignedUserId },
-        select: { id: true, email: true, nom: true, prenom: true },
+        select: { id: true, email: true, nom: true, prenom: true, team: { select: { nom: true } } },
       }),
       prisma.phoneLine.findUnique({ where: { id: phoneLineId }, select: { id: true, label: true } }),
     ]);
@@ -99,6 +99,7 @@ export async function POST(req: NextRequest) {
       {
         reference: `call:${call?.id ?? "?"}`,
         externalId: call?.id ? call.id.slice(-24) : undefined,
+        teamName: conseiller.team?.nom ?? null,
         callerNumber: callerNumber.trim(),
         startedAt: startDate,
         isMissed: missed,

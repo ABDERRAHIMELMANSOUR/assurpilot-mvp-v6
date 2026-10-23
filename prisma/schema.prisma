@@ -235,3 +235,16 @@ model KeyyoConfig {
 
   @@map("keyyo_config")
 }
+
+// One AZZUR MER endpoint per (team, product): AUTO_ALM, SANTE_ALM, AUTO_CPA, SANTE_CPA.
+// `url` is a full MER URL (with its secret cle_ws) or a bare id_prov to apply to the
+// main URL. A missing row means "use the main AZZUR_MER_URL". Own table, so no
+// existing table changes — see prisma/sql/009-azzur-routes.sql.
+model AzzurRoute {
+  key         String   @id
+  url         String   @default("")
+  updatedAt   DateTime @updatedAt
+  updatedById String?
+
+  @@map("azzur_routes")
+}

@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { errorMessage, fetchJson } from "@/lib/fetchJson";
 
-type Result = { reference: string; outcome: "sent" | "duplicate" | "skipped" | "failed"; status?: number; attempts?: number; detail: string; at: string };
+type Result = { route?: string; reference: string; outcome: "sent" | "duplicate" | "skipped" | "failed"; status?: number; attempts?: number; detail: string; at: string };
 type Status = {
   enabled: boolean; ready: boolean; problem: string | null;
   host: string | null; path: string | null; idProv: string | null;
@@ -16,9 +16,13 @@ type Status = {
 type Resend = {
   mode: "preview" | "send"; callsToday: number; selected: number; limit: number;
   target: { host?: string; idProv?: string | null; method: string; format: string };
-  payloads?: Record<string, string>[];
+  perRoute?: Record<string, number>;
+  payloads?: { route: { key: string | null; source: string; why: string | null; target: string }; payload: Record<string, string> }[];
   sent?: number; duplicates?: number; failed?: number; skipped?: number; results?: Result[];
 };
+
+type RouteRow = { key: string; label: string; configured: boolean; origin: "base" | "env" | null; target: string | null; why: string | null };
+type RoutesInfo = { tableAvailable: boolean; migrationHint: string | null; main: string | null; routes: RouteRow[] };
 
 const BADGE: Record<Result["outcome"], string> = { sent: "badge-green", duplicate: "badge-yellow", failed: "badge-red", skipped: "badge-gray" };
 
@@ -28,6 +32,9 @@ export default function AzzurPage() {
   const [limit, setLimit] = useState(1);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [routesInfo, setRoutesInfo] = useState<RoutesInfo | null>(null);
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [savingKey, setSavingKey] = useState("");
   const [doc, setDoc] = useState<{ text: string; chars: number; truncated: boolean } | null>(null);
 
   const loadStatus = useCallback(async () => {
@@ -35,6 +42,24 @@ export default function AzzurPage() {
     catch (e) { setError(errorMessage(e)); }
   }, []);
   useEffect(() => { loadStatus(); }, [loadStatus]);
+
+  const loadRoutes = useCallback(async () => {
+    try { setRoutesInfo(await fetchJson<RoutesInfo>("/api/admin/azzur/routes")); }
+    catch (e) { setError(errorMessage(e)); }
+  }, []);
+  useEffect(() => { loadRoutes(); }, [loadRoutes]);
+
+  async function saveRoute(key: string, value: string) {
+    setSavingKey(key); setError("");
+    try {
+      await fetchJson("/api/admin/azzur/routes", {
+        method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key, value }),
+      });
+      setDrafts((d) => { const next = { ...d }; delete next[key]; return next; });
+      await loadRoutes();
+    } catch (e) { setError(errorMessage(e)); }
+    finally { setSavingKey(""); }
+  }
 
   async function run(mode: "preview" | "send") {
     if (mode === "send" && !window.confirm(
@@ -77,7 +102,9 @@ export default function AzzurPage() {
             <div><dt className="inline text-slate-400">Requête : </dt><dd className="inline font-mono">{status.method} {status.format}</dd></div>
             <div className="sm:col-span-2"><dt className="inline text-slate-400">Champs : </dt>
               <dd className="inline font-mono text-xs">{Object.entries(status.fields).map(([k, v]) => `${k}→${v || "(désactivé)"}`).join("  ")}</dd></div>
-            <div><dt className="inline text-slate-400">Provenance envoyée : </dt><dd className="inline font-mono">{status.provenance}</dd></div>
+            {status.fields.provenance && (
+              <div><dt className="inline text-slate-400">Provenance envoyée : </dt><dd className="inline font-mono">{status.provenance}</dd></div>
+            )}
             <div className="sm:col-span-2"><dt className="inline text-slate-400">Valeurs par défaut (données absentes d'un appel) : </dt>
               <dd className="inline font-mono text-xs">{Object.entries(status.placeholders).map(([k, v]) => `${k}=${v || "(vide)"}`).join("  ")}</dd></div>
             <div className="sm:col-span-2"><dt className="inline text-slate-400">Conseillers reliés à AZZUR (id_user) : </dt>
@@ -87,6 +114,47 @@ export default function AzzurPage() {
             {status.problem && <p className="sm:col-span-2 text-rose-600">{status.problem}</p>}
           </dl>
         )}
+      </div>
+
+      <div className="card p-4 mb-5">
+        <h2 className="text-sm font-semibold text-slate-800 mb-1">Liens AZZUR par équipe et produit</h2>
+        <p className="text-xs text-slate-500 mb-3">
+          Chaque appel part vers le lien de l&apos;équipe et du produit de son conseiller (équipe ALM ou CPA, Auto ou Santé).
+          Un lien non défini utilise le lien principal{routesInfo?.main ? <> (<span className="font-mono">{routesInfo.main}</span>)</> : ""}.
+          Saisissez une URL MER complète (avec <span className="font-mono">id_prov</span> et <span className="font-mono">cle_ws</span>) ou seulement un id_prov.
+        </p>
+        {routesInfo && !routesInfo.tableAvailable && (
+          <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">{routesInfo.migrationHint}</div>
+        )}
+        <div className="space-y-3">
+          {(routesInfo?.routes ?? []).map((r) => (
+            <div key={r.key} className="grid grid-cols-1 md:grid-cols-[110px_1fr_auto] gap-2 md:items-start">
+              <div className="text-sm font-semibold text-slate-700 pt-1.5">{r.label}</div>
+              <div>
+                <input
+                  type="text" autoComplete="off" spellCheck={false}
+                  value={drafts[r.key] ?? ""}
+                  onChange={(e) => setDrafts((d) => ({ ...d, [r.key]: e.target.value }))}
+                  placeholder={r.configured ? "Lien défini : saisir une nouvelle valeur pour le remplacer" : "https://…/ws/index.php?ws=mer&id_prov=…&cle_ws=…  ou  id_prov"}
+                  className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-brand-400"
+                />
+                <p className="text-[11px] mt-1 text-slate-500">
+                  {r.configured
+                    ? <>Lien dédié : <span className="font-mono">{r.target}</span> (clé masquée){r.origin === "env" ? " — défini par variable d'environnement" : ""}</>
+                    : <>Par défaut : lien principal{r.target ? <> <span className="font-mono">{r.target}</span></> : ""}</>}
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <button className="btn-primary" disabled={!!savingKey || !(drafts[r.key] ?? "").trim() || !routesInfo?.tableAvailable}
+                  onClick={() => saveRoute(r.key, drafts[r.key])}>{savingKey === r.key ? "…" : "Enregistrer"}</button>
+                {r.configured && r.origin === "base" && (
+                  <button className="btn-secondary" disabled={!!savingKey}
+                    onClick={() => { if (window.confirm(`Revenir au lien principal pour ${r.label} ?`)) saveRoute(r.key, ""); }}>Effacer</button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
 
       <div className="card p-4 mb-5">
@@ -107,6 +175,7 @@ export default function AzzurPage() {
           <div className="mt-4 text-sm">
             <p className="text-slate-700">
               {out.callsToday} appel(s) aujourd&apos;hui, {out.selected} sélectionné(s) → {out.target.host} (id_prov={out.target.idProv}).
+              {out.perRoute && <> Liens : {Object.entries(out.perRoute).map(([k, v]) => `${k} ×${v}`).join(", ")}.</>}
               {out.mode === "send" && <> Créés : <b>{out.sent}</b> · doublons : <b>{out.duplicates}</b> · échecs : <b>{out.failed}</b> · ignorés : <b>{out.skipped}</b></>}
             </p>
             {out.payloads && (
@@ -143,11 +212,12 @@ function ResultTable({ rows }: { rows: Result[] }) {
   return (
     <div className="overflow-x-auto mt-2">
       <table className="w-full" style={{ minWidth: "640px" }}>
-        <thead><tr><th className="table-th">Heure</th><th className="table-th">Résultat</th><th className="table-th">HTTP</th><th className="table-th">Essais</th><th className="table-th">Réponse AZZUR / détail</th></tr></thead>
+        <thead><tr><th className="table-th">Heure</th><th className="table-th">Lien</th><th className="table-th">Résultat</th><th className="table-th">HTTP</th><th className="table-th">Essais</th><th className="table-th">Réponse AZZUR / détail</th></tr></thead>
         <tbody className="divide-y divide-slate-100">
           {rows.map((r, i) => (
             <tr key={`${r.reference}-${i}`}>
               <td className="table-td whitespace-nowrap">{new Date(r.at).toLocaleTimeString("fr-FR")}</td>
+              <td className="table-td whitespace-nowrap text-xs">{r.route ?? "—"}</td>
               <td className="table-td"><span className={`badge ${BADGE[r.outcome]}`}>{r.outcome}</span></td>
               <td className="table-td">{r.status ?? "—"}</td>
               <td className="table-td">{r.attempts ?? "—"}</td>

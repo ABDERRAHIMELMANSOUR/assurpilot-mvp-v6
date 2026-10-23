@@ -27,6 +27,8 @@ import {
   readAzzurConfig,
   type AzzurCallEvent,
 } from "@/lib/azzur";
+import { loadAzzurRoutes } from "@/lib/azzurRoutesStore";
+import { describeUrl, resolveEndpoint, routeKeyFor, ROUTE_LABEL } from "@/lib/azzurRouting";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -63,7 +65,7 @@ export async function POST(req: NextRequest) {
           startedAt: true,
           isMissed: true,
           phoneLine: { select: { label: true } },
-          assignedUser: { select: { email: true, nom: true, prenom: true } },
+          assignedUser: { select: { email: true, nom: true, prenom: true, team: { select: { nom: true } } } },
         },
       }),
     ]);
@@ -76,12 +78,26 @@ export async function POST(req: NextRequest) {
       isMissed: c.isMissed,
       lineLabel: c.phoneLine?.label ?? null,
       conseiller: c.assignedUser,
+      teamName: c.assignedUser?.team?.nom ?? null,
     }));
+
+    // Where each call would go: the link of its adviser's team and product, else the main one.
+    const { routes } = await loadAzzurRoutes();
+    const where_ = events.map((e) => {
+      const ep = resolveEndpoint(routeKeyFor(e.teamName, e.lineLabel), routes, config.url!);
+      return { key: ep.routeKey ? ROUTE_LABEL[ep.routeKey] : null, source: ep.source, why: ep.why, target: describeUrl(ep.url) };
+    });
+    const perRoute: Record<string, number> = {};
+    for (const w of where_) {
+      const name = w.source === "dedicated" ? w.key! : "principal";
+      perRoute[name] = (perRoute[name] ?? 0) + 1;
+    }
 
     const base = {
       day: { from: start.toISOString(), to: end.toISOString() },
       callsToday: total,
       selected: events.length,
+      perRoute,
       limit,
       target: { host: config.url?.host, idProv: config.url?.searchParams.get("id_prov"), method: config.method, format: config.format },
     };
@@ -91,11 +107,11 @@ export async function POST(req: NextRequest) {
         mode,
         ...base,
         // Exactly what would go out for the first calls.
-        payloads: events.slice(0, 3).map((e) => buildAzzurPayload(e, config)),
+        payloads: events.slice(0, 3).map((e, i) => ({ route: where_[i], payload: buildAzzurPayload(e, config) })),
       });
     }
 
-    const results = await mapPool(events, 3, (event) => pushCallToAzzur(event, { config }));
+    const results = await mapPool(events, 3, (event) => pushCallToAzzur(event, { config, routes }));
     return NextResponse.json({
       mode,
       ...base,
