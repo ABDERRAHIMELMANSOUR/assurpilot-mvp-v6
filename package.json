@@ -21,6 +21,7 @@
     "db:drift": "prisma migrate diff --from-schema-datasource prisma/schema.prisma --to-schema-datamodel prisma/schema.prisma --script",
     "db:seed": "tsx prisma/seed.ts",
     "db:purge-calls": "tsx scripts/purge-calls.ts",
+    "db:gen-conseillers": "tsx scripts/gen-conseillers-sql.ts",
     "db:studio": "prisma studio",
     "setup": "npm install && npm run db:push && npm run db:seed"
   },

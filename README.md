@@ -689,6 +689,27 @@ et `advisor_call_applied` absente, login, tableau de bord coach (lecture **et**
 écritures), analytics, utilisateurs et appels répondent normalement ; seule cette
 page renvoie un 503 qui nomme le fichier SQL à exécuter.
 
+### Conseillers et lignes directes (`prisma/sql/008-conseillers-lignes.sql`)
+
+La liste des conseillers et de leur ligne directe est dans `prisma/data/conseillers-lignes.json`
+(44 conseillers, noms **exactement** comme fournis). `npm run db:gen-conseillers` génère le SQL ;
+à exécuter dans le SQL editor de Supabase (ré-exécutable, la 2ᵉ fois ne change rien).
+
+- La ligne est écrite au format que l'import compare (`0XXXXXXXXX` : `+33374470362`,
+  `33374470362` et `374470362` donnent `0374470362`), donc le « Numéro appelé » d'un export
+  Keyyo retrouve le conseiller.
+- Un conseiller est reconnu par son nom (casse, accents et ordre prénom/nom ignorés) : s'il
+  existe (un seul, rôle CONSEILLER), sa ligne et l'orthographe de son nom sont mis à jour, rien
+  d'autre (équipe, coach, mot de passe). Sinon il est **créé** (actif, sans équipe ni coach,
+  e-mail `prenom.nom@assurpilot.fr`, mot de passe inutilisable) : un administrateur doit lui
+  donner une équipe, un coach et un mot de passe dans *Utilisateurs* — sans équipe ses appels
+  n'entrent dans aucune entité. `v_creer_manquants := false` en tête du fichier = mise à jour
+  seulement. Les utilisateurs absents de la liste ne sont pas touchés.
+- Le tableau final liste chaque conseiller avec un `statut` (`OK` = nom et ligne exacts).
+- **Lignes en double dans la liste fournie** (appliquées telles quelles, mais un import ne peut
+  attribuer l'appel qu'à l'un des deux) : `0755540595` = ANTOINE ROSSI / RAPHAEL ARNAULT ;
+  `0374474976` = Sarah FALION / Karine Gomez.
+
 ### Vider l'historique d'appels
 
 ```bash
