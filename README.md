@@ -433,6 +433,30 @@ sont à **compléter par le conseiller** dans AZZUR (le commentaire le dit) : au
 doit être fait sur 1900 / 00000. Une valeur vide dans `AZZUR_MER_DEFAULTS` n'envoie pas le
 champ. Les fiches AZZUR de ce service sont de type Santé (seul type documenté).
 
+**Vérification avant envoi (import Excel → AZZUR)** : l'import **n'envoie plus rien** à AZZUR.
+Son résultat propose « Vérifier la répartition et envoyer vers AZZUR », qui ouvre
+`/admin/azzur?source=batch:<id>`. Sur cette page, on choisit les appels (un import récent ou
+les appels du jour) puis **Analyser** (`src/lib/azzurReview.ts`, rien n'est envoyé) :
+
+- **Un numéro = une fiche**, attribuée au **premier conseiller** qui l'a reçu (premier appel ;
+  à égalité exacte de minute, l'appel le plus long) — dans le fichier **ou** dans l'historique des
+  `AZZUR_MER_DEDUPE_DAYS` jours (7) avant. `+33 6…` et `06…` sont le même numéro. Ses autres appels
+  sont des **doublons ignorés**, comptés à part. L'import en base, lui, ne change pas.
+- Si le premier appel est **antérieur au fichier** (déjà reçu), les appels du fichier sont
+  « déjà reçus » et ne sont pas envoyés ; la case « Inclure les numéros déjà reçus avant » les
+  envoie une seule fois, au conseiller de ce premier appel.
+- Tableau par lien — AUTO ALM, SANTÉ ALM, AUTO CPA, SANTÉ CPA (+ une ligne « équipe non
+  identifiée » si besoin) : destination, **appels**, **fiches à envoyer**, **doublons ignorés**,
+  **déjà reçus**, conseillers ; « Détails » donne le détail par conseiller, un exemple de fiche et la
+  liste des numéros.
+- **Envoi manuel** : « Envoyer vers AZZUR » par lien, ou « Confirmer et envoyer tout » (avec
+  confirmation). Le serveur **recalcule** la liste à chaque envoi (le navigateur n'envoie jamais de
+  liste), par lots de 50 avec barre de progression ; « tout » saute les liens déjà envoyés.
+  Chaque fiche porte l'id de son premier appel (`num_devis_initial`) : renvoyée, AZZUR répond
+  doublon. Un envoi confirmé ignore la limite d'âge de l'envoi automatique.
+- La saisie manuelle d'un appel unique (`/admin/appels/nouveau`) reste, elle, envoyée
+  automatiquement à sa création.
+
 **Un lien par équipe et produit** (`/admin/azzur`, `src/lib/azzurRouting.ts`) : chaque appel part
 vers le lien de l'**équipe et du produit de son conseiller** — `AUTO ALM`, `SANTÉ ALM`,
 `AUTO CPA`, `SANTÉ CPA` — lus dans le nom de son équipe (« Équipe auto CPA »), à défaut dans le
@@ -444,16 +468,15 @@ Les paramètres standard (`ws=mer`, `id_prov`, `cle_ws`, `nom`, `prenom`, `cp`, 
 `azzur_routes` (`prisma/sql/009-azzur-routes.sql`, à exécuter une fois ; sans elle tout part vers le
 lien principal et la page l'indique) ; la clé n'est jamais renvoyée au navigateur, et une URL doit
 être sur le **même serveur** que le lien principal. Variables de secours :
-`AZZUR_MER_URL_AUTO_ALM`, `_SANTE_ALM`, `_AUTO_CPA`, `_SANTE_CPA`. L'aperçu et les résultats
-indiquent le lien utilisé pour chaque appel.
+`AZZUR_MER_URL_AUTO_ALM`, `_SANTE_ALM`, `_AUTO_CPA`, `_SANTE_CPA`. Le tableau de vérification
+et les résultats indiquent le lien utilisé.
 
-**Vérifier et tester** : page admin `/admin/azzur` (menu Configuration › Intégration
-AZZUR) — état de la configuration, **Aperçu** (rien n'est envoyé : nombre d'appels du
-jour et charge utile exacte) puis **Envoyer** les N premiers appels **d'aujourd'hui**
-(jour calendaire à Paris, jamais l'historique) avec la réponse d'AZZUR pour chacun
-(`POST /api/admin/azzur/resend`, `mode` = `preview` | `send`, `limit` ≤ 200). Commencer
-par 1 appel. Un appel déjà transmis à sa création est renvoyé une 2e fois : rien ne
-garde la trace des envois passés.
+**Configuration et diagnostic** : page admin `/admin/azzur` (menu Configuration › Intégration
+AZZUR) — état de la configuration, liens par équipe, « Lire la documentation » du MER, puis la
+vérification avant envoi décrite plus haut. Aucun envoi n'est fait sans clic (hors saisie manuelle
+d'un appel). Commencer par un lien avec peu de fiches pour contrôler le résultat dans AZZUR. Rien
+ne garde la trace des envois passés : renvoyer une sélection déjà envoyée repasse par AZZUR, qui
+répond « doublon » grâce à `num_devis_initial`.
 
 Limite connue : pas de file persistante, un appel dont les 3 tentatives échouent
 n'est pas renvoyé automatiquement (il est dans les logs).

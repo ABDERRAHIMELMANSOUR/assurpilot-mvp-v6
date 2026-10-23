@@ -389,7 +389,7 @@ type FetchLike = typeof fetch;
  */
 export async function pushCallToAzzur(
   event: AzzurCallEvent,
-  options: { config?: AzzurConfig; fetchImpl?: FetchLike; now?: Date; routes?: RouteSettings } = {}
+  options: { config?: AzzurConfig; fetchImpl?: FetchLike; now?: Date; routes?: RouteSettings; ignoreMaxAge?: boolean } = {}
 ): Promise<PushResult> {
   const config = options.config ?? readAzzurConfig();
   const fetchImpl = options.fetchImpl ?? fetch;
@@ -419,7 +419,9 @@ export async function pushCallToAzzur(
     if (!normalizePhone(event.callerNumber)) return finish({ outcome: "skipped", detail: "numéro absent ou masqué" });
     if (config.onlyAnswered && event.isMissed) return finish({ outcome: "skipped", detail: "appel manqué" });
     const ageHours = (now.getTime() - event.startedAt.getTime()) / 3_600_000;
-    if (ageHours > config.maxAgeHours) {
+    // The age limit protects the AUTOMATIC push from flooding the CRM with history; a send the
+    // administrator confirmed after a review is deliberate and is not second-guessed.
+    if (!options.ignoreMaxAge && ageHours > config.maxAgeHours) {
       return finish({ outcome: "skipped", detail: `appel trop ancien (${Math.round(ageHours)} h > ${config.maxAgeHours} h)` });
     }
 

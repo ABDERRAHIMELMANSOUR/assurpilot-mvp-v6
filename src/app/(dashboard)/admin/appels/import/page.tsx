@@ -138,6 +138,14 @@ export default function ImportAppelsPage() {
             </div>
             <div className="flex-1">
               <h2 className="text-base font-semibold text-slate-900 mb-3">Import terminé</h2>
+              {result.batchId && result.importedRows > 0 && (
+                <p className="text-sm text-slate-600 mb-3">
+                  Rien n&apos;a été envoyé à AZZUR.{" "}
+                  <Link href={`/admin/azzur?source=${encodeURIComponent("batch:" + result.batchId)}`} className="text-brand-600 font-medium hover:underline">
+                    Vérifier la répartition et envoyer vers AZZUR →
+                  </Link>
+                </p>
+              )}
               <div className="grid grid-cols-4 gap-3 mb-4">
                 <div className="bg-slate-50 rounded-lg p-3 text-center">
                   <p className="text-xl font-semibold text-slate-900">{result.totalRows}</p>

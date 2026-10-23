@@ -4,7 +4,6 @@ import type { NextRequest } from "next/server";
 import type { Prisma } from "@prisma/client";
 import * as XLSX from "xlsx";
 import { prisma } from "@/lib/prisma";
-import { scheduleAzzurPush } from "@/lib/azzur";
 import { badRequest, handleApiError, requireRole } from "@/lib/api";
 import { normalizePhone, routeForNumber } from "@/lib/phone";
 
@@ -541,28 +540,8 @@ export async function POST(req: NextRequest) {
       data: { importedRows },
     });
 
-    // Tell AZZUR about the calls this file just created. Duplicates were
-    // filtered out above, so re-uploading a file pushes nothing twice. Returns
-    // at once and cannot fail the import; old calls are skipped by the helper.
-    const lineLabelById = new Map(phoneLines.map((line) => [line.id, line.label]));
-    scheduleAzzurPush(
-      validRows.map((row, index) => ({
-        reference: `import:${batch.id}#${index + 1}`,
-        // 24 characters at most: end of the batch id + row number.
-        externalId: `${batch.id.slice(-16)}-${index + 1}`.slice(-24),
-        // The adviser's team (ALM/CPA, Auto/Santé) picks the AZZUR link.
-        teamName: row.teamName,
-        callerNumber: row.callerNumber,
-        startedAt: row.startedAt!,
-        isMissed: row.isMissed,
-        lineLabel: lineLabelById.get(row.lineId ?? defaultLineId) ?? null,
-        conseiller: {
-          email: row.conseiller!.email,
-          nom: row.conseiller!.nom,
-          prenom: row.conseiller!.prenom,
-        },
-      }))
-    );
+    // Nothing is sent to AZZUR here. The admin reviews the split by link and the repeated
+    // numbers on /admin/azzur (the response's batchId opens that review), then sends.
 
     return NextResponse.json({
       success: true,

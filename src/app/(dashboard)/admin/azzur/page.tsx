@@ -1,10 +1,10 @@
 "use client";
 
-// Status of the AZZUR push and a controlled test: preview, then send today's
-// calls (a few at first) and read AZZUR's answers. The logic is in
-// src/lib/azzur.ts and /api/admin/azzur.
+// AZZUR integration: settings, the four links per team and product, and the
+// review-then-send workflow (components/ui/AzzurReview.tsx). Logic in src/lib/azzur*.ts.
 import { useCallback, useEffect, useState } from "react";
 import { errorMessage, fetchJson } from "@/lib/fetchJson";
+import AzzurReview from "@/components/ui/AzzurReview";
 
 type Result = { route?: string; reference: string; outcome: "sent" | "duplicate" | "skipped" | "failed"; status?: number; attempts?: number; detail: string; at: string };
 type Status = {
@@ -13,14 +13,6 @@ type Status = {
   method: string; format: string; fields: Record<string, string>; provenance: string; placeholders: Record<string, string>; mappedAdvisers: number; defaultUserId: string | null;
   timeoutMs: number; maxAgeHours: number; onlyAnswered: boolean; recent: Result[];
 };
-type Resend = {
-  mode: "preview" | "send"; callsToday: number; selected: number; limit: number;
-  target: { host?: string; idProv?: string | null; method: string; format: string };
-  perRoute?: Record<string, number>;
-  payloads?: { route: { key: string | null; source: string; why: string | null; target: string }; payload: Record<string, string> }[];
-  sent?: number; duplicates?: number; failed?: number; skipped?: number; results?: Result[];
-};
-
 type RouteRow = { key: string; label: string; configured: boolean; origin: "base" | "env" | null; target: string | null; why: string | null };
 type RoutesInfo = { tableAvailable: boolean; migrationHint: string | null; main: string | null; routes: RouteRow[] };
 
@@ -28,8 +20,6 @@ const BADGE: Record<Result["outcome"], string> = { sent: "badge-green", duplicat
 
 export default function AzzurPage() {
   const [status, setStatus] = useState<Status | null>(null);
-  const [out, setOut] = useState<Resend | null>(null);
-  const [limit, setLimit] = useState(1);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [routesInfo, setRoutesInfo] = useState<RoutesInfo | null>(null);
@@ -59,20 +49,6 @@ export default function AzzurPage() {
       await loadRoutes();
     } catch (e) { setError(errorMessage(e)); }
     finally { setSavingKey(""); }
-  }
-
-  async function run(mode: "preview" | "send") {
-    if (mode === "send" && !window.confirm(
-      `Envoyer ${limit} appel(s) d'AUJOURD'HUI à AZZUR ? Les fiches seront réellement créées dans le CRM ` +
-      `(un appel déjà transmis à sa création sera envoyé une 2e fois).`)) return;
-    setBusy(true); setError("");
-    try {
-      setOut(await fetchJson<Resend>("/api/admin/azzur/resend", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode, limit }),
-      }));
-      if (mode === "send") loadStatus();
-    } catch (e) { setError(errorMessage(e)); }
-    finally { setBusy(false); }
   }
 
   async function loadDoc() {
@@ -157,34 +133,7 @@ export default function AzzurPage() {
         </div>
       </div>
 
-      <div className="card p-4 mb-5">
-        <h2 className="text-sm font-semibold text-slate-800 mb-1">Test : appels d&apos;aujourd&apos;hui</h2>
-        <p className="text-xs text-slate-500 mb-3">
-          Seuls les appels du jour (heure de Paris) sont concernés, du plus ancien au plus récent. Commencez par 1 appel.
-        </p>
-        <div className="flex flex-wrap items-center gap-3">
-          <label className="text-xs text-slate-500">Nombre d&apos;appels
-            <input type="number" min={1} max={200} value={limit}
-              onChange={(e) => setLimit(Math.max(1, Math.min(200, Number(e.target.value) || 1)))}
-              className="ml-2 w-20 px-2 py-1 border border-slate-200 rounded-lg text-sm" /></label>
-          <button className="btn-secondary" disabled={busy || !status?.ready} onClick={() => run("preview")}>Aperçu (rien n&apos;est envoyé)</button>
-          <button className="btn-primary" disabled={busy || !status?.ready} onClick={() => run("send")}>{busy ? "…" : "Envoyer à AZZUR"}</button>
-        </div>
-
-        {out && (
-          <div className="mt-4 text-sm">
-            <p className="text-slate-700">
-              {out.callsToday} appel(s) aujourd&apos;hui, {out.selected} sélectionné(s) → {out.target.host} (id_prov={out.target.idProv}).
-              {out.perRoute && <> Liens : {Object.entries(out.perRoute).map(([k, v]) => `${k} ×${v}`).join(", ")}.</>}
-              {out.mode === "send" && <> Créés : <b>{out.sent}</b> · doublons : <b>{out.duplicates}</b> · échecs : <b>{out.failed}</b> · ignorés : <b>{out.skipped}</b></>}
-            </p>
-            {out.payloads && (
-              <pre className="mt-2 bg-slate-50 border border-slate-100 rounded-xl p-3 text-xs overflow-x-auto">{JSON.stringify(out.payloads, null, 2)}</pre>
-            )}
-            {out.results && <ResultTable rows={out.results} />}
-          </div>
-        )}
-      </div>
+      <AzzurReview ready={!!status?.ready} />
 
       <div className="card p-4 mb-5">
         <h2 className="text-sm font-semibold text-slate-800 mb-1">Documentation AZZUR (variables du web service)</h2>
