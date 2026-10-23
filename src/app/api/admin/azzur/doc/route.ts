@@ -27,9 +27,10 @@ export async function GET() {
     let base: URL | null = config.url;
     if (!base) {
       const { routes } = await loadAzzurRoutes().catch(() => ({ routes: {} as RouteSettings }));
-      base = ROUTE_KEYS.map((k) => resolveEndpoint(k, routes).url).find((u): u is URL => u !== null) ?? null;
+      // AZZUR MER links only: opening a supplier script (ProAssur…) without data could insert an empty lead.
+      base = ROUTE_KEYS.map((k) => resolveEndpoint(k, routes)).filter((e) => e.kind === "mer").map((e) => e.url).find((u): u is URL => u !== null) ?? null;
     }
-    if (!base) throw badRequest("Configurez au moins un lien AZZUR (ci-dessus) pour lire la documentation.");
+    if (!base) throw badRequest("La documentation se lit via un lien AZZUR MER (gestfiches.com) : aucun n’est configuré. Les scripts fournisseur (ProAssur…) n’en ont pas.");
 
     const url = new URL(base.toString());
     // Keep only the three identifying parameters.

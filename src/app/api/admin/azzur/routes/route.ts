@@ -9,7 +9,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { ApiError, badRequest, handleApiError, readJson, requireRole } from "@/lib/api";
-import { allowedHosts, describeUrl, isRouteKey, parseRouteValue, resolveEndpoint, ROUTE_KEYS, ROUTE_LABEL } from "@/lib/azzurRouting";
+import { allowedHosts, describeEndpoint, isRouteKey, parseRouteValue, resolveEndpoint, ROUTE_KEYS, ROUTE_LABEL } from "@/lib/azzurRouting";
 import { isMissingTable, missingTableMessage, loadAzzurRoutes, MIGRATION_HINT, saveAzzurRoute } from "@/lib/azzurRoutesStore";
 
 export const runtime = "nodejs";
@@ -32,7 +32,8 @@ export async function GET() {
           configured: ep.url !== null,
           origin: origin[key] ?? null,
           // Where calls for this team and product go; null = nowhere, they stay local.
-          target: ep.url ? describeUrl(ep.url) : null,
+          target: describeEndpoint(ep),
+          kind: ep.kind,
           why: ep.why,
         };
       }),

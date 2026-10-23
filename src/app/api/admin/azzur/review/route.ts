@@ -11,9 +11,9 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { handleApiError, readJson, requireRole } from "@/lib/api";
-import { buildAzzurPayload } from "@/lib/azzur";
+import { buildAzzurPayload, templateValues } from "@/lib/azzur";
 import { loadAzzurRoutes, loadEffectiveConfig } from "@/lib/azzurRoutesStore";
-import { describeUrl, resolveEndpoint, type RouteKey } from "@/lib/azzurRouting";
+import { describeEndpoint, fillTemplateUrl, resolveEndpoint, type RouteKey } from "@/lib/azzurRouting";
 import { eventForLead, loadReview, parseSource } from "@/lib/azzurReviewData";
 import { ROUTE_KEYS } from "@/lib/azzurRouting";
 
@@ -44,11 +44,16 @@ export async function POST(req: NextRequest) {
       return {
         ...cat,
         // null = no link configured for this category: its leads stay local.
-        target: ep.url ? describeUrl(ep.url) : null,
+        target: describeEndpoint(ep),
+        kind: ep.kind,
         configured: ep.url !== null,
         why: ep.why,
         // The exact parameters of this category's first lead, so the admin can see what goes out.
-        sample: first ? buildAzzurPayload(eventForLead(first), config) : null,
+        sample: !first ? null
+          : ep.kind === "template"
+            // Exactly the parameters the supplier script will receive for this lead.
+            ? Object.fromEntries(fillTemplateUrl(ep.template!, templateValues(eventForLead(first), config)).searchParams)
+            : buildAzzurPayload(eventForLead(first), config),
       };
     });
 

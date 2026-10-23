@@ -15,7 +15,7 @@ type Status = {
   method: string; format: string; fields: Record<string, string>; provenance: string; placeholders: Record<string, string>; mappedAdvisers: number; defaultUserId: string | null;
   timeoutMs: number; maxAgeHours: number; onlyAnswered: boolean; recent: Result[];
 };
-type RouteRow = { key: string; label: string; configured: boolean; origin: "base" | "env" | null; target: string | null; why: string | null };
+type RouteRow = { key: string; label: string; configured: boolean; kind: "mer" | "template" | null; origin: "base" | "env" | null; target: string | null; why: string | null };
 type RoutesInfo = { tableAvailable: boolean; migrationHint: string | null; allowedHosts: string[]; routes: RouteRow[] };
 
 const BADGE: Record<Result["outcome"], string> = { sent: "badge-green", duplicate: "badge-yellow", failed: "badge-red", skipped: "badge-gray" };
@@ -190,9 +190,19 @@ export default function AzzurPage() {
         <p className="text-xs text-slate-500 mb-3">
           Chaque appel part vers le lien de l&apos;équipe et du produit de son conseiller (équipe ALM ou CPA, Auto ou Santé).
           Il n&apos;y a <b>aucun lien par défaut</b> : tant qu&apos;un lien n&apos;est pas configuré, les appels de cette catégorie
-          restent enregistrés en local et ne sont envoyés nulle part. Collez l&apos;URL MER complète (avec{" "}
-          <span className="font-mono">id_prov</span> et <span className="font-mono">cle_ws</span>).
+          restent enregistrés en local et ne sont envoyés nulle part. Deux formes de lien :
         </p>
+        <ul className="text-xs text-slate-500 mb-3 list-disc pl-5 space-y-0.5">
+          <li><b>AZZUR MER</b> : l&apos;URL complète, avec <span className="font-mono">id_prov</span> et <span className="font-mono">cle_ws</span>.</li>
+          <li>
+            <b>Script fournisseur</b> (ProAssur, ALM…) : l&apos;URL avec des variables, remplacées pour chaque appel, par ex.{" "}
+            <span className="font-mono break-all">https://gestion-proassur.fr/leads_cpa/FournisseurA8003/A4.php?TelGsmTxt=$telephone&amp;Conseiller=$conseiller</span>.
+            Variables : <span className="font-mono">$telephone</span> (obligatoire), <span className="font-mono">$conseiller</span>,{" "}
+            <span className="font-mono">$conseiller_email</span>, <span className="font-mono">$date</span>, <span className="font-mono">$ligne</span>,{" "}
+            <span className="font-mono">$commentaire</span>, <span className="font-mono">$nom</span>, <span className="font-mono">$prenom</span>,{" "}
+            <span className="font-mono">$id</span>. Seuls ces paramètres sont envoyés, en GET.
+          </li>
+        </ul>
         {routesInfo && !routesInfo.tableAvailable && (
           <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 flex flex-wrap items-center gap-3">
             <span className="flex-1 min-w-[240px]">{routesInfo.migrationHint}</span>
@@ -210,12 +220,12 @@ export default function AzzurPage() {
                   type="text" autoComplete="off" spellCheck={false}
                   value={drafts[r.key] ?? ""}
                   onChange={(e) => setDrafts((d) => ({ ...d, [r.key]: e.target.value }))}
-                  placeholder={r.configured ? "Lien défini : saisir une nouvelle valeur pour le remplacer" : "https://www.gestfiches.com/…/ws/index.php?ws=mer&id_prov=…&cle_ws=…"}
+                  placeholder={r.configured ? "Lien défini : saisir une nouvelle valeur pour le remplacer" : "URL MER (…ws=mer&id_prov=…&cle_ws=…) ou script fournisseur (…A4.php?TelGsmTxt=$telephone&Conseiller=$conseiller)"}
                   className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-brand-400"
                 />
                 <p className="text-[11px] mt-1 text-slate-500">
                   {r.configured
-                    ? <>Lien dédié : <span className="font-mono">{r.target}</span> (clé masquée){r.origin === "env" ? " — défini par variable d'environnement" : ""}</>
+                    ? <>{r.kind === "template" ? "Script fournisseur" : "Lien AZZUR MER"} : <span className="font-mono break-all">{r.target}</span>{r.kind === "template" ? "" : " (clé masquée)"}{r.origin === "env" ? " — défini par variable d'environnement" : ""}</>
                     : <span className="text-amber-700">Non configuré : les appels de cette catégorie restent en local, rien n'est envoyé.</span>}
                 </p>
               </div>

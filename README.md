@@ -472,6 +472,21 @@ les appels du jour) puis **Analyser** (`src/lib/azzurReview.ts`, rien n'est envo
   liste), par lots de 50 avec barre de progression ; « tout » saute les liens déjà envoyés.
   Chaque fiche porte l'id de son premier appel (`num_devis_initial`) : renvoyée, AZZUR répond
   doublon. Un envoi confirmé ignore la limite d'âge de l'envoi automatique.
+**Deux formes de lien** (`/admin/azzur`) :
+- **AZZUR MER** (gestfiches.com) : l'URL complète avec `id_prov` et `cle_ws` ; les paramètres MER
+  décrits plus bas sont ajoutés.
+- **Script fournisseur** (ProAssur, ALM…) : l'URL du script avec des **variables** dans ses paramètres,
+  remplacées pour chaque fiche et envoyées en **GET** — et rien d'autre. Exemple CPA :
+  `https://gestion-proassur.fr/leads_cpa/FournisseurA8003/A4.php?TelGsmTxt=$telephone&Conseiller=$conseiller`.
+  Variables : `$telephone` (obligatoire, numéro complet `06…`), `$conseiller` (prénom nom du
+  conseiller), `$conseiller_email`, `$date`, `$ligne`, `$commentaire`, `$nom`, `$prenom`, `$id`. Le nom
+  du paramètre (`Conseiller` ci-dessus) est celui qu'attend le script : à adapter si ProAssur en
+  utilise un autre. Réponse : HTTP 2xx = envoyé (le texte renvoyé est affiché) ; « erreur… » dans la
+  réponse = échec ; « doublon » = déjà présent. La lecture de documentation ne s'applique qu'aux
+  liens MER (ouvrir un script fournisseur sans données pourrait créer une fiche vide).
+- Serveurs autorisés par défaut : gestfiches.com, gestion-proassur.fr, gestion-alm.com
+  (`AZZUR_MER_ALLOWED_HOSTS` pour changer la liste).
+
 **Choix du lien** (`src/lib/azzurRouting.ts`) : chaque fiche part vers le lien de l'**équipe et du produit
 de son conseiller**, lus dans le nom de son équipe (« Équipe auto CPA »), à défaut dans le libellé de
 la ligne d'arrivée. Équipe non identifiable = aucun lien, donc rien n'est envoyé. Les liens sont dans la

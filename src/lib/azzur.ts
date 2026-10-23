@@ -22,7 +22,7 @@
 // AZZUR_MER_FIELDS (JSON) without touching code.
 import { waitUntil } from "@vercel/functions";
 import { normalizePhone } from "@/lib/phone";
-import { resolveEndpoint, routeKeyFor, type RouteSettings } from "@/lib/azzurRouting";
+import { fillTemplateUrl, resolveEndpoint, routeKeyFor, type RouteSettings } from "@/lib/azzurRouting";
 
 /** What the caller knows about a freshly recorded call. */
 export type AzzurCallEvent = {
@@ -245,6 +245,27 @@ function formatParisDate(date: Date): string {
  * Without an adviser the conseiller fields are simply omitted, which leaves the
  * fiche for manual dispatch.
  */
+/** The note left on a fiche: where the call came from, and that it must be completed. */
+export function commentaireFor(event: AzzurCallEvent): string {
+  return `Appel entrant${event.lineLabel ? ` - ${event.lineLabel}` : ""} du ${formatParisDate(event.startedAt)} (Assurpilot) : coordonnées à compléter`.slice(0, 255);
+}
+
+/** Values of the $variables of a template link (see TEMPLATE_VARIABLES in azzurRouting.ts). */
+export function templateValues(event: AzzurCallEvent, config: AzzurConfig): Record<string, string> {
+  const c = event.conseiller;
+  return {
+    telephone: normalizePhone(event.callerNumber),
+    conseiller: c ? `${c.prenom} ${c.nom}`.trim() : "",
+    conseiller_email: c?.email ?? "",
+    nom: fillTemplate(config.placeholders.nom, event),
+    prenom: fillTemplate(config.placeholders.prenom, event),
+    date: formatParisDate(event.startedAt),
+    ligne: event.lineLabel ?? "",
+    commentaire: commentaireFor(event),
+    id: event.externalId ?? event.reference.replace(/^call:/, ""),
+  };
+}
+
 export function buildAzzurPayload(event: AzzurCallEvent, config: AzzurConfig): Record<string, string> {
   const out: Record<string, string> = {};
   const put = (key: FieldKey, value: string) => {
@@ -443,14 +464,22 @@ export async function pushCallToAzzur(
       return finish({ outcome: "skipped", detail: `${endpoint.why} : fiche conservée localement, non envoyée` });
     }
     secrets.push(endpoint.url.searchParams.get("cle_ws"));
-    const url = new URL(endpoint.url.toString());
+    const isTemplate = endpoint.kind === "template";
+    let url = new URL(endpoint.url.toString());
+    let method: "GET" | "POST" = config.method;
+    let body: string | undefined;
+    const headers: Record<string, string> = { Accept: "application/json, text/plain, */*" };
+
+    if (isTemplate) {
+      // A supplier script (ProAssur…): exactly the template's query, variables filled in,
+      // and nothing else — the MER parameters mean nothing there.
+      url = fillTemplateUrl(endpoint.template!, templateValues(event, config));
+      method = "GET";
+    } else {
     // ws=mer selects the mise-en-relation service; the documentation lists it as
     // required, so it is always present whatever the configured URL says.
     url.searchParams.set("ws", "mer");
     if (config.retourWs) url.searchParams.set("retour_ws", config.retourWs);
-    let body: string | undefined;
-    const headers: Record<string, string> = { Accept: "application/json, text/plain, */*" };
-
     if (config.method === "GET") {
       for (const [k, v] of Object.entries(payload)) url.searchParams.set(k, v);
     } else if (config.format === "json") {
@@ -460,6 +489,7 @@ export async function pushCallToAzzur(
       headers["Content-Type"] = "application/x-www-form-urlencoded";
       body = new URLSearchParams(payload).toString();
     }
+    }
 
     const delays = [500, 1500];
     let lastDetail = "";
@@ -467,7 +497,7 @@ export async function pushCallToAzzur(
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), config.timeoutMs);
       try {
-        const res = await fetchImpl(url, { method: config.method, headers, body, signal: controller.signal, redirect: "follow" });
+        const res = await fetchImpl(url, { method, headers, body, signal: controller.signal, redirect: "follow" });
         const raw = await res.text().catch(() => "");
         const looksHtml = /html/i.test(res.headers.get("content-type") ?? "") || /^\s*<(!doctype|html)/i.test(raw);
         // AZZUR wraps even its short answers ("ERREUR : …", the fiche id) in a page.
@@ -476,6 +506,24 @@ export async function pushCallToAzzur(
         // page), not an answer to our request: nothing was inserted. Reporting it
         // as "sent" hid exactly that. Its text is kept, longer than a normal
         // answer, because it usually names the fields the service expects.
+        if (isTemplate) {
+          // A supplier script has no documented answer: its HTTP status decides, with its
+          // own words as a safety net (an error or a duplicate said in a 200).
+          const said = (looksHtml ? pageText : raw.replace(/\s+/g, " ").trim()).slice(0, 300);
+          if (res.ok) {
+            if (/doublon|d[ée]j[àa] (pr[ée]sent|existant|enregistr)/i.test(said)) {
+              return finish({ outcome: "duplicate", status: res.status, attempts: attempt, detail: `déjà présent : ${said}` });
+            }
+            if (/\b(erreur|error|refus|invalide|manquant|interdit|forbidden)\b/i.test(said)) {
+              return finish({ outcome: "failed", status: res.status, attempts: attempt, detail: `refusé : ${said}` });
+            }
+            return finish({ outcome: "sent", status: res.status, attempts: attempt, detail: `envoyé, réponse : ${said || "(vide)"}` });
+          }
+          lastDetail = `HTTP ${res.status} réponse: ${said || "(vide)"}`;
+          if (!(res.status === 429 || res.status >= 500)) {
+            return finish({ outcome: "failed", status: res.status, attempts: attempt, detail: lastDetail });
+          }
+        } else {
         if (looksHtml && pageText.length > 600) {
           return finish({
             outcome: "failed", status: res.status, attempts: attempt,
@@ -498,6 +546,7 @@ export async function pushCallToAzzur(
         lastDetail = `HTTP ${res.status} réponse: ${text || "(vide)"}`;
         const retryable = res.status === 429 || res.status >= 500;
         if (!retryable) return finish({ outcome: "failed", status: res.status, attempts: attempt, detail: lastDetail });
+        }
       } catch (error) {
         const aborted = error instanceof Error && error.name === "AbortError";
         lastDetail = aborted ? `délai dépassé (${config.timeoutMs} ms)` : `erreur réseau: ${error instanceof Error ? error.message : String(error)}`;
