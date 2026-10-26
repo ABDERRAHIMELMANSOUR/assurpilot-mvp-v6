@@ -844,6 +844,24 @@ appliquer `prisma/sql/004-contrat-signe.sql` — idempotent, sans migration ni
 reclassement des appels existants, qui resteront donc à 0 contrat tant que
 l'option n'est pas utilisée.
 
+**Comment un résultat est compté** (`src/lib/contracts.ts`, `resultKind`) : sur
+le **libellé et la valeur** de l'option cochée par le conseiller, sans tenir
+compte des accents ni de la casse — pas sur un code unique, car les options sont
+libres dans `/admin/resultats`.
+
+| Compteur | Résultats comptés | Exemples |
+|---|---|---|
+| Contrats signés | le libellé ou la valeur contient « contrat » | Contrats, Contrat signé, `CONTRAT_SIGNE` |
+| Devis réalisés | le libellé ou la valeur contient « devis » | Devis, Devis réalisé, Devis envoyé, `DEVIS_REALISE` |
+
+Une formulation négative (« non », « pas », « sans », « aucun », « annulé »,
+« refusé », « résilié ») n'est comptée nulle part, et « contrat » l'emporte sur
+« devis » : un appel n'est jamais compté deux fois. La même règle sert aux
+cartes du tableau de bord, aux statistiques détaillées, au classement, aux
+équipes, à l'historique d'un conseiller et au filtre « Devis » de la liste des
+appels. Rien n'est réécrit en base : les appels déjà qualifiés sont comptés
+immédiatement.
+
 ### Import de fichiers d'appels
 
 `POST /api/calls/import` (multipart, champ `file`, `preview=true` pour un essai

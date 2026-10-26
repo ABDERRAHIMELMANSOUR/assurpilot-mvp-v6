@@ -7,6 +7,8 @@ import GroupToggle from "@/components/ui/GroupToggle";
 import ScopeFilter, { EMPTY_SCOPE, ScopeFilterState, withScope } from "@/components/ui/ScopeFilter";
 import { errorMessage } from "@/lib/fetchJson";
 import { withGroup } from "@/lib/query";
+import { isDevisResult } from "@/lib/contracts";
+import { useResultLabels } from "@/lib/useResultLabels";
 import Link from "next/link";
 
 // "Tout" by default: this list is the record of every call, so a default period
@@ -23,6 +25,7 @@ export default function AdminAppelsPage() {
   const [grouped, setGrouped] = useState(true);
   const [error,   setError]   = useState("");
   const [truncated, setTruncated] = useState<{ shown: number; total: number } | null>(null);
+  const resultLabels = useResultLabels();
 
   // Date range + entity / line / coach, as one query string. The export sends
   // the same thing minus the grouping, so the workbook matches the screen.
@@ -58,7 +61,7 @@ export default function AdminAppelsPage() {
 
   const filtered =
     statut === "manques"  ? calls.filter((c) => c.isMissed) :
-    statut === "devis"    ? calls.filter((c) => c.result?.resultat === "DEVIS_REALISE") :
+    statut === "devis"    ? calls.filter((c) => isDevisResult(c.result?.resultat, resultLabels)) :
     statut === "pending"  ? calls.filter((c) => !c.isMissed && !c.result) :
     statut === "manual"   ? calls.filter((c) => c.isManual) :
     calls;

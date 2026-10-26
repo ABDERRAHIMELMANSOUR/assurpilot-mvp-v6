@@ -5,7 +5,8 @@ import CallsTable from "./CallsTable";
 import StatCard from "./StatCard";
 import DateFilter, { DateFilterState, buildQueryString } from "./DateFilter";
 import { errorMessage, fetchJsonOr } from "@/lib/fetchJson";
-import { isContractResult } from "@/lib/contracts";
+import { isContractResult, isDevisResult } from "@/lib/contracts";
+import { useResultLabels } from "@/lib/useResultLabels";
 
 type Profile = {
   id: string;
@@ -57,6 +58,7 @@ export default function UserCallHistory({
   });
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState("");
+  const resultLabels = useResultLabels();
 
   useEffect(() => {
     let cancelled = false;
@@ -91,8 +93,8 @@ export default function UserCallHistory({
 
   // Ungrouped list, so one row is one call and these counts are exact.
   const answered = calls.filter((c) => !c.isMissed).length;
-  const devis = calls.filter((c) => c.result?.resultat === "DEVIS_REALISE").length;
-  const contrats = calls.filter((c) => isContractResult(c.result?.resultat)).length;
+  const devis = calls.filter((c) => isDevisResult(c.result?.resultat, resultLabels)).length;
+  const contrats = calls.filter((c) => isContractResult(c.result?.resultat, resultLabels)).length;
 
   return (
     <div className="p-6 max-w-6xl mx-auto">

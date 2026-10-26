@@ -13,14 +13,12 @@ import {
   subTeamOfTeamName,
   userScopeWhere,
 } from "@/lib/entity";
-import { isContractResult } from "@/lib/contracts";
+import { isContractResult, isDevisResult, type ResultLabels } from "@/lib/contracts";
 import { retentionClause } from "@/lib/retention";
 import { countUniqueCallers } from "@/lib/dedupe";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const DEVIS = "DEVIS_REALISE";
 
 type CallWithResult = {
   callerNumber: string;
@@ -37,14 +35,24 @@ const TALLY_SELECT = {
   result: { select: { resultat: true } },
 } as const;
 
-function tally(calls: CallWithResult[]) {
+/**
+ * value → label of every result option, so a result is classified on what the
+ * adviser actually ticked ("Contrats", "Devis"…) and not on one fixed code.
+ */
+async function loadResultLabels(): Promise<ResultLabels> {
+  const options = await prisma.callResultOption.findMany({ select: { value: true, label: true } });
+  return new Map(options.map((o) => [o.value, o.label]));
+}
+
+function tally(calls: CallWithResult[], labels: ResultLabels) {
   const total = calls.length;
   const manques = calls.filter((c) => c.isMissed).length;
   const repondus = total - manques;
-  const devis = calls.filter((c) => c.result?.resultat === DEVIS).length;
+  // Every quote wording counts: "Devis", "Devis réalisé", "Devis envoyé"…
+  const devis = calls.filter((c) => isDevisResult(c.result?.resultat, labels)).length;
   // Signed contracts are the commercial outcome the ranking is built on; devis
   // stays alongside it because the conversion rate is still read from it.
-  const contrats = calls.filter((c) => isContractResult(c.result?.resultat)).length;
+  const contrats = calls.filter((c) => isContractResult(c.result?.resultat, labels)).length;
 
   // Distinct prospects behind those calls, and the repeat attempts they hide.
   // One prospect ringing three times is one lead and two doublons, not three
@@ -126,13 +134,15 @@ export async function GET(req: NextRequest) {
         ? { OR: [{ superviseurId: requestedCoachId }, { id: requestedCoachId }] }
         : {};
 
+    const labels = await loadResultLabels();
+
     if (user.role === "CONSEILLER") {
       const calls = await prisma.call.findMany({
         where: { assignedUserId: user.userId, ...startedAtWhere },
         select: TALLY_SELECT,
       });
 
-      const stats = tally(calls);
+      const stats = tally(calls, labels);
       const durations = calls.filter((c) => c.durationSeconds > 0).map((c) => c.durationSeconds);
       const dureeMoyenne = durations.length
         ? Math.round(durations.reduce((sum, d) => sum + d, 0) / durations.length)
@@ -178,7 +188,7 @@ export async function GET(req: NextRequest) {
         prenom: agent.prenom,
         role: agent.role,
         team: agent.team?.nom ?? "—",
-        ...tally(agent.assignedCalls),
+        ...tally(agent.assignedCalls, labels),
       })),
       params.get("sort")
     );
@@ -231,7 +241,7 @@ export async function GET(req: NextRequest) {
         entity: entityOfTeamName(nom),
         subTeam: subTeamOfTeamName(nom),
         agents: members.length,
-        ...tally(members.flatMap((m) => m.assignedCalls)),
+        ...tally(members.flatMap((m) => m.assignedCalls), labels),
       }))
       .sort((a, b) => b.contrats - a.contrats || b.total - a.total || a.team.localeCompare(b.team, "fr"));
 
