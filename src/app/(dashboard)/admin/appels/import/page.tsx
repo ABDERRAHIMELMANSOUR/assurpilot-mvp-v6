@@ -16,7 +16,22 @@ type PreviewRow = {
   error:           string;
 };
 
+type Reconciliation = {
+  rows: number;
+  period: { from: string; to: string } | null;
+  alreadyInAssurpilot: number;
+  duplicatedInFile: number;
+  toImport: number;
+  rejected: number;
+  rejectedByReason: { label: string; count: number }[];
+  unknownLines: { label: string; count: number }[];
+  missed: number;
+  byTeam: { team: string; total: number; already: number; fresh: number; missed: number; coach: number }[];
+  byLine: { label: string; count: number }[];
+};
+
 type PreviewResult = {
+  reconciliation?: Reconciliation;
   totalRows:     number;
   validRows:     number;
   invalidRows:   number;
@@ -302,6 +317,8 @@ export default function ImportAppelsPage() {
               </div>
 
               {/* Unmatched numbers warning */}
+              {preview.reconciliation && <ReconciliationPanel r={preview.reconciliation} />}
+
               {preview.unmatchedNumbers.length > 0 && (
                 <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
                   <p className="text-sm font-semibold text-amber-800 mb-1">
@@ -533,6 +550,60 @@ function AutoDispatch({ batchId }: { batchId: string }) {
           </p>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Exactly where every row of the file goes, to reconcile a figure read in Keyyo with AssurPilot:
+ * rows = already in AssurPilot + to import + rejected. "Vue globale" counts by the adviser's
+ * TEAM; Keyyo's statistics of a number count by STANDARD LINE — both splits are shown.
+ */
+function ReconciliationPanel({ r }: { r: Reconciliation }) {
+  return (
+    <div className="mb-4 rounded-xl border border-slate-200 bg-white p-4 text-sm">
+      <p className="font-semibold text-slate-800">Rapprochement avec Keyyo</p>
+      <p className="text-xs text-slate-500 mb-3">
+        {r.rows} ligne(s) dans le fichier{r.period ? `, du ${r.period.from} au ${r.period.to}` : ""} ={" "}
+        <b>{r.alreadyInAssurpilot}</b> déjà dans AssurPilot + <b>{r.toImport}</b> à importer + <b>{r.duplicatedInFile}</b> en double dans le fichier + <b className={r.rejected ? "text-rose-600" : ""}>{r.rejected}</b> rejetée(s).
+        {" "}Dont {r.missed} non répondu(s).
+      </p>
+
+      {r.rejected > 0 && (
+        <div className="mb-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">
+          <p className="font-semibold mb-1">Lignes rejetées (jamais enregistrées) :</p>
+          {r.rejectedByReason.map((x) => <p key={x.label}>{x.count} × {x.label}</p>)}
+          {r.unknownLines.length > 0 && (
+            <p className="mt-1">
+              Numéros appelés inconnus : {r.unknownLines.map((x) => `${x.label} (${x.count})`).join(", ")} — ajoutez la ligne au conseiller
+              (Utilisateurs) ou réactivez-le, puis relancez l&apos;analyse.
+            </p>
+          )}
+        </div>
+      )}
+
+      <div className="grid md:grid-cols-2 gap-4">
+        <div>
+          <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1">Par équipe du conseiller (= « Vue globale »)</p>
+          <table className="w-full text-xs">
+            <thead><tr className="text-slate-400"><th className="text-left font-medium">Équipe</th><th className="text-right font-medium">Appels</th><th className="text-right font-medium">Déjà là</th><th className="text-right font-medium">Nouveaux</th></tr></thead>
+            <tbody>{r.byTeam.map((t) => (
+              <tr key={t.team}>
+                <td>{t.team}{t.coach ? <span className="text-slate-400"> (dont {t.coach} sur une ligne de coach)</span> : null}</td>
+                <td className="text-right font-semibold">{t.total}</td><td className="text-right">{t.already}</td><td className="text-right">{t.fresh}</td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+        <div>
+          <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1">Par ligne standard d&apos;arrivée (= Keyyo)</p>
+          <table className="w-full text-xs">
+            <tbody>{r.byLine.map((l) => (
+              <tr key={l.label}><td>{l.label}</td><td className="text-right font-semibold">{l.count}</td></tr>
+            ))}</tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }

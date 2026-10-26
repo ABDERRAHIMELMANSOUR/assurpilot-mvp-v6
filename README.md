@@ -521,6 +521,33 @@ répond « doublon » grâce à `num_devis_initial`.
 Limite connue : pas de file persistante, un appel dont les 3 tentatives échouent
 n'est pas renvoyé automatiquement (il est dans les logs).
 
+### Rapprocher les chiffres de Keyyo
+
+Keyyo et la « Vue globale » ne comptent pas la même chose :
+- Keyyo (statistiques d'un numéro, onglet « Sortants » du standard) compte **chaque renvoi du
+  standard vers une ligne de conseiller**, quelle que soit l'équipe du conseiller ;
+- la « Vue globale » filtrée Équipe ALM + Auto compte les appels des **conseillers (et coachs) de
+  l'équipe « Équipe auto ALM »**, quelle que soit la ligne d'arrivée.
+
+L'aperçu d'import (« Analyser le fichier ») affiche un **Rapprochement avec Keyyo** pour le CSV exporté
+de Keyyo : lignes du fichier = déjà dans AssurPilot + à importer + en double dans le fichier +
+rejetées (motif exact : numéro appelé inconnu — avec la liste des numéros —, numéro client absent,
+date illisible), puis la répartition **par équipe du conseiller** (= Vue globale) et **par ligne
+standard** (= Keyyo). Une ligne rejetée n'est jamais enregistrée : il faut ajouter la ligne au
+conseiller (Utilisateurs) ou le réactiver, puis réimporter (les lignes déjà présentes sont ignorées).
+
+Correction : les appels arrivés sur la **ligne d'un coach** (l'import les lui attribue) étaient
+enregistrés et visibles dans « Tous les appels » mais **exclus de la Vue globale, des Statistiques
+détaillées et du Classement** (seuls les utilisateurs de rôle CONSEILLER étaient comptés). Ils sont
+désormais comptés ; un coach n'apparaît au classement que s'il a reçu des appels, et la carte
+« Conseillers » ne compte que les conseillers. Le filtre « coach » des statistiques inclut, comme celui
+de la liste d'appels, les appels de la ligne du coach.
+
+**Heures affichées** : l'import enregistre l'heure Keyyo telle quelle (heure de Paris, sans fuseau).
+Les filtres par date sont donc justes, mais l'affichage dans le navigateur est décalé de +1 h (hiver)
+/ +2 h (été) par rapport à Keyyo. Correction à prévoir séparément (elle demande de convertir les
+appels déjà enregistrés).
+
 ### Statistiques des lignes (`/admin/statistiques-lignes`)
 
 Réconciliation des lignes standard **CPA / ALM** avec les conseillers qui ont

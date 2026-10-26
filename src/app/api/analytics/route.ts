@@ -121,7 +121,9 @@ export async function GET(req: NextRequest) {
     const isSuperviseur = user.role === "SUPERVISEUR";
     const coachWhere: Prisma.UserWhereInput =
       requestedCoachId && (!isSuperviseur || requestedCoachId === user.userId)
-        ? { superviseurId: requestedCoachId }
+        // The coach's conseillers AND the coach's own line, exactly as the call list's
+        // coach filter (coachCallScope) — otherwise the two disagree.
+        ? { OR: [{ superviseurId: requestedCoachId }, { id: requestedCoachId }] }
         : {};
 
     if (user.role === "CONSEILLER") {
@@ -139,19 +141,24 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ ...stats, dureeMoyenne });
     }
 
-    const agents = await prisma.user.findMany({
+    // Everyone a call can be filed under. The import gives a coach the calls that reach
+    // their OWN line (see /api/calls/import), so counting CONSEILLER only made those calls
+    // vanish from every total while "Tous les appels" still listed them — the figures
+    // disagreed with the call list and with Keyyo. A coach's own view covers their
+    // conseillers AND themself, as their call list does.
+    const ownerWhere: Prisma.UserWhereInput = isSuperviseur
+      ? { OR: [directReportsWhere(user.userId), { id: user.userId }] }
+      : { role: { in: ["CONSEILLER", "SUPERVISEUR"] } };
+
+    const owners = await prisma.user.findMany({
       where: {
-        AND: [
-          // Coach metrics cover only their own conseillers.
-          isSuperviseur ? directReportsWhere(user.userId) : { role: "CONSEILLER" },
-          scopeWhere,
-          coachWhere,
-        ],
+        AND: [ownerWhere, scopeWhere, coachWhere],
       },
       select: {
         id: true,
         nom: true,
         prenom: true,
+        role: true,
         team: { select: { nom: true } },
         assignedCalls: {
           where: startedAtWhere,
@@ -160,11 +167,16 @@ export async function GET(req: NextRequest) {
       },
     });
 
+    // A coach appears only when calls were filed under them: the ranking stays a ranking of
+    // advisers, and no call is left out of the totals.
+    const agents = owners.filter((o) => o.role === "CONSEILLER" || o.assignedCalls.length > 0);
+
     const leaderboard = rank(
       agents.map((agent) => ({
         id: agent.id,
         nom: agent.nom,
         prenom: agent.prenom,
+        role: agent.role,
         team: agent.team?.nom ?? "—",
         ...tally(agent.assignedCalls),
       })),
@@ -194,7 +206,7 @@ export async function GET(req: NextRequest) {
       entity,
       lineType: subTeam,
       // Echoes the coach actually applied, which is "" when the id was ignored.
-      coachId: "superviseurId" in coachWhere ? requestedCoachId : "",
+      coachId: "OR" in coachWhere ? requestedCoachId : "",
       sort: params.get("sort") === "conversion" ? "conversion" : "contrats",
     };
 
@@ -226,7 +238,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(
       isSuperviseur
         ? { ...totals, leaderboard, teams, applied }
-        : { ...totals, totalAgents: agents.length, leaderboard, teams, applied }
+        : { ...totals, totalAgents: agents.filter((a) => a.role === "CONSEILLER").length, leaderboard, teams, applied }
     );
   } catch (error) {
     return handleApiError(error, "GET /api/analytics");

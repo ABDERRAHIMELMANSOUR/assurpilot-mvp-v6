@@ -138,6 +138,8 @@ type ParsedRow = {
   numeroAppelant: string;
   /** Business line resolved from the routing number, if any. */
   lineId: string | null;
+  /** Label of that line ("Ligne auto ALM"), for the reconciliation report. */
+  lineLabel: string | null;
   /** Team INHERITED FROM THE CONSEILLER, not from the line. */
   teamId: string | null;
   teamName: string | null;
@@ -150,6 +152,8 @@ type ParsedRow = {
   site: string;
   conseiller: CallOwner | null;
   isDuplicate: boolean;
+  /** For a duplicate: already in the database, or a repeat of an earlier row of the same file. */
+  duplicateOf?: "db" | "file";
   /** "" = valid, "duplicate" = already imported, anything else = skip reason. */
   error: string;
 };
@@ -191,6 +195,61 @@ function duplicateKey(
 ): string {
   const second = Math.floor(startedAt.getTime() / 1000);
   return `${conseillerId}|${normalizePhone(callerNumber)}|${second}|${duration}`;
+}
+
+/**
+ * Line-by-line accounting of a file against AssurPilot, so a figure read in Keyyo can be
+ * reconciled exactly: every row of the file lands in ONE bucket — already in AssurPilot, new,
+ * or rejected (with the reason) — and the accepted rows are broken down the two ways the
+ * figures are read: by the ADVISER'S TEAM (what "Vue globale" filters on) and by the STANDARD
+ * LINE the call came in on (what Keyyo's per-number statistics count).
+ */
+function reconcile(parsed: ParsedRow[]) {
+  const accepted = parsed.filter((r) => !r.error || r.error === "duplicate");
+  const reason = (r: ParsedRow) =>
+    r.error.startsWith("Aucun utilisateur") ? "Numéro appelé inconnu (aucun conseiller ou coach actif avec cette ligne)"
+    : r.error === "Numéro présenté manquant" ? "Numéro du client absent (appel masqué / anonyme)"
+    : r.error.startsWith("Date") ? "Date illisible"
+    : r.error === "Numéro appelé manquant" ? "Numéro appelé absent"
+    : r.error;
+
+  const count = <T,>(rows: T[], key: (r: T) => string) => {
+    const m = new Map<string, number>();
+    for (const r of rows) m.set(key(r), (m.get(key(r)) ?? 0) + 1);
+    return [...m.entries()].map(([label, n]) => ({ label, count: n })).sort((a, b) => b.count - a.count);
+  };
+
+  // Same wall-clock reading as the import itself (see parseDate).
+  const fmt = (d: Date) => d.toISOString().slice(0, 16).replace("T", " ");
+  const dated = parsed.filter((r) => r.startedAt).map((r) => r.startedAt!.getTime());
+
+  const byTeam = new Map<string, { already: number; fresh: number; missed: number; coach: number }>();
+  for (const r of accepted) {
+    const k = r.teamName ?? "Sans équipe (conseiller sans équipe)";
+    const t = byTeam.get(k) ?? { already: 0, fresh: 0, missed: 0, coach: 0 };
+    if (r.duplicateOf === "db") t.already++; else if (!r.error) t.fresh++; else continue;
+    if (r.isMissed) t.missed++;
+    if (r.conseiller?.role === "SUPERVISEUR") t.coach++;
+    byTeam.set(k, t);
+  }
+
+  const unknown = parsed.filter((r) => r.error.startsWith("Aucun utilisateur"));
+  return {
+    rows: parsed.length,
+    period: dated.length ? { from: fmt(new Date(Math.min(...dated))), to: fmt(new Date(Math.max(...dated))) } : null,
+    alreadyInAssurpilot: parsed.filter((r) => r.duplicateOf === "db").length,
+    duplicatedInFile: parsed.filter((r) => r.duplicateOf === "file").length,
+    toImport: parsed.filter((r) => !r.error).length,
+    rejected: parsed.filter((r) => r.error && r.error !== "duplicate").length,
+    rejectedByReason: count(parsed.filter((r) => r.error && r.error !== "duplicate"), reason),
+    unknownLines: count(unknown, (r) => r.numeroAppele),
+    missed: accepted.filter((r) => r.isMissed).length,
+    byTeam: [...byTeam.entries()]
+      .map(([team, t]) => ({ team, total: t.already + t.fresh, ...t }))
+      .sort((a, b) => b.total - a.total),
+    // Only rows that are or will be in AssurPilot (a repeat inside the file is not).
+    byLine: count(accepted.filter((r) => !r.error || r.duplicateOf === "db"), (r) => r.lineLabel ?? "Ligne non identifiée"),
+  };
 }
 
 export async function POST(req: NextRequest) {
@@ -352,6 +411,7 @@ export async function POST(req: NextRequest) {
         numeroAppele,
         numeroAppelant,
         lineId: line.lineId,
+        lineLabel: line.lineLabel,
         teamId: conseiller?.teamId ?? null,
         teamName: conseiller?.team?.nom ?? null,
         startedAt,
@@ -401,17 +461,13 @@ export async function POST(req: NextRequest) {
       });
 
       const seen = new Set<string>();
+      const inDatabase = new Set<string>();
 
       for (const call of existing) {
         if (!call.assignedUserId) continue;
-        seen.add(
-          duplicateKey(
-            call.assignedUserId,
-            call.callerNumber,
-            call.startedAt,
-            call.durationSeconds
-          )
-        );
+        const dbKey = duplicateKey(call.assignedUserId, call.callerNumber, call.startedAt, call.durationSeconds);
+        seen.add(dbKey);
+        inDatabase.add(dbKey);
       }
 
       for (const row of candidates) {
@@ -424,6 +480,7 @@ export async function POST(req: NextRequest) {
 
         if (seen.has(key)) {
           row.isDuplicate = true;
+          row.duplicateOf = inDatabase.has(key) ? "db" : "file";
           row.error = "duplicate";
         } else {
           // Also catches rows duplicated inside the uploaded file itself.
@@ -439,6 +496,7 @@ export async function POST(req: NextRequest) {
     // ── Preview mode ──────────────────────────────────────────────────────────
     if (preview) {
       return NextResponse.json({
+        reconciliation: reconcile(parsed),
         totalRows: parsed.length,
         validRows: validRows.length,
         invalidRows: invalidRows.length,
