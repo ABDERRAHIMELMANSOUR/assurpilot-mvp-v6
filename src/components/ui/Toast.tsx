@@ -2,13 +2,15 @@
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 
-type ToastKind = "success" | "error" | "info";
+type ToastKind = "success" | "error" | "info" | "alert";
 type ToastItem = { id: number; kind: ToastKind; message: string };
 
 type ToastApi = {
   success: (message: string) => void;
   error: (message: string) => void;
   info: (message: string) => void;
+  /** Something someone else did that needs the reader's attention (coach actions). */
+  alert: (message: string) => void;
 };
 
 const ToastContext = createContext<ToastApi | null>(null);
@@ -16,6 +18,8 @@ const ToastContext = createContext<ToastApi | null>(null);
 const LIFETIME_MS: Record<ToastKind, number> = {
   success: 3500,
   info: 3500,
+  // Alerts report another person's action: long enough to be noticed on return.
+  alert: 9000,
   // Errors stay longer: they usually need reading, and often explain a refusal.
   error: 6000,
 };
@@ -24,12 +28,14 @@ const KIND_CLS: Record<ToastKind, string> = {
   success: "bg-emerald-50 border-emerald-200 text-emerald-800",
   error:   "bg-rose-50 border-rose-200 text-rose-800",
   info:    "bg-slate-50 border-slate-200 text-slate-700",
+  alert:   "bg-amber-50 border-amber-300 text-amber-900",
 };
 
 const KIND_ICON: Record<ToastKind, string> = {
   success: "M5 13l4 4L19 7",
   error:   "M6 18L18 6M6 6l12 12",
   info:    "M13 16h-1v-4h-1m1-4h.01",
+  alert:   "M15 17h5l-1.4-1.4A2 2 0 0118 14.2V11a6 6 0 00-4-5.7V5a2 2 0 10-4 0v.3A6 6 0 006 11v3.2a2 2 0 01-.6 1.4L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9",
 };
 
 /**
@@ -66,6 +72,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     success: (m) => push("success", m),
     error:   (m) => push("error", m),
     info:    (m) => push("info", m),
+    alert:   (m) => push("alert", m),
   };
 
   return (

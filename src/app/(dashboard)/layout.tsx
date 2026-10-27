@@ -10,11 +10,12 @@ export default async function DashboardLayout({ children }: { children: React.Re
   if (!session) redirect("/login");
 
   return (
-    <div className="flex min-h-screen bg-slate-50">
-      <Sidebar />
-      <main className="flex-1 overflow-auto">
-        <ToastProvider>{children}</ToastProvider>
-      </main>
-    </div>
+    // The provider wraps the sidebar too: it raises the admin's coach-action alerts.
+    <ToastProvider>
+      <div className="flex min-h-screen bg-slate-50">
+        <Sidebar />
+        <main className="flex-1 overflow-auto">{children}</main>
+      </div>
+    </ToastProvider>
   );
 }

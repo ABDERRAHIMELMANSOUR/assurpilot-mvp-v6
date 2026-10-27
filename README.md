@@ -681,6 +681,41 @@ cartes, filtres, badges et export ne peuvent pas diverger.
 Filtres : À appliquer · Appels à activer · Appels à couper · À booster · Boost à
 retirer · Routage actif, plus recherche et coach.
 
+**Notifications des actions des coachs.** Chaque action d'un coach est
+enregistrée dans la table `routing_notifications` (journal, une ligne par
+changement) et signalée à l'administrateur :
+
+| Action du coach | Notification |
+|---|---|
+| Interrupteur « Appels entrants » | Appels entrants activés / désactivés |
+| Bouton « Booster » | Boost activé / retiré (« appels désactivés » quand la coupure l'a retiré) |
+| Création d'un conseiller | Conseiller créé |
+| Modification d'une fiche (nom, prénom, email, ligne directe, mot de passe) | Fiche modifiée, avec ancienne → nouvelle ligne directe |
+| Désactivation / réactivation d'un compte | Compte désactivé / réactivé |
+
+- Sur la page, le panneau **Actions des coachs** se met à jour toutes les 5 s :
+  les non lues sont surlignées, une nouvelle action déclenche une alerte (toast)
+  et le nombre de non lues s'affiche dans le titre de l'onglet. « Historique »
+  montre les 100 dernières actions, lues comprises ; « Voir » filtre le tableau
+  sur le conseiller concerné ; « ✓ Lu » / « Tout marquer comme lu » acquittent.
+- Sur **toutes les pages admin**, le menu « Demandes de routage » affiche un
+  badge avec le nombre de non lues (relu toutes les 10 s) et une alerte apparaît
+  à chaque nouvelle action, une seule fois par onglet.
+- Le statut « lu » est **partagé** entre administrateurs : la page est une liste
+  de travail commune. Les forçages faits par un administrateur sont gardés dans
+  l'historique, déjà lus (ce ne sont pas des alertes).
+- L'enregistrement ne bloque jamais le coach : si le journal ne peut pas être
+  écrit, son changement est quand même sauvegardé et l'erreur est journalisée
+  côté serveur.
+- La table est **créée automatiquement** au premier usage (nouvelle table, aucune
+  table existante modifiée). Si les droits de la base l'empêchent, la page le
+  dit : exécuter alors `prisma/sql/010-routing-notifications.sql` (idempotent ;
+  une table homonyme de forme incompatible est renommée
+  `routing_notifications_old_<date>`, jamais supprimée).
+- API (administrateur uniquement) : `GET /api/admin/routing-notifications`
+  (`limit`, `after`, `unread=1`, `count=1`) et `POST` avec `{ ids: [...] }` ou
+  `{ all: true }` pour marquer lu.
+
 **Actions de l'admin.**
 
 - *Forcer* un réglage (interrupteur / bouton dans le tableau), avec les mêmes

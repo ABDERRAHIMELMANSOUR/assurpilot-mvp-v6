@@ -2,8 +2,9 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
+import { useRoutingAlerts } from "@/lib/routingAlerts";
 
-function NavLink({ href, label }: { href: string; label: string }) {
+function NavLink({ href, label, badge = 0 }: { href: string; label: string; badge?: number }) {
   const pathname = usePathname();
   const active   = pathname === href;
   return (
@@ -14,6 +15,15 @@ function NavLink({ href, label }: { href: string; label: string }) {
         }`}
       />
       {label}
+      {badge > 0 && (
+        <span
+          className="ml-auto min-w-[20px] h-5 px-1.5 rounded-full bg-amber-400 text-navy-950 text-[11px] font-bold flex items-center justify-center animate-pulse"
+          title={`${badge} action(s) de coach non lue(s)`}
+          aria-label={`${badge} action(s) de coach non lue(s)`}
+        >
+          {badge > 99 ? "99+" : badge}
+        </span>
+      )}
     </Link>
   );
 }
@@ -38,6 +48,8 @@ export default function Sidebar() {
   const { data: session } = useSession();
   const user = session?.user as any;
   const role = user?.role ?? "CONSEILLER";
+  // Coach actions not yet read by an administrator: badge + alert toasts.
+  const routingUnread = useRoutingAlerts(role === "ADMINISTRATEUR");
 
   return (
     <aside className="w-60 min-h-screen bg-navy-950 border-r border-white/5 flex flex-col flex-shrink-0">
@@ -97,7 +109,7 @@ export default function Sidebar() {
             <NavLink href="/admin/utilisateurs" label="Utilisateurs" />
             <NavLink href="/admin/conseillers"  label="Conseillers" />
             <NavLink href="/admin/coachs"       label="Coachs" />
-            <NavLink href="/admin/demandes-routage" label="Demandes de routage" />
+            <NavLink href="/admin/demandes-routage" label="Demandes de routage" badge={routingUnread} />
             <NavLink href="/admin/activite"     label="Activité" />
 
             <SectionLabel label="Configuration" />

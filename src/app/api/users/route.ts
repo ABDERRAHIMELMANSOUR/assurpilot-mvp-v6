@@ -14,6 +14,7 @@ import {
   readJson,
   requireRole,
 } from "@/lib/api";
+import { recordRoutingEvents } from "@/lib/routingNotificationsStore";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -85,6 +86,11 @@ export async function POST(req: NextRequest) {
       },
       select: USER_SELECT,
     });
+    if (isSuperviseur) {
+      await recordRoutingEvents(currentUser.userId, newUser.id, [
+        { kind: "ADVISER_CREATED", details: newUser.phoneNumber ? { ligne: newUser.phoneNumber } : undefined },
+      ]);
+    }
     return NextResponse.json(newUser, { status: 201 });
   } catch (error) {
     return handleApiError(error, "POST /api/users");

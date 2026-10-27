@@ -20,6 +20,8 @@ import {
   parseCallSettingsPatch,
   resolveCallSettings,
 } from "@/lib/callSettings";
+import { routingChanges } from "@/lib/routingEvents";
+import { recordRoutingEvents } from "@/lib/routingNotificationsStore";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -47,7 +49,8 @@ export async function PATCH(req: NextRequest, { params }: RouteContext) {
       where: { userId: target.id },
       select: { isActiveForCalls: true, isBoosted: true },
     });
-    const next = resolveCallSettings(existing ?? DEFAULT_CALL_SETTINGS, patch);
+    const before = existing ?? DEFAULT_CALL_SETTINGS;
+    const next = resolveCallSettings(before, patch);
 
     const saved = await prisma.advisorCallSettings.upsert({
       where: { userId: target.id },
@@ -55,6 +58,9 @@ export async function PATCH(req: NextRequest, { params }: RouteContext) {
       update: { ...next, updatedById: coach.userId },
       select: { isActiveForCalls: true, isBoosted: true },
     });
+
+    // Alert the administrators (best effort: never fails the coach's save).
+    await recordRoutingEvents(coach.userId, target.id, routingChanges(before, saved));
 
     // The settled values, not an echo of the request: switching calls off also
     // clears the boost, and the client must show what was actually stored.

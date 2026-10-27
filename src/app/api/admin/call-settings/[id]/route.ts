@@ -16,6 +16,8 @@ import {
 } from "@/lib/callSettings";
 import { loadAdviserRows } from "@/lib/adminRouting";
 import { DEFAULT_ROUTING } from "@/lib/routingState";
+import { routingChanges } from "@/lib/routingEvents";
+import { recordRoutingEvents } from "@/lib/routingNotificationsStore";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -38,7 +40,8 @@ export async function PATCH(req: NextRequest, { params }: RouteContext) {
       where: { userId: target.id },
       select: { isActiveForCalls: true, isBoosted: true },
     });
-    const next = resolveCallSettings(existing ?? DEFAULT_ROUTING, patch);
+    const before = existing ?? DEFAULT_ROUTING;
+    const next = resolveCallSettings(before, patch);
 
     // `applied*` is deliberately not written: overriding the request does not
     // change what is on the PBX.
@@ -48,6 +51,9 @@ export async function PATCH(req: NextRequest, { params }: RouteContext) {
       update: { ...next, updatedById: admin.userId },
       select: { userId: true },
     });
+
+    // Kept in the history, already read: an admin's own override is not an alert.
+    await recordRoutingEvents(admin.userId, target.id, routingChanges(before, next));
 
     const [row] = await loadAdviserRows([target.id]);
     return NextResponse.json({ adviser: row });

@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import StatCard from "@/components/ui/StatCard";
+import RoutingNotificationsPanel from "@/components/ui/RoutingNotificationsPanel";
 import { useToast } from "@/components/ui/Toast";
 import { errorMessage, fetchJson } from "@/lib/fetchJson";
 import { usePolling } from "@/lib/usePolling";
@@ -193,6 +194,15 @@ export default function DemandesRoutagePage() {
 
   const visiblePending = visible.filter((r) => hasPending(r.pending));
 
+  const tableRef = useRef<HTMLDivElement>(null);
+  /** From a coach-action alert: show that adviser in the table below. */
+  const showAdviser = useCallback((name: string) => {
+    setChip("all");
+    setCoachId("");
+    setSearch(name);
+    tableRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, []);
+
   // ── actions ───────────────────────────────────────────────────────────────
   const markBusy = (id: string, on: boolean) =>
     setBusy((b) => { const n = new Set(b); on ? n.add(id) : n.delete(id); return n; });
@@ -363,8 +373,11 @@ export default function DemandesRoutagePage() {
           sub="priorité demandée" subColor="text-indigo-600" />
       </div>
 
+      {/* What the coaches just did: live alerts and their history. */}
+      <RoutingNotificationsPanel formatAge={(iso) => timeAgo(iso, serverNow)} onShowAdviser={showAdviser} />
+
       {/* Status chips: the worklist, sliced by what has to happen on the PBX. */}
-      <div className="flex flex-wrap items-center gap-1.5 mb-3">
+      <div ref={tableRef} className="flex flex-wrap items-center gap-1.5 mb-3 scroll-mt-4">
         {CHIPS.map((c) => (
           <button
             key={c.key}

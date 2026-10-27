@@ -28,15 +28,15 @@ model User {
   createdAt     DateTime  @default(now())
   lastLoginAt   DateTime?
 
-  team             Team?        @relation("TeamMembers", fields: [teamId], references: [id])
-  supervisedTeam   Team?        @relation("TeamSuperviseur")
-  superviseur      User?        @relation("ConseillerSuperviseur", fields: [superviseurId], references: [id])
-  conseillers      User[]       @relation("ConseillerSuperviseur")
-  assignedCalls    Call[]       @relation("CallAssignedUser")
+  team             Team?                @relation("TeamMembers", fields: [teamId], references: [id])
+  supervisedTeam   Team?                @relation("TeamSuperviseur")
+  superviseur      User?                @relation("ConseillerSuperviseur", fields: [superviseurId], references: [id])
+  conseillers      User[]               @relation("ConseillerSuperviseur")
+  assignedCalls    Call[]               @relation("CallAssignedUser")
   // Calls this user (a coach) handed off to a conseiller. The call stays
   // visible here after the transfer, which is what keeps it in the coach's
   // workspace once assignedUserId has moved to the conseiller.
-  transferredCalls Call[]       @relation("CallTransferredBy")
+  transferredCalls Call[]               @relation("CallTransferredBy")
   callResults      CallResult[]
   loginLogs        LoginLog[]
   // Per-advisor call-distribution switches. A relation field only: it adds no
@@ -247,4 +247,29 @@ model AzzurRoute {
   updatedById String?
 
   @@map("azzur_routes")
+}
+
+// What coaches did to their advisers' routing and accounts, for the alerts and the
+// history on /admin/demandes-routage. Append-only journal: one row per change.
+// Own table with no foreign key — names are copied in, so the history survives an
+// account being renamed or removed — and no existing table changes. See
+// prisma/sql/010-routing-notifications.sql (the app also creates it on first use).
+// readAt is shared by the administrators: one of them acknowledging an alert
+// clears it for all, as the page is a shared worklist.
+model RoutingNotification {
+  id          String    @id @default(cuid())
+  createdAt   DateTime  @default(now())
+  kind        String
+  message     String
+  actorId     String?
+  actorName   String    @default("")
+  actorRole   String    @default("")
+  adviserId   String?
+  adviserName String?
+  details     Json?
+  readAt      DateTime?
+  readById    String?
+
+  @@index([createdAt])
+  @@map("routing_notifications")
 }

@@ -16,6 +16,8 @@ import {
   requireRole,
   type SessionUser,
 } from "@/lib/api";
+import { accountChanges } from "@/lib/routingEvents";
+import { recordRoutingEvents } from "@/lib/routingNotificationsStore";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -119,6 +121,12 @@ export async function PUT(req: NextRequest, { params }: RouteContext) {
       data,
       select: USER_SELECT,
     });
+
+    // A coach's change to one of their advisers is an alert for the administrators
+    // (best effort: never fails the save).
+    if (currentUser.role === "SUPERVISEUR") {
+      await recordRoutingEvents(currentUser.userId, target.id, accountChanges(target, updated, Boolean(password)));
+    }
     return NextResponse.json(updated);
   } catch (error) {
     return handleApiError(error, `PUT /api/users/${params.id}`);
@@ -138,6 +146,9 @@ export async function DELETE(_req: NextRequest, { params }: RouteContext) {
 
     // Soft delete — the call history keeps pointing at this user.
     await prisma.user.update({ where: { id: params.id }, data: { isActive: false } });
+    if (currentUser.role === "SUPERVISEUR" && target.isActive) {
+      await recordRoutingEvents(currentUser.userId, target.id, [{ kind: "ADVISER_DEACTIVATED" }]);
+    }
     return NextResponse.json({ success: true });
   } catch (error) {
     return handleApiError(error, `DELETE /api/users/${params.id}`);
