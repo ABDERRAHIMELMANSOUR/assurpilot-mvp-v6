@@ -469,7 +469,7 @@ variables GET »), paramètres encodés par `URLSearchParams` :
 |---|---|
 | `ws`, `id_prov`, `cle_ws` | `mer`, l'`id_prov` et la clé **du lien de la catégorie** (`id_prov` **est** la provenance) |
 | `tel` **et** `port` | le même numéro complet, forme `06…` (un appel ne dit pas fixe ou mobile) |
-| `nom`, `prenom` (obligatoire / non) | `Appel Assurpilot`, `reçu par <conseiller qui a reçu l'appel>` (modèles `{conseiller}`, `{ligne}`, `{date}`) |
+| `nom`, `prenom` (obligatoire / non) | `APE`, et le **numéro de l'appelant** en prénom (ex. `0612345678`, « numéro masqué » s'il est absent) — modèles `{telephone}`, `{conseiller}`, `{ligne}`, `{date}` |
 | `date_naissance` (obligatoire, aaaa-mm-jj) | `1900-01-01` |
 | `cp` (obligatoire, 5 chiffres) | `00000` |
 | `commentaire` (255 car.) | « Appel entrant - Ligne santé CPA du … (Assurpilot) : coordonnées à compléter » |

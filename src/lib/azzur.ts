@@ -129,12 +129,13 @@ function positiveInt(value: string | undefined, fallback: number): number {
  * date, postal code 00000) so they can never pass for real data, and the fiche
  * says so in its observation. Override or blank each one with AZZUR_MER_DEFAULTS.
  */
-// nom / prenom may use {conseiller} (who received the call on Assurpilot, or
-// "non attribué"), {ligne} and {date}, so the fiche says where it came from and the
-// adviser can find it in AZZUR.
+// nom / prenom may use {telephone} (the caller's number, 0612345678), {conseiller}
+// (who received the call on Assurpilot, or "non attribué"), {ligne} and {date}.
+// By default a fiche reads Nom "APE", Prénom = the caller's number, so the adviser
+// finds it in AZZUR by the number they just spoke to.
 const DEFAULT_PLACEHOLDERS = {
-  nom: "Appel Assurpilot",
-  prenom: "reçu par {conseiller}",
+  nom: "APE",
+  prenom: "{telephone}",
   date_naissance: "1900-01-01", // AZZUR wants aaaa-mm-jj
   code_postal: "00000",
 };
@@ -144,10 +145,12 @@ function clip(value: string, max: number): string {
   return value.length > max ? value.slice(0, max) : value;
 }
 
-/** Fills {conseiller} / {ligne} / {date} in a placeholder template. */
+/** Fills {telephone} / {conseiller} / {ligne} / {date} in a placeholder template. */
 function fillTemplate(template: string, event: AzzurCallEvent): string {
   const who = event.conseiller ? `${event.conseiller.prenom} ${event.conseiller.nom}`.trim() : "non attribué";
   return template
+    // Same national form as the tel / port fields; a withheld number says so rather than leaving a blank.
+    .replace(/\{telephone\}/g, normalizePhone(event.callerNumber) || "numéro masqué")
     .replace(/\{conseiller\}/g, who)
     .replace(/\{ligne\}/g, event.lineLabel ?? "")
     .replace(/\{date\}/g, formatParisDate(event.startedAt))
