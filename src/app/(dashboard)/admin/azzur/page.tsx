@@ -178,7 +178,7 @@ export default function AzzurPage() {
             <div className="sm:col-span-2"><dt className="inline text-slate-400">Valeurs par défaut (données absentes d'un appel) : </dt>
               <dd className="inline font-mono text-xs">{Object.entries(status.placeholders).map(([k, v]) => `${k}=${v || "(vide)"}`).join("  ")}</dd></div>
             <div className="sm:col-span-2"><dt className="inline text-slate-400">Conseillers reliés à AZZUR (id_user) : </dt>
-              <dd className="inline">{status.mappedAdvisers} · id_user par défaut : <span className="font-mono">{status.defaultUserId ?? "(utilisateur par défaut d'AZZUR)"}</span></dd></div>
+              <dd className="inline">{status.mappedAdvisers} · conseiller non identifié : <span className="font-mono">id_user par défaut de l&apos;espace, sinon 0 (fiche non attribuée)</span></dd></div>
             <div><dt className="inline text-slate-400">Appels plus vieux que : </dt><dd className="inline">{status.maxAgeHours} h ignorés</dd></div>
             <div><dt className="inline text-slate-400">Manqués : </dt><dd className="inline">{status.onlyAnswered ? "ignorés" : "envoyés"}</dd></div>
             {status.problem && <p className="sm:col-span-2 text-rose-600">{status.problem}</p>}
@@ -295,7 +295,7 @@ type AdviserRow = {
   id: string; name: string; role: string; line: string; team: string | null;
   category: string | null; linkKind: "mer" | "template" | null; azzurId: string;
   /** The id_user a fiche of this adviser carries, and why. */
-  sentId: string | null; sentSource: "conseiller" | "defaut-espace" | "defaut-general" | null;
+  sentId: string; sentSource: "conseiller" | "defaut-espace" | "aucun"; sentWhy: string;
 };
 type DefaultRow = { key: string; label: string; linkKind: "mer" | "template" | null; azzurId: string };
 type UsersInfo = { advisers: AdviserRow[]; defaults: DefaultRow[]; envDefault: string | null };
@@ -325,10 +325,9 @@ function sentLabel(r: AdviserRow, defaults: DefaultRow[]): string {
   if (r.sentSource === "conseiller") return `id_user=${r.sentId} (le sien)`;
   if (r.sentSource === "defaut-espace") {
     const d = defaults.find((x) => x.label === r.category);
-    return `id_user=${r.sentId} (défaut ${d?.label ?? "de l'espace"})`;
+    return `id_user=${r.sentId} (défaut ${d?.label ?? "de l'espace"}) — ${r.sentWhy}`;
   }
-  if (r.sentSource === "defaut-general") return `id_user=${r.sentId} (défaut AZZUR_MER_ID_USER)`;
-  return "sans id_user : utilisateur par défaut d'AZZUR";
+  return `id_user=0, fiche non attribuée — ${r.sentWhy}`;
 }
 
 /**
@@ -395,7 +394,9 @@ function AdvisersCrm({ reloadKey }: { reloadKey: unknown }) {
         (<span className="font-mono">$conseiller</span>). <b>AZZUR</b> ne reconnaît pas les noms : chaque fiche Santé part avec{" "}
         <span className="font-mono">&amp;id_user=</span><b>l&apos;Id AZZUR du conseiller qui a pris l&apos;appel</b> (colonne « Id » de
         Administration › Utilisateurs dans AZZUR). Sans Id pour ce conseiller, c&apos;est l&apos;<b>id_user par défaut de l&apos;espace</b>{" "}
-        ci-dessous qui est envoyé ; sans défaut non plus, AZZUR applique son propre utilisateur par défaut.
+        ci-dessous qui est envoyé ; sans défaut non plus, <span className="font-mono">id_user=0</span> : la fiche n&apos;est attribuée à
+        personne (jamais à l&apos;utilisateur par défaut du back-office AZZUR). Un Id n&apos;est envoyé que dans l&apos;espace de l&apos;équipe du
+        conseiller (ALM ou CPA) : un conseiller sans équipe ALM/CPA part avec le défaut de l&apos;espace.
       </p>
 
       {defaultRows.length > 0 && (
@@ -428,7 +429,7 @@ function AdvisersCrm({ reloadKey }: { reloadKey: unknown }) {
       {missing.length > 0 && (
         <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
           {missing.length} conseiller(s) d&apos;un lien AZZUR sans Id AZZUR propre : leurs fiches partent avec l&apos;id_user par défaut de
-          leur espace (ou sans id_user s&apos;il n&apos;y en a pas), pas dans leur propre espace conseiller.
+          leur espace (ou id_user=0, non attribuée, s&apos;il n&apos;y en a pas), pas dans leur propre espace conseiller.
         </div>
       )}
       {noTeam.length > 0 && (

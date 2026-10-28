@@ -70,6 +70,7 @@ export async function GET() {
           // What a fiche of this adviser carries as id_user, and why ("conseiller", "defaut-espace"…).
           sentId: sent.id,
           sentSource: sent.source,
+          sentWhy: sent.why,
         };
       }),
     });

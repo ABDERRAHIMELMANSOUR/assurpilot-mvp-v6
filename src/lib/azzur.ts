@@ -22,6 +22,7 @@
 // AZZUR_MER_FIELDS (JSON) without touching code.
 import { waitUntil } from "@vercel/functions";
 import { normalizePhone } from "@/lib/phone";
+import { entityOfTeamName } from "@/lib/entity";
 import { fillTemplateUrl, resolveEndpoint, routeKeyFor, type RouteKey, type RouteSettings } from "@/lib/azzurRouting";
 
 /** What the caller knows about a freshly recorded call. */
@@ -70,11 +71,11 @@ export type AzzurConfig = {
    * adviser's space. Takes precedence over the e-mail map of AZZUR_MER_USER_MAP.
    */
   userMapById: Record<string, string>;
-  /** id_user for advisers absent from the map: "0" = nobody (dispatch board), null = AZZUR's default user. */
+  /** AZZUR_MER_ID_USER, honoured only as "0" (nobody). Unidentified calls get "0" anyway. */
   defaultUserId: string | null;
   /**
    * Default id_user per AZZUR space, set on /admin/azzur. Each space (ALM, CPA) numbers its users
-   * on its own, so one default cannot serve both. Used before `defaultUserId` (AZZUR_MER_ID_USER).
+   * on its own, so one default cannot serve both. Without one, id_user=0 (nobody).
    */
   defaultUserIds: Partial<Record<RouteKey, string>>;
   /** Value of the provenance field: AZZUR's provenance CODE, e.g. "AE" (id 51). */
@@ -236,7 +237,8 @@ export function readAzzurConfig(env: Record<string, string | undefined> = proces
     userMap: readUserMap(env.AZZUR_MER_USER_MAP),
     userMapById: {},
     defaultUserIds: {},
-    defaultUserId: /^\d+$/.test((env.AZZUR_MER_ID_USER ?? "").trim()) ? (env.AZZUR_MER_ID_USER ?? "").trim() : null,
+    // Only "0" is honoured: one user id cannot be valid in both AZZUR spaces (see resolveAzzurUserId).
+    defaultUserId: (env.AZZUR_MER_ID_USER ?? "").trim() === "0" ? "0" : null,
     timeoutMs: positiveInt(env.AZZUR_MER_TIMEOUT_MS, 5000),
     maxAgeHours: positiveInt(env.AZZUR_MER_MAX_AGE_HOURS, 48),
     onlyAnswered: isTrue(env.AZZUR_MER_ONLY_ANSWERED),
@@ -282,30 +284,46 @@ export function templateValues(event: AzzurCallEvent, config: AzzurConfig): Reco
   };
 }
 
-export type AzzurUserIdSource = "conseiller" | "defaut-espace" | "defaut-general" | null;
+export type AzzurUserIdSource = "conseiller" | "defaut-espace" | "aucun";
+
+/** id_user that files a fiche under nobody: AZZUR's documented value for "no user given". */
+export const AZZUR_NO_USER = "0";
 
 /**
- * The AZZUR id_user a call is filed under, and where it comes from:
- *   1. the id entered for the adviser who took the call (/admin/azzur, or AZZUR_MER_USER_MAP);
- *   2. otherwise the default id of the space the call goes to (SANTÉ ALM / SANTÉ CPA…);
- *   3. otherwise AZZUR_MER_ID_USER;
- *   4. otherwise nothing: id_user is left out and AZZUR applies its own default user.
+ * The AZZUR id_user a call is filed under, and why. ALWAYS a value: AZZUR files a fiche that
+ * comes WITHOUT id_user under the default user of its back office — one individual adviser
+ * (Manuel MORA on the CPA space), who then received every fiche nobody could attribute. So:
+ *   1. the Id of the adviser who took the call — only if that adviser's team is in the SAME
+ *      space (ALM / CPA) as the link: each space numbers its users on its own (47 is Frédéric
+ *      BAUMANN on ALM and Adam PEREZ on CPA), so an Id is never sent to the other space, and an
+ *      adviser without an ALM/CPA team cannot be placed safely;
+ *   2. otherwise the default id_user of that space, set on /admin/azzur;
+ *   3. otherwise AZZUR_MER_ID_USER, but only "0": a single number cannot be right for both spaces;
+ *   4. otherwise "0": no individual attribution, never AZZUR's default adviser.
  */
 export function resolveAzzurUserId(
   event: Pick<AzzurCallEvent, "conseiller" | "teamName" | "lineLabel">,
   config: Pick<AzzurConfig, "userMapById" | "userMap" | "defaultUserIds" | "defaultUserId">
-): { id: string | null; source: AzzurUserIdSource } {
+): { id: string; source: AzzurUserIdSource; why: string } {
   const digits = (v: string | undefined | null) => (v && /^\d+$/.test(v.trim()) ? v.trim() : undefined);
+  const key = routeKeyFor(event.teamName ?? null, event.lineLabel ?? null);
+  const space = key ? (key.endsWith("_ALM") ? "ALM" : "CPA") : null;
+  const adviserSpace = entityOfTeamName(event.teamName);
   const mapped = event.conseiller
     ? digits(event.conseiller.id ? config.userMapById[event.conseiller.id] : undefined) ??
       digits(config.userMap[event.conseiller.email.trim().toLowerCase()])
     : undefined;
-  if (mapped) return { id: mapped, source: "conseiller" };
-  const key = routeKeyFor(event.teamName ?? null, event.lineLabel ?? null);
+
+  let why: string;
+  if (!event.conseiller) why = "appel sans conseiller";
+  else if (!mapped) why = "conseiller sans Id AZZUR";
+  else if (!adviserSpace) why = "conseiller sans équipe ALM/CPA : son Id ne peut pas être rattaché à un espace";
+  else if (adviserSpace !== space) why = `Id du conseiller valable dans l'espace ${adviserSpace}, pas ${space ?? "inconnu"}`;
+  else return { id: mapped, source: "conseiller", why: "Id du conseiller qui a pris l'appel" };
+
   const spaceDefault = key ? digits(config.defaultUserIds?.[key]) : undefined;
-  if (spaceDefault) return { id: spaceDefault, source: "defaut-espace" };
-  if (config.defaultUserId !== null && config.defaultUserId !== undefined) return { id: config.defaultUserId, source: "defaut-general" };
-  return { id: null, source: null };
+  if (spaceDefault) return { id: spaceDefault, source: "defaut-espace", why: `${why} : id_user par défaut de l'espace` };
+  return { id: AZZUR_NO_USER, source: "aucun", why: `${why} : id_user=0, fiche non attribuée` };
 }
 
 export function buildAzzurPayload(event: AzzurCallEvent, config: AzzurConfig): Record<string, string> {
@@ -332,9 +350,9 @@ export function buildAzzurPayload(event: AzzurCallEvent, config: AzzurConfig): R
   put("date", formatParisDate(event.startedAt));
   if (event.externalId) put("num_devis_initial", clip(event.externalId, 24));
 
-  // The adviser, as AZZUR knows them: its own user id, never ours (see resolveAzzurUserId).
-  const { id: userId } = resolveAzzurUserId(event, config);
-  if (userId !== null) put("id_user", userId);
+  // The adviser, as AZZUR knows them: its own user id, never ours — and always sent, "0" when
+  // nobody is identified, so AZZUR never falls back to its own default adviser.
+  put("id_user", resolveAzzurUserId(event, config).id);
 
   // Only meaningful if AZZUR documents them (off by default).
   put("provenance", config.provenance);

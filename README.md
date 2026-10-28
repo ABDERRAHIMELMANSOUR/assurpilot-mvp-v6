@@ -407,15 +407,22 @@ conseillers (équipe, lien) et permet de saisir une fois l'id AZZUR de chacun (s
 AZZUR. Un conseiller sans équipe ALM/CPA Auto/Santé est signalé : ses appels ne peuvent aller dans
 aucun CRM.
 
-`id_user` envoyé dans l'URL GET de chaque fiche Santé (`…&ws=mer&id_prov=…&cle_ws=…&tel=…&id_user=147`),
-dans cet ordre (`resolveAzzurUserId`, `src/lib/azzur.ts`) :
+`id_user` est **toujours** envoyé dans l'URL GET de chaque fiche Santé
+(`…&ws=mer&id_prov=…&cle_ws=…&tel=…&id_user=147`), dans cet ordre (`resolveAzzurUserId`, `src/lib/azzur.ts`) :
 
-1. l'Id AZZUR du **conseiller qui a pris l'appel** (premier conseiller du numéro, cf. la vérification) ;
+1. l'Id AZZUR du **conseiller qui a pris l'appel** (premier conseiller du numéro, cf. la vérification),
+   **seulement si son équipe est dans le même espace (ALM / CPA) que le lien** : ALM et CPA numérotent
+   leurs utilisateurs séparément (47 = Frédéric BAUMANN chez ALM, Adam PEREZ chez CPA), un Id n'est
+   donc jamais envoyé dans l'autre espace, et un conseiller sans équipe ALM/CPA n'est pas attribué ;
 2. sinon l'**id_user par défaut de l'espace** de destination (SANTÉ ALM, SANTÉ CPA), saisi dans
-   « id_user par défaut, par espace AZZUR » (clés `setting:defaultUserId:<lien>`). Un par espace :
-   ALM et CPA numérotent leurs utilisateurs séparément, un Id de l'un ne vaut rien dans l'autre ;
-3. sinon `AZZUR_MER_ID_USER` (environnement) ;
-4. sinon pas d'`id_user` : AZZUR applique son utilisateur par défaut.
+   « id_user par défaut, par espace AZZUR » (clés `setting:defaultUserId:<lien>`) ;
+3. sinon **`id_user=0`** : fiche attribuée à personne (valeur documentée par AZZUR pour « aucun
+   utilisateur »).
+
+Ne **jamais** omettre `id_user` : sans lui, AZZUR range la fiche chez l'utilisateur par défaut de son
+back-office, un conseiller précis (Manuel MORA sur l'espace CPA), qui recevait alors toutes les fiches
+non attribuées. `AZZUR_MER_ID_USER` n'est plus pris en compte que s'il vaut `0` : un même numéro ne
+peut pas être juste dans les deux espaces.
 
 Le tableau affiche, pour chaque conseiller, l'`id_user` qui partira et sa provenance.
 
@@ -482,8 +489,7 @@ variables GET »), paramètres encodés par `URLSearchParams` :
 **Conseiller** : AZZUR attend *son* identifiant d'utilisateur, que nous n'avons pas.
 `AZZUR_MER_USER_MAP` (JSON e-mail du conseiller → `id_user` AZZUR) range la fiche dans son
 espace ; les Id saisis ou importés sur `/admin/azzur` priment, puis l'id_user par défaut de
-l'espace, puis `AZZUR_MER_ID_USER` (`0` = personne, dispatch board) ; sans rien, AZZUR applique son
-utilisateur par défaut (ordre complet ci-dessus). `provenance`, `conseiller` et
+l'espace, sinon `id_user=0` (personne) — jamais l'utilisateur par défaut d'AZZUR (ordre complet ci-dessus). `provenance`, `conseiller` et
 `conseiller_nom` ne sont **pas** des variables AZZUR : désactivés par défaut.
 
 **Données imposées par AZZUR** : `nom`, `date_naissance` et `cp` sont obligatoires (et
