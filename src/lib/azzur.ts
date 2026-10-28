@@ -452,6 +452,16 @@ export type PushResult = {
   at: string;
   /** The link used (AUTO_ALM …), or "non classé" when the adviser's team could not be placed. */
   route?: string;
+  /** Caller's number as sent (national form). */
+  number?: string;
+  /** Adviser who took the call, as known to Assurpilot. */
+  adviserId?: string | null;
+  adviserName?: string | null;
+  /** id_user put in the MER request (AZZUR links only) and why that one. */
+  idUser?: string | null;
+  idUserWhy?: string;
+  /** AZZUR's answer: the new fiche's id, or the EXISTING fiche's id on "DOUBLON:<id>". */
+  azzurFicheId?: string | null;
 };
 
 /** Last results seen by THIS server instance, for the admin status endpoint. */
@@ -486,12 +496,20 @@ export async function pushCallToAzzur(
   // link actually used once it is known (each team has its own cle_ws).
   const secrets: Array<string | null> = [azzurSecret(config)];
   let routeName: string | undefined;
+  let idUser: { id: string; why: string } | null = null;
   const finish = (r: Omit<PushResult, "reference" | "at">): PushResult => {
     // The detail can be AZZUR's documentation page, which contains the key: it is
     // scrubbed BEFORE it is stored or shown, not only before it is logged.
+    const detail = redactSecrets(r.detail, secrets);
     const result: PushResult = {
       reference: event.reference, at: new Date().toISOString(), route: routeName, ...r,
-      detail: redactSecrets(r.detail, secrets),
+      detail,
+      number: normalizePhone(event.callerNumber),
+      adviserId: event.conseiller?.id ?? null,
+      adviserName: event.conseiller ? `${event.conseiller.prenom} ${event.conseiller.nom}`.trim() : null,
+      idUser: idUser?.id ?? null,
+      idUserWhy: idUser?.why,
+      azzurFicheId: detail.match(/fiche créée, id (\d+)/)?.[1] ?? detail.match(/doublon\s*:\s*(\d+)/i)?.[1] ?? null,
     };
     remember(result);
     const line = `[azzur] ${result.outcome} ref=${event.reference}${routeName ? ` route=${routeName}` : ""} tel=${maskForLog(event.callerNumber)}` +
@@ -534,6 +552,8 @@ export async function pushCallToAzzur(
       url = fillTemplateUrl(endpoint.template!, templateValues(event, config));
       method = "GET";
     } else {
+    // Recorded with the result, so every fiche says which AZZUR user it was sent for.
+    idUser = resolveAzzurUserId(event, config);
     // ws=mer selects the mise-en-relation service; the documentation lists it as
     // required, so it is always present whatever the configured URL says.
     url.searchParams.set("ws", "mer");
@@ -655,7 +675,14 @@ export function scheduleAzzurPush(events: AzzurCallEvent[]): void {
       } catch (error) {
         console.error(redactSecrets(`[azzur] liens par équipe illisibles, rien n'est envoyé: ${error instanceof Error ? error.message : String(error)}`));
       }
-      await pool(events, 4, (event) => pushCallToAzzur(event, { config, routes }));
+      const sends = await import("@/lib/azzurSendsStore");
+      // A number already filed in AZZUR is not sent again: a second fiche would be a "Doublon
+      // Fiche", which AZZUR files under ITS choice of user, not the adviser's.
+      const already = await sends.alreadySent(events.map((e) => ({ number: normalizePhone(e.callerNumber), route: routeKeyFor(e.teamName, e.lineLabel) })));
+      const fresh = events.filter((e) => !already.has(`${routeKeyFor(e.teamName, e.lineLabel)}|${normalizePhone(e.callerNumber)}`));
+      const results: PushResult[] = [];
+      await pool(fresh, 4, async (event) => { results.push(await pushCallToAzzur(event, { config, routes })); });
+      await sends.recordAzzurSends(results);
     })().catch((error) =>
       console.error(redactSecrets(`[azzur] erreur inattendue: ${error instanceof Error ? error.message : String(error)}`))
     );

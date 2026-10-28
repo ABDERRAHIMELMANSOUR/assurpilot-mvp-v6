@@ -260,33 +260,90 @@ export default function AzzurPage() {
         {doc && <pre className="mt-3 bg-slate-50 border border-slate-100 rounded-xl p-3 text-xs whitespace-pre-wrap break-words max-h-96 overflow-y-auto">{doc.text}</pre>}
       </div>
 
-      <div className="card p-4">
-        <h2 className="text-sm font-semibold text-slate-800 mb-2">Derniers envois (cette instance du serveur)</h2>
-        {status && status.recent.length === 0 ? <p className="text-sm text-slate-400">Aucun envoi enregistré depuis le dernier démarrage. Les logs Vercel (« [azzur] ») font foi.</p>
-          : status && <ResultTable rows={status.recent} />}
-      </div>
+      <SendJournal reloadKey={status} />
+
     </div>
   );
 }
 
-function ResultTable({ rows }: { rows: Result[] }) {
+type SendRow = {
+  id: string; createdAt: string; reference: string; number: string; route: string | null; adviserName: string | null;
+  idUser: string | null; idUserWhy: string | null; outcome: string; azzurFicheId: string | null; detail: string;
+};
+
+const OUTCOME_BADGE: Record<string, { text: string; cls: string }> = {
+  sent: { text: "Fiche créée", cls: "badge-green" },
+  duplicate: { text: "DOUBLON AZZUR", cls: "badge-amber" },
+  failed: { text: "Échec", cls: "badge-red" },
+};
+
+/**
+ * Every fiche actually sent, from the journal (azzur_sends), with the id_user that went in the
+ * request and AZZUR's answer. A "DOUBLON" names the fiche AZZUR already had: AZZUR files the
+ * duplicate under a user of its own choosing, whatever id_user says — the journal shows that the
+ * request named the right adviser.
+ */
+function SendJournal({ reloadKey }: { reloadKey: unknown }) {
+  const toast = useToast();
+  const [rows, setRows] = useState<SendRow[] | null>(null);
+  const [onlyDup, setOnlyDup] = useState(false);
+  const load = useCallback(async () => {
+    try { setRows((await fetchJson<{ rows: SendRow[] }>("/api/admin/azzur/sends?limit=300")).rows); }
+    catch (e) { toast.error(errorMessage(e)); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => { load(); }, [load, reloadKey]);
+  const shown = (rows ?? []).filter((r) => !onlyDup || r.outcome === "duplicate");
   return (
-    <div className="overflow-x-auto mt-2">
-      <table className="w-full" style={{ minWidth: "640px" }}>
-        <thead><tr><th className="table-th">Heure</th><th className="table-th">Lien</th><th className="table-th">Résultat</th><th className="table-th">HTTP</th><th className="table-th">Essais</th><th className="table-th">Réponse AZZUR / détail</th></tr></thead>
-        <tbody className="divide-y divide-slate-100">
-          {rows.map((r, i) => (
-            <tr key={`${r.reference}-${i}`}>
-              <td className="table-td whitespace-nowrap">{new Date(r.at).toLocaleTimeString("fr-FR")}</td>
-              <td className="table-td whitespace-nowrap text-xs">{r.route ?? "—"}</td>
-              <td className="table-td"><span className={`badge ${BADGE[r.outcome]}`}>{r.outcome}</span></td>
-              <td className="table-td">{r.status ?? "—"}</td>
-              <td className="table-td">{r.attempts ?? "—"}</td>
-              <td className="table-td font-mono text-xs break-all"><div className="max-h-72 overflow-y-auto min-w-[260px]">{r.detail}</div></td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="card p-4">
+      <div className="flex flex-wrap items-center gap-2 mb-2">
+        <h2 className="text-sm font-semibold text-slate-800 mr-auto">Journal des envois</h2>
+        <label className="text-xs text-slate-600 flex items-center gap-1">
+          <input type="checkbox" checked={onlyDup} onChange={(e) => setOnlyDup(e.target.checked)} /> Doublons seulement
+        </label>
+        <button className="btn-secondary" onClick={load}>↻ Actualiser</button>
+      </div>
+      <p className="text-xs text-slate-500 mb-2">
+        Chaque fiche envoyée, avec l&apos;<span className="font-mono">id_user</span> mis dans la requête et la réponse d&apos;AZZUR.
+        « DOUBLON » : AZZUR avait déjà une fiche pour ce numéro (son n° est indiqué) ; il crée alors une fiche « Doublon Fiche »
+        qu&apos;il attribue <b>selon ses propres règles de dédoublonnage</b>, quel que soit l&apos;id_user envoyé. Un numéro déjà
+        envoyé n&apos;est plus renvoyé.
+      </p>
+      {!rows ? <p className="text-sm text-slate-400">Chargement…</p> : shown.length === 0 ? (
+        <p className="text-sm text-slate-400">Aucun envoi journalisé pour l&apos;instant (le journal démarre avec cette version).</p>
+      ) : (
+        <div className="overflow-x-auto max-h-[480px] overflow-y-auto">
+          <table className="w-full" style={{ minWidth: "900px" }}>
+            <thead className="bg-slate-50/70 border-b border-slate-100 sticky top-0">
+              <tr>
+                <th className="table-th">Date</th><th className="table-th">Numéro</th><th className="table-th">Lien</th>
+                <th className="table-th">Conseiller (Assurpilot)</th><th className="table-th">id_user envoyé</th><th className="table-th">Réponse AZZUR</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {shown.map((r) => (
+                <tr key={r.id}>
+                  <td className="table-td text-xs whitespace-nowrap">{new Date(r.createdAt).toLocaleString("fr-FR", { timeZone: "Europe/Paris" })}</td>
+                  <td className="table-td font-mono text-xs">{r.number}</td>
+                  <td className="table-td text-xs">{r.route ?? "—"}</td>
+                  <td className="table-td text-xs">{r.adviserName ?? <span className="text-slate-400">aucun</span>}</td>
+                  <td className="table-td text-xs">
+                    <span className="font-mono">{r.idUser ?? "—"}</span>
+                    {r.idUserWhy && <span className="block text-[10px] text-slate-400">{r.idUserWhy}</span>}
+                  </td>
+                  <td className="table-td text-xs">
+                    <span className={`badge ${OUTCOME_BADGE[r.outcome]?.cls ?? "badge-gray"}`} style={{ fontSize: "10px", padding: "1px 7px" }}>
+                      {OUTCOME_BADGE[r.outcome]?.text ?? r.outcome}
+                    </span>
+                    {r.azzurFicheId && <span className="ml-1 font-mono">{r.outcome === "duplicate" ? `fiche existante ${r.azzurFicheId}` : `fiche ${r.azzurFicheId}`}</span>}
+                    {r.outcome === "failed" && <span className="block text-[10px] text-rose-700">{r.detail.slice(0, 200)}</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

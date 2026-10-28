@@ -17,7 +17,8 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { badRequest, handleApiError, readJson, requireRole } from "@/lib/api";
-import { mapPool, pushCallToAzzur } from "@/lib/azzur";
+import { mapPool, pushCallToAzzur, type PushResult } from "@/lib/azzur";
+import { alreadySent, recordAzzurSends } from "@/lib/azzurSendsStore";
 import { loadAzzurRoutes, loadEffectiveConfig } from "@/lib/azzurRoutesStore";
 import { CATEGORY_ORDER, CATEGORY_LABEL, type CategoryId } from "@/lib/azzurReview";
 import { ROUTE_KEYS, resolveEndpoint, type RouteKey } from "@/lib/azzurRouting";
@@ -66,9 +67,23 @@ export async function POST(req: NextRequest) {
       : review.leads.filter((l) => l.category === category);
     const slice = wanted.slice(offset, offset + limit);
     const keptLocal = category === "ALL" ? review.leads.filter((l) => !configured(l.category)).length : 0;
-    const results = await mapPool(slice, 4, (lead) =>
-      pushCallToAzzur(eventForLead(lead), { config, routes, ignoreMaxAge: true }).then((r) => ({ ...r, category: lead.category }))
-    );
+    // A number already filed in AZZUR on this link (journal azzur_sends) is not sent again: AZZUR
+    // would create a "Doublon Fiche" and file it under a user of its own choosing.
+    const already = await alreadySent(slice.map((l) => ({ number: l.number, route: l.category })));
+    const results = await mapPool(slice, 4, async (lead) => {
+      const prior = already.get(`${lead.category}|${lead.number}`);
+      if (prior) {
+        const at = new Date(prior).toLocaleString("fr-FR", { timeZone: "Europe/Paris" });
+        const skipped: PushResult = {
+          reference: eventForLead(lead).reference, at: new Date().toISOString(), route: lead.category, number: lead.number,
+          outcome: "skipped", detail: `déjà envoyé à AZZUR le ${at} : pas de second envoi (il serait classé « Doublon Fiche »)`,
+        };
+        return { ...skipped, category: lead.category };
+      }
+      const r = await pushCallToAzzur(eventForLead(lead), { config, routes, ignoreMaxAge: true });
+      return { ...r, category: lead.category };
+    });
+    await recordAzzurSends(results);
 
     const count = (o: string) => results.filter((r) => r.outcome === o).length;
     const next = offset + slice.length;

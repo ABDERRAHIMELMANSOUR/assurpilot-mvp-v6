@@ -426,6 +426,16 @@ peut pas être juste dans les deux espaces.
 
 Le tableau affiche, pour chaque conseiller, l'`id_user` qui partira et sa provenance.
 
+**Journal des envois** (`azzur_sends`, créée automatiquement, nouvelle table) : chaque fiche envoyée
+est journalisée avec le numéro, le lien, le conseiller, l'`id_user` mis dans la requête (et pourquoi)
+et la réponse d'AZZUR : l'id de la fiche créée, ou `DOUBLON:<id>` = AZZUR avait **déjà** une fiche pour
+ce numéro. Dans ce cas AZZUR crée une fiche « Doublon Fiche » et l'attribue **selon ses propres règles
+de dédoublonnage** (Administration › Provenances › Dédoublonnage), quel que soit l'`id_user` envoyé :
+c'est ce qui a placé chez Manuel MORA (CPA) et Jason FONTENEAU (ALM) des fiches envoyées pour d'autres
+conseillers le 28/10. Un numéro déjà envoyé sur un lien (« Fiche créée » ou « DOUBLON ») dans les
+`AZZUR_MER_DEDUPE_DAYS` jours n'est **plus renvoyé** (import, renvoi manuel ou saisie). Visible sur
+`/admin/azzur`, carte « Journal des envois » (filtre « Doublons seulement ») et `GET /api/admin/azzur/sends`.
+
 **Importer les Id depuis AZZUR** : dans AZZUR, Administration › Utilisateurs, sélectionner les lignes
 du tableau, copier, coller dans « Importer les Id depuis la liste des utilisateurs AZZUR », un espace
 à la fois. Chaque utilisateur AZZUR est rapproché d'un conseiller d'abord par **téléphone (Tél /
