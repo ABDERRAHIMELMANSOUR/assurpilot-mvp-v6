@@ -130,13 +130,16 @@ function positiveInt(value: string | undefined, fallback: number): number {
  * date, postal code 00000) so they can never pass for real data, and the fiche
  * says so in its observation. Override or blank each one with AZZUR_MER_DEFAULTS.
  */
-// nom / prenom may use {telephone} (the caller's number, 0612345678), {conseiller}
-// (who received the call on Assurpilot, or "non attribué"), {ligne} and {date}.
-// By default a fiche reads Nom "APE", Prénom = the caller's number, so the adviser
-// finds it in AZZUR by the number they just spoke to.
+// nom / prenom may use {conseiller} (who received the call on Assurpilot, or
+// "non attribué"), {telephone} (the caller's number), {ligne} and {date}.
+// Default: Nom "Appel Assurpilot", Prénom "reçu par <conseiller>" — the format of the fiches
+// that AZZUR filed under the right advisers (28/10, 13:35). The "APE" / <number> format used
+// after it coincided with AZZUR classing the fiches "Doublon Fiche" and filing them under a
+// user of its own choosing, so it is no longer the default (still possible through
+// AZZUR_MER_DEFAULTS: {"nom":"APE","prenom":"{telephone}"}).
 const DEFAULT_PLACEHOLDERS = {
-  nom: "APE",
-  prenom: "{telephone}",
+  nom: "Appel Assurpilot",
+  prenom: "reçu par {conseiller}",
   date_naissance: "1900-01-01", // AZZUR wants aaaa-mm-jj
   code_postal: "00000",
 };
