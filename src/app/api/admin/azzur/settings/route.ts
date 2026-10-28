@@ -13,7 +13,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { ApiError, badRequest, handleApiError, readJson, requireRole } from "@/lib/api";
-import { isMissingTable, missingTableMessage, loadEffectiveConfig, MIGRATION_HINT, saveAzzurSetting, type SwitchName } from "@/lib/azzurRoutesStore";
+import { isMissingTable, missingTableMessage, loadEffectiveConfig, MIGRATION_HINT, saveAzzurSetting, saveFicheFormat, type SwitchName } from "@/lib/azzurRoutesStore";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,7 +21,20 @@ export const dynamic = "force-dynamic";
 export async function PUT(req: NextRequest) {
   try {
     const user = await requireRole("ADMINISTRATEUR");
-    const body = await readJson<{ autoPush?: unknown; enabled?: unknown }>(req);
+    const body = await readJson<{ autoPush?: unknown; enabled?: unknown; ficheFormat?: unknown }>(req);
+
+    // Name written on the fiche: "conseiller" (Appel Assurpilot / reçu par …) or "ape" (APE / number).
+    if (body.ficheFormat !== undefined) {
+      if (body.ficheFormat !== "ape" && body.ficheFormat !== "conseiller") throw badRequest("ficheFormat doit être \"ape\" ou \"conseiller\"");
+      try {
+        await saveFicheFormat(body.ficheFormat, user.userId);
+      } catch (error) {
+        if (isMissingTable(error)) throw new ApiError(503, missingTableMessage(error));
+        throw error;
+      }
+      const { ficheFormat, config } = await loadEffectiveConfig();
+      return NextResponse.json({ ok: true, ficheFormat, placeholders: config.placeholders });
+    }
 
     const changes: Array<[SwitchName, boolean]> = [];
     for (const name of ["autoPush", "enabled"] as const) {
@@ -29,7 +42,7 @@ export async function PUT(req: NextRequest) {
       if (typeof body[name] !== "boolean") throw badRequest(`${name} doit être true ou false`);
       changes.push([name, body[name] as boolean]);
     }
-    if (changes.length === 0) throw badRequest("Aucun réglage à modifier (autoPush ou enabled)");
+    if (changes.length === 0) throw badRequest("Aucun réglage à modifier (autoPush, enabled ou ficheFormat)");
 
     try {
       for (const [name, value] of changes) await saveAzzurSetting(name, value, user.userId);

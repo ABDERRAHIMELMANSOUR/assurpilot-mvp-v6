@@ -187,20 +187,39 @@ export { isMissingTable };
 export type SwitchName = "enabled" | "autoPush";
 const SETTING_PREFIX = "setting:";
 
+/**
+ * Name written on the AZZUR fiche:
+ *   "conseiller"  Nom "Appel Assurpilot", Prénom "reçu par <conseiller>" (default)
+ *   "ape"         Nom "APE", Prénom = the caller's number
+ * AZZUR's de-duplication compares the fiche's identity (name / first name / birth date), not
+ * the number: with "APE" + a first name made only of digits, every fiche looks like the same
+ * person, AZZUR answers DOUBLON:<one fiche> and files it under a user of its own choosing.
+ * "ape" is therefore only safe once AZZUR de-duplicates on the phone number
+ * (Administration › Provenances › AE › Dédoublonnage).
+ */
+export type FicheFormat = "conseiller" | "ape";
+export const FICHE_FORMAT_PLACEHOLDERS: Record<FicheFormat, { nom: string; prenom: string }> = {
+  conseiller: { nom: "Appel Assurpilot", prenom: "reçu par {conseiller}" },
+  ape: { nom: "APE", prenom: "{telephone}" },
+};
+
 export type AzzurSettings = {
   /** null = never set from the page: the environment decides. */
   enabled: boolean | null;
   autoPush: boolean | null;
+  /** null = never set from the page: AZZUR_MER_DEFAULTS (or the built-in default) decides. */
+  ficheFormat: FicheFormat | null;
   tableAvailable: boolean;
 };
 
 export async function loadAzzurSettings(): Promise<AzzurSettings> {
-  const out: AzzurSettings = { enabled: null, autoPush: null, tableAvailable: true };
+  const out: AzzurSettings = { enabled: null, autoPush: null, ficheFormat: null, tableAvailable: true };
   try {
     const rows = await prisma.azzurRoute.findMany({ where: { key: { startsWith: SETTING_PREFIX } } });
     for (const row of rows) {
       const name = row.key.slice(SETTING_PREFIX.length);
       if (name === "enabled" || name === "autoPush") out[name] = row.url === "true";
+      if (name === "ficheFormat" && (row.url === "ape" || row.url === "conseiller")) out.ficheFormat = row.url;
     }
   } catch (error) {
     if (!isMissingTable(error)) throw error;
@@ -216,6 +235,16 @@ export async function saveAzzurSetting(name: SwitchName, value: boolean, userId:
     where: { key },
     create: { key, url, updatedById: userId },
     update: { url, updatedById: userId },
+  });
+}
+
+/** Saves the fiche name format chosen on /admin/azzur (applies to the next send). */
+export async function saveFicheFormat(format: FicheFormat, userId: string | null): Promise<void> {
+  const key = `${SETTING_PREFIX}ficheFormat`;
+  await prisma.azzurRoute.upsert({
+    where: { key },
+    create: { key, url: format, updatedById: userId },
+    update: { url: format, updatedById: userId },
   });
 }
 
@@ -284,6 +313,8 @@ export async function saveAzzurDefaultUserId(routeKey: RouteKey, azzurId: string
 export type EffectiveConfig = {
   config: AzzurConfig;
   tableAvailable: boolean;
+  /** Fiche name format in force. */
+  ficheFormat: FicheFormat;
   /** Where each switch's value comes from: the page ("base") or the environment ("env"). */
   source: { enabled: "base" | "env"; autoPush: "base" | "env" };
 };
@@ -295,7 +326,7 @@ export type EffectiveConfig = {
  */
 export async function loadEffectiveConfig(env: Record<string, string | undefined> = process.env): Promise<EffectiveConfig> {
   const base = readAzzurConfig(env);
-  let settings: AzzurSettings = { enabled: null, autoPush: null, tableAvailable: false };
+  let settings: AzzurSettings = { enabled: null, autoPush: null, ficheFormat: null, tableAvailable: false };
   try {
     settings = await loadAzzurSettings();
   } catch {
@@ -311,7 +342,12 @@ export async function loadEffectiveConfig(env: Record<string, string | undefined
   const enabled = settings.enabled ?? base.enabled;
   const autoPush = settings.autoPush ?? base.autoPush;
   return {
-    config: { ...base, enabled, ready: enabled, autoPush, userMapById, defaultUserIds },
+    config: {
+      ...base, enabled, ready: enabled, autoPush, userMapById, defaultUserIds,
+      // The format chosen on the page wins over AZZUR_MER_DEFAULTS for nom / prénom.
+      placeholders: settings.ficheFormat ? { ...base.placeholders, ...FICHE_FORMAT_PLACEHOLDERS[settings.ficheFormat] } : base.placeholders,
+    },
+    ficheFormat: settings.ficheFormat ?? (base.placeholders.nom === "APE" ? "ape" : "conseiller"),
     tableAvailable: settings.tableAvailable,
     source: { enabled: settings.enabled === null ? "env" : "base", autoPush: settings.autoPush === null ? "env" : "base" },
   };

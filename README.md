@@ -436,6 +436,18 @@ conseillers le 28/10. Un numéro déjà envoyé sur un lien (« Fiche créée »
 `AZZUR_MER_DEDUPE_DAYS` jours n'est **plus renvoyé** (import, renvoi manuel ou saisie). Visible sur
 `/admin/azzur`, carte « Journal des envois » (filtre « Doublons seulement ») et `GET /api/admin/azzur/sends`.
 
+**Nom de la fiche et faux doublons.** La documentation MER n'a **aucun paramètre** pour forcer ou
+désactiver le dédoublonnage d'AZZUR (paramètres généraux : `ws`, `id_prov`, `cle_ws`, `retour_ws*`,
+`id_user`, `id_agence`, `type`, `id_etat`) : il se règle dans AZZUR (Administration › Provenances › AE ›
+Dédoublonnage). Constat du 28/10 (journal) : en « APE » + numéro, **trois numéros différents**
+(0618830314, 0687969631, 0678178404) envoyés avec les bons `id_user` (31, 29, 47) ont reçu la même
+réponse `DOUBLON:172797` : AZZUR compare l'identité de la fiche (nom, prénom réduit à des chiffres,
+date de naissance de remplacement), pas le numéro, et attribue le doublon à un autre utilisateur.
+Le format se choisit sur `/admin/azzur` (« Nom de la fiche AZZUR », effet immédiat,
+`setting:ficheFormat`) : « Appel Assurpilot / reçu par <conseiller> » (par défaut) ou « APE / <numéro> »,
+à n'activer qu'une fois le dédoublonnage de la provenance AE réglé sur le téléphone. Le journal signale
+chaque **faux doublon** (même fiche AZZUR donnée pour plusieurs numéros).
+
 **Importer les Id depuis AZZUR** : dans AZZUR, Administration › Utilisateurs, sélectionner les lignes
 du tableau, copier, coller dans « Importer les Id depuis la liste des utilisateurs AZZUR », un espace
 à la fois. Chaque utilisateur AZZUR est rapproché d'un conseiller d'abord par **téléphone (Tél /

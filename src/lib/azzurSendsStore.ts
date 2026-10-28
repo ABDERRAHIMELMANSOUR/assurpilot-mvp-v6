@@ -44,6 +44,13 @@ export type AzzurSendRow = {
   outcome: string;
   azzurFicheId: string | null;
   detail: string;
+  /**
+   * A DOUBLON naming a fiche that AZZUR also gave as the "duplicate" of OTHER numbers: not the
+   * same caller, a false duplicate from AZZUR's de-duplication on the fiche's name.
+   */
+  falseDuplicate: boolean;
+  /** How many different numbers AZZUR matched to that same fiche. */
+  sharedWith: number;
 };
 
 let ensured = false;
@@ -104,7 +111,18 @@ export async function loadAzzurSends(limit = 200): Promise<{ rows: AzzurSendRow[
     const rows = await prisma.$queryRaw<Array<Omit<AzzurSendRow, "id" | "createdAt"> & { id: bigint; createdAt: Date }>>`
       SELECT "id", "createdAt", "reference", "number", "route", "adviserName", "idUser", "idUserWhy", "outcome", "azzurFicheId", "detail"
       FROM public.azzur_sends ORDER BY "createdAt" DESC, "id" DESC LIMIT ${Math.min(Math.max(limit, 1), 1000)}`;
-    return { rows: rows.map((r) => ({ ...r, id: String(r.id), createdAt: r.createdAt.toISOString() })), available: true };
+    // Numbers per AZZUR fiche among the DOUBLON answers, over the whole journal.
+    const shared = await prisma.$queryRaw<Array<{ fiche: string; numbers: bigint }>>`
+      SELECT "azzurFicheId" AS fiche, COUNT(DISTINCT "number") AS numbers FROM public.azzur_sends
+      WHERE "outcome" = 'duplicate' AND "azzurFicheId" IS NOT NULL GROUP BY "azzurFicheId"`;
+    const per = new Map(shared.map((r) => [r.fiche, Number(r.numbers)]));
+    return {
+      rows: rows.map((r) => {
+        const n = r.outcome === "duplicate" && r.azzurFicheId ? per.get(r.azzurFicheId) ?? 1 : 0;
+        return { ...r, id: String(r.id), createdAt: r.createdAt.toISOString(), falseDuplicate: n > 1, sharedWith: n };
+      }),
+      available: true,
+    };
   } catch (error) {
     console.error("[azzur] journal des envois illisible:", error instanceof Error ? error.message : error);
     return { rows: [], available: false };

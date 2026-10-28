@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     await requireRole("ADMINISTRATEUR");
-    const { config, source } = await loadEffectiveConfig();
+    const { config, source, ficheFormat } = await loadEffectiveConfig();
     const tableProblem = await azzurRoutesTableProblem().catch(() => null);
     const tableAvailable = tableProblem === null;
     const { routes } = await loadAzzurRoutes().catch(() => ({ routes: {} }));
@@ -39,6 +39,7 @@ export async function GET() {
       fields: config.fields,
       provenance: config.provenance,
       placeholders: config.placeholders,
+      ficheFormat,
       mappedAdvisers: Object.keys(config.userMap).length,
       defaultUserId: config.defaultUserId,
       timeoutMs: config.timeoutMs,

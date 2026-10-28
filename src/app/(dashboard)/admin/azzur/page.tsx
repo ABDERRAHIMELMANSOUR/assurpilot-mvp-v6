@@ -13,6 +13,7 @@ type Status = {
   referenceHost: string | null; autoPush: boolean; linksConfigured: number;
   switchSource: { enabled: "base" | "env"; autoPush: "base" | "env" }; tableAvailable: boolean; migrationHint: string | null;
   method: string; format: string; fields: Record<string, string>; provenance: string; placeholders: Record<string, string>; mappedAdvisers: number; defaultUserId: string | null;
+  ficheFormat: "conseiller" | "ape";
   timeoutMs: number; maxAgeHours: number; onlyAnswered: boolean; recent: Result[];
 };
 type RouteRow = { key: string; label: string; configured: boolean; kind: "mer" | "template" | null; origin: "base" | "env" | null; target: string | null; why: string | null };
@@ -47,6 +48,7 @@ function Switch({ label, hint, on, busy, onChange }: {
 export default function AzzurPage() {
   const toast = useToast();
   const [switching, setSwitching] = useState<"" | "autoPush" | "enabled">("");
+  const [formatBusy, setFormatBusy] = useState(false);
   const [status, setStatus] = useState<Status | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -116,6 +118,24 @@ export default function AzzurPage() {
     } finally { setSwitching(""); }
   }
 
+  async function changeFormat(next: "conseiller" | "ape") {
+    if (!status || status.ficheFormat === next || formatBusy) return;
+    if (next === "ape" && !window.confirm(
+      "Passer au format « APE » + numéro ?\n\nN'activez ce format QUE si le dédoublonnage de la provenance AE dans AZZUR se fait sur le " +
+      "téléphone (Administration › Provenances › AE › Dédoublonnage). Sinon AZZUR considère toutes les fiches « APE » comme la même " +
+      "personne : il répond DOUBLON et les attribue à un autre conseiller que celui envoyé.")) return;
+    setFormatBusy(true);
+    try {
+      await fetchJson("/api/admin/azzur/settings", {
+        method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ficheFormat: next }),
+      });
+      await loadStatus();
+      toast.success(next === "ape" ? "Fiches envoyées en « APE » + numéro." : "Fiches envoyées en « Appel Assurpilot » / « reçu par <conseiller> ».");
+    } catch (e) {
+      toast.error(errorMessage(e, "Réglage impossible."));
+    } finally { setFormatBusy(false); }
+  }
+
   async function loadDoc() {
     setBusy(true); setError("");
     try { setDoc(await fetchJson("/api/admin/azzur/doc")); }
@@ -152,6 +172,26 @@ export default function AzzurPage() {
                 ? "Les envois sont possibles (manuels depuis la vérification, et automatiques si activés). Une catégorie sans lien n'envoie jamais rien."
                 : "Aucun envoi, même manuel. L'analyse des appels reste possible."}
             />
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-sm font-medium text-slate-800">Nom de la fiche AZZUR</p>
+                <p className="text-xs text-slate-500 mt-0.5 max-w-xl">
+                  AZZUR dédoublonne sur l&apos;identité de la fiche (nom, prénom, date de naissance), pas sur le numéro. En « APE » + numéro,
+                  toutes les fiches ont la même identité : AZZUR répond DOUBLON et les attribue à un autre conseiller que celui envoyé
+                  (voir « Faux doublon » dans le journal). N&apos;utilisez « APE » qu&apos;une fois le dédoublonnage de la provenance AE réglé
+                  sur le téléphone dans AZZUR.
+                </p>
+              </div>
+              <div className="inline-flex rounded-xl border border-slate-200 bg-white p-0.5 text-xs flex-shrink-0" role="radiogroup" aria-label="Nom de la fiche AZZUR">
+                {([["conseiller", "Appel Assurpilot / reçu par <conseiller>"], ["ape", "APE / <numéro>"]] as const).map(([v, label]) => (
+                  <button key={v} role="radio" aria-checked={status.ficheFormat === v} disabled={formatBusy}
+                    onClick={() => changeFormat(v)}
+                    className={`px-2.5 py-1 rounded-lg whitespace-nowrap ${status.ficheFormat === v ? "bg-brand-500 text-white" : "text-slate-600 hover:bg-slate-50"}`}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
             <p className="text-[11px] text-slate-400">
               Appliqué immédiatement, sans redéploiement.
               {status.switchSource.autoPush === "env" || status.switchSource.enabled === "env"
@@ -269,6 +309,7 @@ export default function AzzurPage() {
 type SendRow = {
   id: string; createdAt: string; reference: string; number: string; route: string | null; adviserName: string | null;
   idUser: string | null; idUserWhy: string | null; outcome: string; azzurFicheId: string | null; detail: string;
+  falseDuplicate: boolean; sharedWith: number;
 };
 
 const OUTCOME_BADGE: Record<string, { text: string; cls: string }> = {
@@ -294,6 +335,7 @@ function SendJournal({ reloadKey }: { reloadKey: unknown }) {
   }, []);
   useEffect(() => { load(); }, [load, reloadKey]);
   const shown = (rows ?? []).filter((r) => !onlyDup || r.outcome === "duplicate");
+  const falseDups = (rows ?? []).filter((r) => r.falseDuplicate);
   return (
     <div className="card p-4">
       <div className="flex flex-wrap items-center gap-2 mb-2">
@@ -309,6 +351,15 @@ function SendJournal({ reloadKey }: { reloadKey: unknown }) {
         qu&apos;il attribue <b>selon ses propres règles de dédoublonnage</b>, quel que soit l&apos;id_user envoyé. Un numéro déjà
         envoyé n&apos;est plus renvoyé.
       </p>
+      {falseDups.length > 0 && (
+        <div className="mb-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">
+          <b>{falseDups.length} faux doublon(s)</b> : AZZUR a répondu « DOUBLON » avec la même fiche pour des numéros différents
+          (fiche{[...new Set(falseDups.map((r) => r.azzurFicheId))].length > 1 ? "s" : ""} {[...new Set(falseDups.map((r) => r.azzurFicheId))].join(", ")}).
+          Ce ne sont pas les mêmes appelants : AZZUR compare le nom de la fiche, pas le numéro, et attribue ces fiches à un autre
+          conseiller que l&apos;id_user envoyé. Repassez au format « Appel Assurpilot / reçu par &lt;conseiller&gt; » ou faites régler le
+          dédoublonnage de la provenance AE sur le téléphone dans AZZUR, puis réattribuez ces fiches dans AZZUR.
+        </div>
+      )}
       {!rows ? <p className="text-sm text-slate-400">Chargement…</p> : shown.length === 0 ? (
         <p className="text-sm text-slate-400">Aucun envoi journalisé pour l&apos;instant (le journal démarre avec cette version).</p>
       ) : (
@@ -336,6 +387,11 @@ function SendJournal({ reloadKey }: { reloadKey: unknown }) {
                       {OUTCOME_BADGE[r.outcome]?.text ?? r.outcome}
                     </span>
                     {r.azzurFicheId && <span className="ml-1 font-mono">{r.outcome === "duplicate" ? `fiche existante ${r.azzurFicheId}` : `fiche ${r.azzurFicheId}`}</span>}
+                    {r.falseDuplicate && (
+                      <span className="block text-[10px] font-semibold text-rose-700">
+                        Faux doublon : AZZUR a donné cette fiche pour {r.sharedWith} numéros différents
+                      </span>
+                    )}
                     {r.outcome === "failed" && <span className="block text-[10px] text-rose-700">{r.detail.slice(0, 200)}</span>}
                   </td>
                 </tr>
