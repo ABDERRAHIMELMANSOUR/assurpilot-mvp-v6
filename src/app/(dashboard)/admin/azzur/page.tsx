@@ -294,33 +294,72 @@ function ResultTable({ rows }: { rows: Result[] }) {
 type AdviserRow = {
   id: string; name: string; role: string; line: string; team: string | null;
   category: string | null; linkKind: "mer" | "template" | null; azzurId: string;
+  /** The id_user a fiche of this adviser carries, and why. */
+  sentId: string | null; sentSource: "conseiller" | "defaut-espace" | "defaut-general" | null;
 };
+type DefaultRow = { key: string; label: string; linkKind: "mer" | "template" | null; azzurId: string };
+type UsersInfo = { advisers: AdviserRow[]; defaults: DefaultRow[]; envDefault: string | null };
+
+type Proposal = {
+  azzur: { azzurId: string; nom: string; prenom: string; phones: string[]; email: string; etat: string; role: string };
+  status: "match" | "deja" | "ambigu" | "a-verifier" | "autre-espace" | "aucun" | "desactive";
+  reason: string | null;
+  adviser: { id: string; name: string; team: string | null; currentAzzurId: string } | null;
+  selected: boolean;
+  note: string;
+};
+type ImportPreview = { space: "ALM" | "CPA" | null; rows: number; proposals: Proposal[]; unmatchedAdvisers: Array<{ id: string; name: string; team: string | null }> };
+
+const STATUS_LABEL: Record<Proposal["status"], { text: string; cls: string }> = {
+  match: { text: "Trouvé", cls: "badge-green" },
+  deja: { text: "Déjà enregistré", cls: "badge-gray" },
+  ambigu: { text: "Ambigu", cls: "badge-amber" },
+  "a-verifier": { text: "À vérifier", cls: "badge-amber" },
+  "autre-espace": { text: "Autre espace", cls: "badge-amber" },
+  aucun: { text: "Pas dans Assurpilot", cls: "badge-gray" },
+  desactive: { text: "Désactivé AZZUR", cls: "badge-gray" },
+};
+const REASON_LABEL: Record<string, string> = { email: "même email", nom: "même nom", ligne: "même ligne + nom", "ligne-seule": "même ligne seulement" };
+
+function sentLabel(r: AdviserRow, defaults: DefaultRow[]): string {
+  if (r.sentSource === "conseiller") return `id_user=${r.sentId} (le sien)`;
+  if (r.sentSource === "defaut-espace") {
+    const d = defaults.find((x) => x.label === r.category);
+    return `id_user=${r.sentId} (défaut ${d?.label ?? "de l'espace"})`;
+  }
+  if (r.sentSource === "defaut-general") return `id_user=${r.sentId} (défaut AZZUR_MER_ID_USER)`;
+  return "sans id_user : utilisateur par défaut d'AZZUR";
+}
 
 /**
  * Advisers as the CRMs must know them. AZZUR (MER) only files a fiche under an adviser through
- * its own numeric user id (id_user), so each adviser of an AZZUR link needs that number once;
- * supplier scripts (ProAssur…) receive the name as it is in Assurpilot. Names are never edited here.
+ * its own numeric user id (id_user), so each adviser of an AZZUR link needs that number once —
+ * typed in, or imported from AZZUR's user list — with a default per space for the others.
+ * Supplier scripts (ProAssur…) receive the name as it is in Assurpilot. Names are never edited here.
  */
 function AdvisersCrm({ reloadKey }: { reloadKey: unknown }) {
   const toast = useToast();
-  const [rows, setRows] = useState<AdviserRow[] | null>(null);
+  const [info, setInfo] = useState<UsersInfo | null>(null);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [defaultDrafts, setDefaultDrafts] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState("");
 
   const load = useCallback(async () => {
-    try { setRows((await fetchJson<{ advisers: AdviserRow[] }>("/api/admin/azzur/users")).advisers); }
+    try { setInfo(await fetchJson<UsersInfo>("/api/admin/azzur/users")); }
     catch (e) { toast.error(errorMessage(e)); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   useEffect(() => { load(); }, [load, reloadKey]);
 
+  async function put(body: unknown) {
+    await fetchJson("/api/admin/azzur/users", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  }
+
   async function save(row: AdviserRow) {
     const value = (drafts[row.id] ?? row.azzurId).trim();
     setSaving(row.id);
     try {
-      await fetchJson("/api/admin/azzur/users", {
-        method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: row.id, azzurId: value }),
-      });
+      await put({ userId: row.id, azzurId: value });
       setDrafts((d) => { const n = { ...d }; delete n[row.id]; return n; });
       await load();
       toast.success(value ? `${row.name} : id AZZUR ${value} enregistré.` : `${row.name} : id AZZUR effacé.`);
@@ -328,22 +367,68 @@ function AdvisersCrm({ reloadKey }: { reloadKey: unknown }) {
     finally { setSaving(""); }
   }
 
+  async function saveDefault(row: DefaultRow) {
+    const value = (defaultDrafts[row.key] ?? row.azzurId).trim();
+    setSaving(`default:${row.key}`);
+    try {
+      await put({ defaultFor: row.key, azzurId: value });
+      setDefaultDrafts((d) => { const n = { ...d }; delete n[row.key]; return n; });
+      await load();
+      toast.success(value ? `${row.label} : id_user par défaut ${value} enregistré.` : `${row.label} : id_user par défaut effacé.`);
+    } catch (e) { toast.error(errorMessage(e, "Enregistrement impossible.")); }
+    finally { setSaving(""); }
+  }
+
+  const rows = info?.advisers ?? null;
+  const defaults = info?.defaults ?? [];
   const needsId = (r: AdviserRow) => r.linkKind === "mer";
   const missing = (rows ?? []).filter((r) => needsId(r) && !r.azzurId);
   const noTeam = (rows ?? []).filter((r) => !r.category);
+  // Spaces that can take an id_user: AZZUR links, and the two Santé spaces even before their link is set.
+  const defaultRows = defaults.filter((d) => d.linkKind === "mer" || (d.linkKind === null && d.key.startsWith("SANTE")));
 
   return (
     <div className="card p-4 mb-5">
       <h2 className="text-sm font-semibold text-slate-800 mb-1">Conseillers dans les CRM</h2>
       <p className="text-xs text-slate-500 mb-3">
         Les noms restent exactement ceux d&apos;Assurpilot. <b>ProAssur</b> (script fournisseur) reçoit le nom tel quel
-        (<span className="font-mono">$conseiller</span>). <b>AZZUR</b> ne reconnaît pas les noms : il range la fiche chez le conseiller
-        grâce à <b>son numéro d&apos;utilisateur AZZUR</b> (id_user), à saisir une fois ci-dessous. Sans numéro, la fiche arrive chez
-        l&apos;utilisateur par défaut d&apos;AZZUR.
+        (<span className="font-mono">$conseiller</span>). <b>AZZUR</b> ne reconnaît pas les noms : chaque fiche Santé part avec{" "}
+        <span className="font-mono">&amp;id_user=</span><b>l&apos;Id AZZUR du conseiller qui a pris l&apos;appel</b> (colonne « Id » de
+        Administration › Utilisateurs dans AZZUR). Sans Id pour ce conseiller, c&apos;est l&apos;<b>id_user par défaut de l&apos;espace</b>{" "}
+        ci-dessous qui est envoyé ; sans défaut non plus, AZZUR applique son propre utilisateur par défaut.
       </p>
+
+      {defaultRows.length > 0 && (
+        <div className="mb-4 rounded-xl border border-slate-200 p-3">
+          <p className="text-xs font-semibold text-slate-700 mb-1">id_user par défaut, par espace AZZUR</p>
+          <p className="text-[11px] text-slate-500 mb-2">
+            Chaque espace AZZUR (ALM, CPA) numérote ses utilisateurs à part : un Id d&apos;un espace ne vaut rien dans l&apos;autre.
+            {info?.envDefault ? <> Défaut général de l&apos;environnement (AZZUR_MER_ID_USER) : <span className="font-mono">{info.envDefault}</span>.</> : null}
+          </p>
+          <div className="flex flex-wrap gap-4">
+            {defaultRows.map((d) => (
+              <label key={d.key} className="flex items-center gap-2 text-xs">
+                <span className="whitespace-nowrap font-medium">{d.label}</span>
+                <input
+                  inputMode="numeric" value={defaultDrafts[d.key] ?? d.azzurId} placeholder="ex. 2"
+                  aria-label={`id_user par défaut ${d.label}`}
+                  onChange={(e) => setDefaultDrafts((x) => ({ ...x, [d.key]: e.target.value }))}
+                  className="w-20 px-2 py-1 border border-slate-200 rounded-lg text-xs font-mono"
+                />
+                <button className="btn-secondary" disabled={saving === `default:${d.key}` || (defaultDrafts[d.key] ?? d.azzurId) === d.azzurId}
+                  onClick={() => saveDefault(d)}>{saving === `default:${d.key}` ? "…" : "Enregistrer"}</button>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <AzzurIdImport onSaved={load} />
+
       {missing.length > 0 && (
         <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-          {missing.length} conseiller(s) d&apos;un lien AZZUR sans id AZZUR : leurs fiches n&apos;arriveront pas dans leur espace.
+          {missing.length} conseiller(s) d&apos;un lien AZZUR sans Id AZZUR propre : leurs fiches partent avec l&apos;id_user par défaut de
+          leur espace (ou sans id_user s&apos;il n&apos;y en a pas), pas dans leur propre espace conseiller.
         </div>
       )}
       {noTeam.length > 0 && (
@@ -354,7 +439,7 @@ function AdvisersCrm({ reloadKey }: { reloadKey: unknown }) {
       )}
       {!rows ? <p className="text-sm text-slate-400">Chargement…</p> : (
         <div className="overflow-x-auto max-h-[480px] overflow-y-auto">
-          <table className="w-full" style={{ minWidth: "760px" }}>
+          <table className="w-full" style={{ minWidth: "860px" }}>
             <thead className="bg-slate-50/70 border-b border-slate-100 sticky top-0">
               <tr>
                 <th className="table-th">Conseiller</th>
@@ -379,15 +464,19 @@ function AdvisersCrm({ reloadKey }: { reloadKey: unknown }) {
                     ) : r.linkKind === null && !r.category.startsWith("SANTÉ") ? (
                       <span className="text-slate-400">Lien non configuré</span>
                     ) : (
-                      <div className="flex items-center gap-2">
-                        <span className="whitespace-nowrap">id AZZUR</span>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="whitespace-nowrap">Id AZZUR</span>
                         <input
-                          inputMode="numeric" value={drafts[r.id] ?? r.azzurId} placeholder="ex. 123"
+                          inputMode="numeric" value={drafts[r.id] ?? r.azzurId} placeholder="ex. 147"
+                          aria-label={`Id AZZUR de ${r.name}`}
                           onChange={(e) => setDrafts((d) => ({ ...d, [r.id]: e.target.value }))}
                           className="w-20 px-2 py-1 border border-slate-200 rounded-lg text-xs font-mono"
                         />
                         <button className="btn-secondary" disabled={saving === r.id || (drafts[r.id] ?? r.azzurId) === r.azzurId}
                           onClick={() => save(r)}>{saving === r.id ? "…" : "Enregistrer"}</button>
+                        <span className={`text-[11px] ${r.sentSource === "conseiller" ? "text-emerald-700" : "text-amber-700"}`}>
+                          → {sentLabel(r, defaults)}
+                        </span>
                         {r.linkKind === null && <span className="text-[10px] text-slate-400">(lien non configuré)</span>}
                       </div>
                     )}
@@ -396,6 +485,142 @@ function AdvisersCrm({ reloadKey }: { reloadKey: unknown }) {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Fill the Ids from AZZUR's own user list: select the rows of Administration › Utilisateurs in
+ * AZZUR, copy, paste here. Each AZZUR user is matched to an adviser by e-mail or name (the phone
+ * only confirms: lines change hands); nothing is saved until the ticked rows are confirmed.
+ */
+function AzzurIdImport({ onSaved }: { onSaved: () => Promise<void> | void }) {
+  const toast = useToast();
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState("");
+  const [space, setSpace] = useState<"" | "ALM" | "CPA">("");
+  const [preview, setPreview] = useState<ImportPreview | null>(null);
+  const [picked, setPicked] = useState<Set<number>>(new Set());
+  const [busy, setBusy] = useState(false);
+
+  async function analyse() {
+    setBusy(true);
+    try {
+      const p = await fetchJson<ImportPreview>("/api/admin/azzur/users/import", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, space: space || undefined }),
+      });
+      setPreview(p);
+      setPicked(new Set(p.proposals.flatMap((x, i) => (x.selected ? [i] : []))));
+      if (!space && p.space) setSpace(p.space);
+    } catch (e) { toast.error(errorMessage(e, "Analyse impossible.")); }
+    finally { setBusy(false); }
+  }
+
+  async function apply() {
+    if (!preview) return;
+    const assignments = [...picked].map((i) => preview.proposals[i]).filter((p) => p.adviser)
+      .map((p) => ({ userId: p.adviser!.id, azzurId: p.azzur.azzurId }));
+    const ids = assignments.map((a) => a.userId);
+    if (new Set(ids).size !== ids.length) { toast.error("Un même conseiller est coché deux fois : n'en gardez qu'un."); return; }
+    if (!assignments.length) return;
+    setBusy(true);
+    try {
+      await fetchJson("/api/admin/azzur/users", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ assignments }) });
+      toast.success(`${assignments.length} Id AZZUR enregistré(s).`);
+      setPreview(null); setText(""); setPicked(new Set());
+      await onSaved();
+    } catch (e) { toast.error(errorMessage(e, "Enregistrement impossible.")); }
+    finally { setBusy(false); }
+  }
+
+  const selectable = (p: Proposal) => !!p.adviser && p.status !== "deja";
+
+  return (
+    <div className="mb-4 rounded-xl border border-slate-200">
+      <button onClick={() => setOpen((o) => !o)} className="w-full flex items-center justify-between px-3 py-2 text-xs font-semibold text-slate-700">
+        <span>Importer les Id depuis la liste des utilisateurs AZZUR</span><span className="text-slate-400">{open ? "▲" : "▼"}</span>
+      </button>
+      {open && (
+        <div className="px-3 pb-3">
+          <p className="text-[11px] text-slate-500 mb-2">
+            Dans AZZUR : Administration › Utilisateurs, sélectionnez les lignes du tableau (de la première à la dernière), copiez
+            (Ctrl+C) et collez ici. Un import par espace (ALM puis CPA). Rien n&apos;est enregistré avant « Enregistrer la sélection ».
+          </p>
+          <textarea value={text} onChange={(e) => setText(e.target.value)} rows={5} aria-label="Liste des utilisateurs AZZUR"
+            placeholder={"Editer Dupliquer\t147\tAlvar\tSoraya\t01 62 53 81 27\tsoraya.alvar@…\t…"}
+            className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-xs font-mono" />
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <select value={space} onChange={(e) => setSpace(e.target.value as "" | "ALM" | "CPA")} aria-label="Espace AZZUR"
+              className="px-2 py-1 border border-slate-200 rounded-lg text-xs bg-white">
+              <option value="">Espace : détecter</option>
+              <option value="ALM">Espace ALM (alm-assurances)</option>
+              <option value="CPA">Espace CPA (cpa-assurances)</option>
+            </select>
+            <button className="btn-secondary" disabled={!text.trim() || busy} onClick={analyse}>{busy && !preview ? "…" : "Analyser"}</button>
+            {preview && (
+              <button className="btn btn-primary text-xs" disabled={!picked.size || busy} onClick={apply}>
+                {busy ? "…" : `Enregistrer la sélection (${picked.size})`}
+              </button>
+            )}
+          </div>
+
+          {preview && (
+            <div className="mt-3">
+              <p className="text-xs text-slate-600 mb-2">
+                {preview.rows} utilisateur(s) AZZUR lus, espace <b>{preview.space ?? "non déterminé"}</b> ·{" "}
+                {preview.proposals.filter((p) => p.status === "match").length} trouvé(s) ·{" "}
+                {preview.proposals.filter((p) => ["ambigu", "a-verifier", "autre-espace"].includes(p.status)).length} à vérifier
+              </p>
+              <div className="overflow-x-auto max-h-[360px] overflow-y-auto border border-slate-100 rounded-lg">
+                <table className="w-full" style={{ minWidth: "760px" }}>
+                  <thead className="bg-slate-50 sticky top-0">
+                    <tr>
+                      <th className="table-th w-8"></th>
+                      <th className="table-th">Id AZZUR</th>
+                      <th className="table-th">Utilisateur AZZUR</th>
+                      <th className="table-th">Conseiller Assurpilot</th>
+                      <th className="table-th">Statut</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {preview.proposals.map((p, i) => (
+                      <tr key={p.azzur.azzurId} className={picked.has(i) ? "bg-emerald-50/50" : ""}>
+                        <td className="table-td">
+                          <input type="checkbox" disabled={!selectable(p)} checked={picked.has(i)} aria-label={`Associer l'Id ${p.azzur.azzurId}`}
+                            onChange={() => setPicked((s) => { const n = new Set(s); n.has(i) ? n.delete(i) : n.add(i); return n; })} />
+                        </td>
+                        <td className="table-td font-mono text-xs">{p.azzur.azzurId}</td>
+                        <td className="table-td text-xs">
+                          {`${p.azzur.prenom} ${p.azzur.nom}`.trim()}
+                          <span className="block text-[10px] text-slate-400">{p.azzur.email}{p.azzur.etat && p.azzur.etat !== "Actif" ? ` · ${p.azzur.etat}` : ""}</span>
+                        </td>
+                        <td className="table-td text-xs">
+                          {p.adviser ? (
+                            <>
+                              {p.adviser.name}{p.reason ? <span className="text-slate-400"> · {REASON_LABEL[p.reason] ?? p.reason}</span> : null}
+                              {p.adviser.currentAzzurId && <span className="block text-[10px] text-slate-400">Id actuel : {p.adviser.currentAzzurId}</span>}
+                            </>
+                          ) : <span className="text-slate-400">—</span>}
+                        </td>
+                        <td className="table-td text-xs">
+                          <span className={`badge ${STATUS_LABEL[p.status].cls}`} style={{ fontSize: "10px", padding: "1px 7px" }}>{STATUS_LABEL[p.status].text}</span>
+                          {p.note && <span className="block text-[10px] text-slate-500 mt-0.5">{p.note}</span>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {preview.unmatchedAdvisers.length > 0 && (
+                <p className="mt-2 text-[11px] text-amber-800">
+                  Conseillers {preview.space ?? ""} d&apos;Assurpilot sans Id et absents de cette liste :{" "}
+                  {preview.unmatchedAdvisers.map((a) => a.name).join(", ")} — à saisir à la main dans le tableau ci-dessous.
+                </p>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>

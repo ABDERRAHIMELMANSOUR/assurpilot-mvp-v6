@@ -247,6 +247,40 @@ export async function saveAzzurUserId(userId: string, azzurId: string, by: strin
   });
 }
 
+// ── Default id_user per AZZUR space ──────────────────────────────────────────────────
+// Rows keyed "setting:defaultUserId:<ROUTE KEY>", url = the AZZUR id_user (digits). Used for an
+// adviser who has no id of their own. One per space: ALM and CPA number their users separately.
+const DEFAULT_USER_PREFIX = "setting:defaultUserId:";
+
+export async function loadAzzurDefaultUserIds(): Promise<Partial<Record<RouteKey, string>>> {
+  try {
+    const rows = await prisma.azzurRoute.findMany({ where: { key: { startsWith: DEFAULT_USER_PREFIX } } });
+    const out: Partial<Record<RouteKey, string>> = {};
+    for (const r of rows) {
+      const key = r.key.slice(DEFAULT_USER_PREFIX.length);
+      if ((ROUTE_KEYS as readonly string[]).includes(key) && /^\d+$/.test(r.url)) out[key as RouteKey] = r.url;
+    }
+    return out;
+  } catch (error) {
+    if (isMissingTable(error)) return {};
+    throw error;
+  }
+}
+
+/** Sets (digits) or clears ("") the default id_user of one space. */
+export async function saveAzzurDefaultUserId(routeKey: RouteKey, azzurId: string, by: string | null): Promise<void> {
+  const key = `${DEFAULT_USER_PREFIX}${routeKey}`;
+  if (!azzurId) {
+    await prisma.azzurRoute.deleteMany({ where: { key } });
+    return;
+  }
+  await prisma.azzurRoute.upsert({
+    where: { key },
+    create: { key, url: azzurId, updatedById: by },
+    update: { url: azzurId, updatedById: by },
+  });
+}
+
 export type EffectiveConfig = {
   config: AzzurConfig;
   tableAvailable: boolean;
@@ -268,15 +302,16 @@ export async function loadEffectiveConfig(env: Record<string, string | undefined
     // Unreadable: fall back to the environment.
   }
   let userMapById: Record<string, string> = {};
+  let defaultUserIds: Partial<Record<RouteKey, string>> = {};
   try {
-    userMapById = await loadAzzurUserMap();
+    [userMapById, defaultUserIds] = await Promise.all([loadAzzurUserMap(), loadAzzurDefaultUserIds()]);
   } catch {
     // Unreadable: no per-adviser ids, AZZUR applies its default user.
   }
   const enabled = settings.enabled ?? base.enabled;
   const autoPush = settings.autoPush ?? base.autoPush;
   return {
-    config: { ...base, enabled, ready: enabled, autoPush, userMapById },
+    config: { ...base, enabled, ready: enabled, autoPush, userMapById, defaultUserIds },
     tableAvailable: settings.tableAvailable,
     source: { enabled: settings.enabled === null ? "env" : "base", autoPush: settings.autoPush === null ? "env" : "base" },
   };

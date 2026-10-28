@@ -403,8 +403,29 @@ progression et le bilan par lien (garder la page ouverte pendant l'envoi). Désa
 est dans Assurpilot (`$conseiller`). **AZZUR ne range pas une fiche par nom** mais par son propre
 numéro d'utilisateur (`id_user`) : la carte « Conseillers dans les CRM » de `/admin/azzur` liste les
 conseillers (équipe, lien) et permet de saisir une fois l'id AZZUR de chacun (stocké dans
-`azzur_routes`, clés `user:<id>`). Sans id, la fiche arrive chez l'utilisateur par défaut d'AZZUR. Un
-conseiller sans équipe ALM/CPA Auto/Santé est signalé : ses appels ne peuvent aller dans aucun CRM.
+`azzur_routes`, clés `user:<id>`) — c'est la colonne **Id** d'Administration › Utilisateurs dans
+AZZUR. Un conseiller sans équipe ALM/CPA Auto/Santé est signalé : ses appels ne peuvent aller dans
+aucun CRM.
+
+`id_user` envoyé dans l'URL GET de chaque fiche Santé (`…&ws=mer&id_prov=…&cle_ws=…&tel=…&id_user=147`),
+dans cet ordre (`resolveAzzurUserId`, `src/lib/azzur.ts`) :
+
+1. l'Id AZZUR du **conseiller qui a pris l'appel** (premier conseiller du numéro, cf. la vérification) ;
+2. sinon l'**id_user par défaut de l'espace** de destination (SANTÉ ALM, SANTÉ CPA), saisi dans
+   « id_user par défaut, par espace AZZUR » (clés `setting:defaultUserId:<lien>`). Un par espace :
+   ALM et CPA numérotent leurs utilisateurs séparément, un Id de l'un ne vaut rien dans l'autre ;
+3. sinon `AZZUR_MER_ID_USER` (environnement) ;
+4. sinon pas d'`id_user` : AZZUR applique son utilisateur par défaut.
+
+Le tableau affiche, pour chaque conseiller, l'`id_user` qui partira et sa provenance.
+
+**Importer les Id depuis AZZUR** : dans AZZUR, Administration › Utilisateurs, sélectionner les lignes
+du tableau, copier, coller dans « Importer les Id depuis la liste des utilisateurs AZZUR », un espace
+à la fois. Chaque utilisateur AZZUR est rapproché d'un conseiller par **email**, puis par **nom**
+(accents, casse et ordre ignorés, ou nom lu dans l'email : `benjamin.lombardi@…`). Le **téléphone
+seul ne suffit pas** : les lignes changent de titulaire et AZZUR garde l'ancien numéro ; une ligne
+identique avec un nom différent est montrée « À vérifier », jamais cochée. Ne sont pré-cochés que
+les rapprochements sûrs, sans Id déjà enregistré ; rien n'est écrit avant « Enregistrer la sélection ».
 
 **Interrupteurs sur `/admin/azzur`** (effet immédiat, sans redéploiement, enregistrés dans la table
 `azzur_routes`, donc `prisma/sql/009-azzur-routes.sql` requis) :
@@ -458,8 +479,9 @@ variables GET »), paramètres encodés par `URLSearchParams` :
 
 **Conseiller** : AZZUR attend *son* identifiant d'utilisateur, que nous n'avons pas.
 `AZZUR_MER_USER_MAP` (JSON e-mail du conseiller → `id_user` AZZUR) range la fiche dans son
-espace ; `AZZUR_MER_ID_USER` (`0` = personne, dispatch board) sert aux conseillers absents de la
-table ; sans rien, AZZUR applique son utilisateur par défaut. `provenance`, `conseiller` et
+espace ; les Id saisis ou importés sur `/admin/azzur` priment, puis l'id_user par défaut de
+l'espace, puis `AZZUR_MER_ID_USER` (`0` = personne, dispatch board) ; sans rien, AZZUR applique son
+utilisateur par défaut (ordre complet ci-dessus). `provenance`, `conseiller` et
 `conseiller_nom` ne sont **pas** des variables AZZUR : désactivés par défaut.
 
 **Données imposées par AZZUR** : `nom`, `date_naissance` et `cp` sont obligatoires (et
