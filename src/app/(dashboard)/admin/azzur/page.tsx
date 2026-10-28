@@ -241,7 +241,9 @@ export default function AzzurPage() {
             Variables : <span className="font-mono">$telephone</span> (obligatoire), <span className="font-mono">$conseiller</span>,{" "}
             <span className="font-mono">$conseiller_email</span>, <span className="font-mono">$date</span>, <span className="font-mono">$ligne</span>,{" "}
             <span className="font-mono">$commentaire</span>, <span className="font-mono">$nom</span>, <span className="font-mono">$prenom</span>,{" "}
-            <span className="font-mono">$id</span>. Seuls ces paramètres sont envoyés, en GET.
+            <span className="font-mono">$id</span>, <span className="font-mono">$id_us</span> / <span className="font-mono">$id_eq</span> (ID_US du
+            conseiller et ID_EQ de son équipe, saisis sur la page <a href="/admin/proassur" className="underline">Intégration ProAssur</a>).
+            Seuls ces paramètres sont envoyés, en GET.
           </li>
         </ul>
         {routesInfo && !routesInfo.tableAvailable && (

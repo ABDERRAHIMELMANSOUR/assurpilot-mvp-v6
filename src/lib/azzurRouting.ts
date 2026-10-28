@@ -94,6 +94,8 @@ export const TEMPLATE_VARIABLES: Record<string, string> = {
   ligne: "ligne d'arrivée (« Ligne santé CPA »)",
   commentaire: "« Appel entrant - … : coordonnées à compléter »",
   id: "identifiant de l'appel dans Assurpilot",
+  id_us: "ID_US ProAssur du conseiller (Intégration ProAssur ou fiche du conseiller)",
+  id_eq: "ID_EQ ProAssur du conseiller, sinon celui de son équipe (Intégration ProAssur)",
 };
 
 const VARIABLE_RE = /\$([a-z_]+)/g;

@@ -78,6 +78,13 @@ export type AzzurConfig = {
    * on its own, so one default cannot serve both. Without one, id_user=0 (nobody).
    */
   defaultUserIds: Partial<Record<RouteKey, string>>;
+  /**
+   * ProAssur identifiers (Auto CRM), the $id_us / $id_eq of its links: ID_US and ID_EQ per
+   * Assurpilot user id, and a default ID_EQ per team NAME for advisers without their own.
+   */
+  idUsByUser: Record<string, string>;
+  idEqByUser: Record<string, string>;
+  idEqByTeamName: Record<string, string>;
   /** Value of the provenance field: AZZUR's provenance CODE, e.g. "AE" (id 51). */
   provenance: string;
   timeoutMs: number;
@@ -240,6 +247,9 @@ export function readAzzurConfig(env: Record<string, string | undefined> = proces
     userMap: readUserMap(env.AZZUR_MER_USER_MAP),
     userMapById: {},
     defaultUserIds: {},
+    idUsByUser: {},
+    idEqByUser: {},
+    idEqByTeamName: {},
     // Only "0" is honoured: one user id cannot be valid in both AZZUR spaces (see resolveAzzurUserId).
     defaultUserId: (env.AZZUR_MER_ID_USER ?? "").trim() === "0" ? "0" : null,
     timeoutMs: positiveInt(env.AZZUR_MER_TIMEOUT_MS, 5000),
@@ -284,6 +294,9 @@ export function templateValues(event: AzzurCallEvent, config: AzzurConfig): Reco
     ligne: event.lineLabel ?? "",
     commentaire: commentaireFor(event),
     id: event.externalId ?? event.reference.replace(/^call:/, ""),
+    // ProAssur identifiers entered by the administrator; empty when not filled in.
+    id_us: (c?.id ? config.idUsByUser?.[c.id] : undefined) ?? "",
+    id_eq: (c?.id ? config.idEqByUser?.[c.id] : undefined) ?? (event.teamName ? config.idEqByTeamName?.[event.teamName] : undefined) ?? "",
   };
 }
 
