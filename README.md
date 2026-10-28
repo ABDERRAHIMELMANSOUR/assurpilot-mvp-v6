@@ -458,16 +458,20 @@ garde l'ancien numéro (la ligne de Nael Giro est celle de DUQUENNE dans AZZUR) 
 avec un nom différent est montrée « À vérifier », jamais cochée. Ne sont pré-cochés que
 les rapprochements sûrs, sans Id déjà enregistré ; rien n'est écrit avant « Enregistrer la sélection ».
 
-**ProAssur (Auto) : ID_US et ID_EQ.** ProAssur est le CRM des équipes **Auto** (ALM, CPA) ; AZZUR ne
-sert qu'à la Santé. Page **`/admin/proassur`** (menu Configuration › Intégration ProAssur) : pour chaque
-conseiller des équipes Auto, son **ID_US** et son **ID_EQ** tels qu'ils sont dans ProAssur, plus un
-**ID_EQ par défaut** par équipe Auto (utilisé si le conseiller n'a pas le sien). Les deux identifiants se
-saisissent aussi dans la fiche du conseiller (création / modification, administrateur, équipe Auto).
-Stockés dans `azzur_routes` (`crm:idus:<conseiller>`, `crm:idequ:<conseiller>`, `crm:ideq:<équipe>`),
-aucune table modifiée. Ils partent dans les liens ProAssur par les variables **`$id_us`** et **`$id_eq`**,
-à ajouter au lien avec le nom de paramètre attendu par ProAssur, par ex.
-`…/A15.php?TelGsmTxt=$telephone&NomTxt=$conseiller&ID_US=$id_us&ID_EQ=$id_eq` (vide si non saisi).
-API : `GET/PUT /api/admin/proassur/ids`.
+**ProAssur (Auto) : ID_EQ et ID_US.** ProAssur est le CRM du service **Auto** (ALM, CPA) ; la Santé (AZZUR)
+n'est pas concernée. Page **`/admin/proassur`** (menu Configuration › Intégration ProAssur (Auto)) :
+- **équipes Auto** : l'**ID_EQ** de chaque équipe (son identifiant dans ProAssur), et « Ajouter une équipe
+  Auto » (entité ALM/CPA + nom + ID_EQ obligatoire ; le nom reste « Équipe auto ALM … » pour que les appels
+  soient routés ; les équipes existantes ne sont pas renommées, leur nom sert aussi au routage des lignes
+  standard à l'import) ;
+- **conseillers Auto** : l'**ID_US** de chaque conseiller et son **équipe Auto** (chaque conseiller appartient à
+  une équipe et part avec l'ID_EQ de celle-ci), « + Nouveau conseiller Auto ».
+Dans la fiche d'un conseiller (création / modification, administrateur), un bloc ProAssur apparaît pour une
+équipe Auto : ID_US à saisir, ID_EQ de l'équipe affiché. Stockés dans `azzur_routes` (`crm:idus:<conseiller>`,
+`crm:ideq:<équipe>`), aucune table modifiée. Ils partent dans les liens ProAssur par **`$id_us`** et
+**`$id_eq`**, à ajouter au lien avec le nom de paramètre attendu par ProAssur, par ex.
+`…/A15.php?TelGsmTxt=$telephone&NomTxt=$conseiller&ID_US=$id_us&ID_EQ=$id_eq`. API :
+`GET/POST/PUT /api/admin/proassur/ids`.
 
 **Interrupteurs sur `/admin/azzur`** (effet immédiat, sans redéploiement, enregistrés dans la table
 `azzur_routes`, donc `prisma/sql/009-azzur-routes.sql` requis) :

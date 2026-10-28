@@ -311,31 +311,28 @@ export async function saveAzzurDefaultUserId(routeKey: RouteKey, azzurId: string
 }
 
 // ── ProAssur (Auto CRM) identifiers: ID_US / ID_EQ ───────────────────────────────────
-// The adviser's and team's identifiers IN PROASSUR, entered by the administrator: ID_US per
-// adviser ("crm:idus:<user id>"), ID_EQ per adviser ("crm:idequ:<user id>") with a default per
-// Assurpilot team ("crm:ideq:<team id>"). Sent through $id_us / $id_eq of the ProAssur links.
+// The identifiers the advisers and teams already have IN PROASSUR, entered by the administrator:
+// ID_US per adviser ("crm:idus:<user id>"), ID_EQ per Auto team ("crm:ideq:<team id>"). An
+// adviser's ID_EQ is the one of the team they belong to. Sent through $id_us / $id_eq of the
+// ProAssur links only (Auto); nothing here reaches AZZUR (Santé).
 const ID_US_PREFIX = "crm:idus:";
-const ID_EQ_USER_PREFIX = "crm:idequ:";
-const ID_EQ_TEAM_PREFIX = "crm:ideq:";
+const ID_EQ_PREFIX = "crm:ideq:";
 export const CRM_ID_RE = /^[A-Za-z0-9 _.\-]{1,40}$/;
 
 export type CrmIds = {
   /** ID_US per adviser. */
   idUs: Record<string, string>;
-  /** ID_EQ set on the adviser. */
-  idEqUser: Record<string, string>;
-  /** Default ID_EQ per Assurpilot team, for advisers without their own. */
+  /** ID_EQ per team. */
   idEq: Record<string, string>;
 };
 
 export async function loadCrmIds(): Promise<CrmIds> {
-  const out: CrmIds = { idUs: {}, idEqUser: {}, idEq: {} };
+  const out: CrmIds = { idUs: {}, idEq: {} };
   try {
     const rows = await prisma.azzurRoute.findMany({ where: { key: { startsWith: "crm:" } } });
     for (const r of rows) {
       if (r.key.startsWith(ID_US_PREFIX)) out.idUs[r.key.slice(ID_US_PREFIX.length)] = r.url;
-      else if (r.key.startsWith(ID_EQ_USER_PREFIX)) out.idEqUser[r.key.slice(ID_EQ_USER_PREFIX.length)] = r.url;
-      else if (r.key.startsWith(ID_EQ_TEAM_PREFIX)) out.idEq[r.key.slice(ID_EQ_TEAM_PREFIX.length)] = r.url;
+      else if (r.key.startsWith(ID_EQ_PREFIX)) out.idEq[r.key.slice(ID_EQ_PREFIX.length)] = r.url;
     }
   } catch (error) {
     if (!isMissingTable(error)) throw error;
@@ -343,10 +340,9 @@ export async function loadCrmIds(): Promise<CrmIds> {
   return out;
 }
 
-/** Sets or clears ("") an adviser's ID_US ("us") or ID_EQ ("equ"), or a team's default ID_EQ ("eq"). */
-export async function saveCrmId(kind: "us" | "equ" | "eq", id: string, value: string, by: string | null): Promise<void> {
-  const prefix = kind === "us" ? ID_US_PREFIX : kind === "equ" ? ID_EQ_USER_PREFIX : ID_EQ_TEAM_PREFIX;
-  const key = `${prefix}${id}`;
+/** Sets or clears ("") an adviser's ID_US ("us") or a team's ID_EQ ("eq"). */
+export async function saveCrmId(kind: "us" | "eq", id: string, value: string, by: string | null): Promise<void> {
+  const key = `${kind === "us" ? ID_US_PREFIX : ID_EQ_PREFIX}${id}`;
   if (!value) {
     await prisma.azzurRoute.deleteMany({ where: { key } });
     return;
@@ -384,12 +380,10 @@ export async function loadEffectiveConfig(env: Record<string, string | undefined
     // Unreadable: no per-adviser ids, AZZUR applies its default user.
   }
   let idUsByUser: Record<string, string> = {};
-  let idEqByUser: Record<string, string> = {};
   const idEqByTeamName: Record<string, string> = {};
   try {
     const [ids, teams] = await Promise.all([loadCrmIds(), prisma.team.findMany({ select: { id: true, nom: true } })]);
     idUsByUser = ids.idUs;
-    idEqByUser = ids.idEqUser;
     for (const t of teams) if (ids.idEq[t.id]) idEqByTeamName[t.nom] = ids.idEq[t.id];
   } catch {
     // Unreadable: $id_us / $id_eq are sent empty.
@@ -398,7 +392,7 @@ export async function loadEffectiveConfig(env: Record<string, string | undefined
   const autoPush = settings.autoPush ?? base.autoPush;
   return {
     config: {
-      ...base, enabled, ready: enabled, autoPush, userMapById, defaultUserIds, idUsByUser, idEqByUser, idEqByTeamName,
+      ...base, enabled, ready: enabled, autoPush, userMapById, defaultUserIds, idUsByUser, idEqByTeamName,
       // The format chosen on the page wins over AZZUR_MER_DEFAULTS for nom / prénom.
       placeholders: settings.ficheFormat ? { ...base.placeholders, ...FICHE_FORMAT_PLACEHOLDERS[settings.ficheFormat] } : base.placeholders,
     },
