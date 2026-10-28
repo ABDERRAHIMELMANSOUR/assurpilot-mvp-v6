@@ -421,10 +421,12 @@ Le tableau affiche, pour chaque conseiller, l'`id_user` qui partira et sa proven
 
 **Importer les Id depuis AZZUR** : dans AZZUR, Administration › Utilisateurs, sélectionner les lignes
 du tableau, copier, coller dans « Importer les Id depuis la liste des utilisateurs AZZUR », un espace
-à la fois. Chaque utilisateur AZZUR est rapproché d'un conseiller par **email**, puis par **nom**
-(accents, casse et ordre ignorés, ou nom lu dans l'email : `benjamin.lombardi@…`). Le **téléphone
-seul ne suffit pas** : les lignes changent de titulaire et AZZUR garde l'ancien numéro ; une ligne
-identique avec un nom différent est montrée « À vérifier », jamais cochée. Ne sont pré-cochés que
+à la fois. Chaque utilisateur AZZUR est rapproché d'un conseiller d'abord par **téléphone (Tél /
+Mobile) avec un nom concordant** (le prénom suffit : « Maxime CPA » ↔ BAUMANN Maxime ; le nom lu dans
+l'email compte aussi : `lorenzo.aguilar@…`), puis par **email**, puis par **nom et prénom** (accents,
+casse et ordre ignorés). Le **téléphone seul ne suffit pas** : les lignes changent de titulaire et AZZUR
+garde l'ancien numéro (la ligne de Nael Giro est celle de DUQUENNE dans AZZUR) ; une ligne identique
+avec un nom différent est montrée « À vérifier », jamais cochée. Ne sont pré-cochés que
 les rapprochements sûrs, sans Id déjà enregistré ; rien n'est écrit avant « Enregistrer la sélection ».
 
 **Interrupteurs sur `/admin/azzur`** (effet immédiat, sans redéploiement, enregistrés dans la table

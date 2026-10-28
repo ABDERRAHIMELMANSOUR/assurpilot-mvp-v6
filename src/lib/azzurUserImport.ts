@@ -5,12 +5,13 @@
 // Agence, Rôle, Etat…). Pure: parsing and matching only, so the rules can be tested alone.
 //
 // Matching, strongest first, against the Assurpilot advisers of the chosen space:
+//   ligne  the AZZUR user's number is the adviser's direct line AND they share a name word
+//          (first name is enough: accounts named "Maxime CPA" match BAUMANN Maxime by line)
 //   email  same e-mail address
 //   nom    same first and last name (accents, case, order and hyphens ignored), or the name
 //          read from the AZZUR e-mail ("benjamin.lombardi@…" for a user named "THEO Benjamin")
-//   ligne  the AZZUR user's number is the adviser's direct line AND they share a name word
 // The phone alone is NOT trusted: lines are handed from one adviser to the next, and AZZUR keeps
-// the old holder's number (Soraya Alvar's line is someone else's today). A number match with a
+// the old holder's number (Nael Giro's line is DUQUENNE's number in AZZUR). A number match with a
 // different name is shown as "à vérifier", never pre-ticked.
 // A proposal is pre-selected only when it is unambiguous: one AZZUR user for one adviser, in
 // the right space, and no different id already saved. Everything else is shown, not applied.
@@ -136,16 +137,20 @@ export function previewAzzurImport(text: string, candidates: ImportCandidate[], 
   }
 
   // First pass: who each AZZUR user points to.
-  const words = (c: ImportCandidate) => new Set(nameKey(c.prenom, c.nom).split(" ").filter((w) => w.length > 1));
+  // Words that name a person: not the entity tags some accounts carry as a surname ("Maxime CPA").
+  const personal = (w: string) => w.length > 1 && w !== "cpa" && w !== "alm";
+  const words = (c: ImportCandidate) => new Set(nameKey(c.prenom, c.nom).split(" ").filter(personal));
   const found = rows.map((row) => {
-    const rowWords = nameKey(row.prenom, row.nom).split(" ").filter((w) => w.length > 1);
     const fromEmail = row.email ? nameKey(row.email.split("@")[0].replace(/[._-]+/g, " ")) : "";
+    // The name in the e-mail counts too: "sup sante 3" is lorenzo.aguilar@….
+    const rowWords = [...nameKey(row.prenom, row.nom).split(" "), ...fromEmail.split(" ")].filter(personal);
     const phoneHits = [...new Set(row.phones.flatMap((p) => byPhone.get(p) ?? []))];
     const tries: Array<[MatchReason, ImportCandidate[]]> = [
+      // Line first, but only where the name agrees.
+      ["ligne", phoneHits.filter((c) => rowWords.some((w) => words(c).has(w)))],
       ["email", row.email ? byEmail.get(row.email) ?? [] : []],
       ["nom", byName.get(nameKey(row.prenom, row.nom)) ?? []],
       ["nom", fromEmail ? byName.get(fromEmail) ?? [] : []],
-      ["ligne", phoneHits.filter((c) => rowWords.some((w) => words(c).has(w)))],
       ["ligne-seule", phoneHits],
     ];
     for (const [reason, list] of tries) {
