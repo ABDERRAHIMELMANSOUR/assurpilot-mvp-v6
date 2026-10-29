@@ -242,7 +242,8 @@ export default function ProAssurPage() {
         <p className="text-[11px] text-slate-500 mt-2">
           Les identifiants partent par les variables <span className="font-mono">$id_us</span> et <span className="font-mono">$id_eq</span> du lien
           ProAssur, avec le nom de paramètre attendu par ProAssur, par ex.{" "}
-          <span className="font-mono">…/A15.php?TelGsmTxt=$telephone&amp;NomTxt=$conseiller&amp;ID_US=$id_us&amp;ID_EQ=$id_eq</span>.
+          <span className="font-mono">…/A18.php?NomTxt=Ap&amp;PrenomTxt=$telephone&amp;TelGsmTxt=$telephone&amp;ID_EQ=$id_eq&amp;ID_US=$id_us</span>
+          (Nom toujours « Ap », Prénom et téléphone = numéro de l&apos;appelant).
         </p>
       </div>
 

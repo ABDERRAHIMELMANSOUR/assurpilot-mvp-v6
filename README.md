@@ -472,7 +472,7 @@ la Santé (AZZUR) n'est pas concernée. Chaque conseiller Auto a, comme dans l'e
 son **ID_US** et l'**ID_EQ** de **son équipe ProAssur**, plus fine que l'équipe Assurpilot (« Équipe auto ALM »
 regroupe les équipes ProAssur 64 Eq.Sonia, 70 Eq.Sabrina, 72 Kenitra…). Un ID_EQ peut aussi être mis sur une
 équipe Auto : il ne sert qu'aux conseillers qui n'ont pas le leur. Les deux partent dans les liens ProAssur par
-**`$id_us`** et **`$id_eq`** : `…/A15.php?TelGsmTxt=$telephone&NomTxt=$conseiller&ID_US=$id_us&ID_EQ=$id_eq`
+**`$id_us`** et **`$id_eq`**. Liens en service (29/10) : `…/A15.php` (ALM) et `…/A18.php` (CPA) `?NomTxt=Ap&PrenomTxt=$telephone&TelGsmTxt=$telephone&ID_EQ=$id_eq&ID_US=$id_us` — Nom toujours « Ap », Prénom et téléphone = numéro de l'appelant, rien d'autre
 (liens AUTO_ALM et AUTO_CPA). Saisie : page **`/admin/proassur`** (colonnes ID_US et ID_EQ, nom de l'équipe
 ProAssur affiché, ajout d'équipe Auto, changement d'équipe, « + Nouveau conseiller Auto ») et fiche du
 conseiller (équipe Auto). Stockés dans `azzur_routes` (`crm:idus:<conseiller>`, `crm:idequ:<conseiller>`,
