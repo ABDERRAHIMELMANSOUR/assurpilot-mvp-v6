@@ -311,28 +311,39 @@ export async function saveAzzurDefaultUserId(routeKey: RouteKey, azzurId: string
 }
 
 // ── ProAssur (Auto CRM) identifiers: ID_US / ID_EQ ───────────────────────────────────
-// The identifiers the advisers and teams already have IN PROASSUR, entered by the administrator:
-// ID_US per adviser ("crm:idus:<user id>"), ID_EQ per Auto team ("crm:ideq:<team id>"). An
-// adviser's ID_EQ is the one of the team they belong to. Sent through $id_us / $id_eq of the
-// ProAssur links only (Auto); nothing here reaches AZZUR (Santé).
+// The identifiers the advisers already have IN PROASSUR, entered by the administrator (or taken
+// from ProAssur's user export): the couple ID_US + ID_EQ per adviser — ID_EQ being the ProAssur
+// team the adviser belongs to, which is finer than the Assurpilot team ("Équipe auto ALM" holds
+// ProAssur teams 64, 70, 72…). An Auto team may also carry an ID_EQ, used for an adviser who has
+// none of their own. Keys: "crm:idus:<user>", "crm:idequ:<user>", "crm:ideq:<team>", and the
+// ProAssur team names "crm:eqname:<ID_EQ>". Sent through $id_us / $id_eq of the ProAssur links
+// only (Auto); nothing here reaches AZZUR (Santé).
 const ID_US_PREFIX = "crm:idus:";
+const ID_EQ_USER_PREFIX = "crm:idequ:";
 const ID_EQ_PREFIX = "crm:ideq:";
+const EQ_NAME_PREFIX = "crm:eqname:";
 export const CRM_ID_RE = /^[A-Za-z0-9 _.\-]{1,40}$/;
 
 export type CrmIds = {
   /** ID_US per adviser. */
   idUs: Record<string, string>;
-  /** ID_EQ per team. */
+  /** ID_EQ per adviser: their ProAssur team. */
+  idEqUser: Record<string, string>;
+  /** ID_EQ per Assurpilot team, for an adviser without their own. */
   idEq: Record<string, string>;
+  /** ProAssur team name per ID_EQ, for display. */
+  eqName: Record<string, string>;
 };
 
 export async function loadCrmIds(): Promise<CrmIds> {
-  const out: CrmIds = { idUs: {}, idEq: {} };
+  const out: CrmIds = { idUs: {}, idEqUser: {}, idEq: {}, eqName: {} };
   try {
     const rows = await prisma.azzurRoute.findMany({ where: { key: { startsWith: "crm:" } } });
     for (const r of rows) {
       if (r.key.startsWith(ID_US_PREFIX)) out.idUs[r.key.slice(ID_US_PREFIX.length)] = r.url;
+      else if (r.key.startsWith(ID_EQ_USER_PREFIX)) out.idEqUser[r.key.slice(ID_EQ_USER_PREFIX.length)] = r.url;
       else if (r.key.startsWith(ID_EQ_PREFIX)) out.idEq[r.key.slice(ID_EQ_PREFIX.length)] = r.url;
+      else if (r.key.startsWith(EQ_NAME_PREFIX)) out.eqName[r.key.slice(EQ_NAME_PREFIX.length)] = r.url;
     }
   } catch (error) {
     if (!isMissingTable(error)) throw error;
@@ -340,9 +351,10 @@ export async function loadCrmIds(): Promise<CrmIds> {
   return out;
 }
 
-/** Sets or clears ("") an adviser's ID_US ("us") or a team's ID_EQ ("eq"). */
-export async function saveCrmId(kind: "us" | "eq", id: string, value: string, by: string | null): Promise<void> {
-  const key = `${kind === "us" ? ID_US_PREFIX : ID_EQ_PREFIX}${id}`;
+/** Sets or clears (""): an adviser's ID_US ("us") or ID_EQ ("equ"), a team's ID_EQ ("eq"), a ProAssur team name ("eqname"). */
+export async function saveCrmId(kind: "us" | "equ" | "eq" | "eqname", id: string, value: string, by: string | null): Promise<void> {
+  const prefix = { us: ID_US_PREFIX, equ: ID_EQ_USER_PREFIX, eq: ID_EQ_PREFIX, eqname: EQ_NAME_PREFIX }[kind];
+  const key = `${prefix}${id}`;
   if (!value) {
     await prisma.azzurRoute.deleteMany({ where: { key } });
     return;
@@ -380,10 +392,12 @@ export async function loadEffectiveConfig(env: Record<string, string | undefined
     // Unreadable: no per-adviser ids, AZZUR applies its default user.
   }
   let idUsByUser: Record<string, string> = {};
+  let idEqByUser: Record<string, string> = {};
   const idEqByTeamName: Record<string, string> = {};
   try {
     const [ids, teams] = await Promise.all([loadCrmIds(), prisma.team.findMany({ select: { id: true, nom: true } })]);
     idUsByUser = ids.idUs;
+    idEqByUser = ids.idEqUser;
     for (const t of teams) if (ids.idEq[t.id]) idEqByTeamName[t.nom] = ids.idEq[t.id];
   } catch {
     // Unreadable: $id_us / $id_eq are sent empty.
@@ -392,7 +406,7 @@ export async function loadEffectiveConfig(env: Record<string, string | undefined
   const autoPush = settings.autoPush ?? base.autoPush;
   return {
     config: {
-      ...base, enabled, ready: enabled, autoPush, userMapById, defaultUserIds, idUsByUser, idEqByTeamName,
+      ...base, enabled, ready: enabled, autoPush, userMapById, defaultUserIds, idUsByUser, idEqByUser, idEqByTeamName,
       // The format chosen on the page wins over AZZUR_MER_DEFAULTS for nom / prénom.
       placeholders: settings.ficheFormat ? { ...base.placeholders, ...FICHE_FORMAT_PLACEHOLDERS[settings.ficheFormat] } : base.placeholders,
     },

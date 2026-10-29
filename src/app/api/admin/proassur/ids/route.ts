@@ -1,16 +1,17 @@
 // src/app/api/admin/proassur/ids/route.ts
 //
 // ProAssur, the CRM of the AUTO service (AZZUR / Santé is not concerned here). The administrator
-// enters the identifiers the teams and advisers already have in ProAssur: ID_EQ per Auto team,
-// ID_US per adviser; every adviser belongs to one Auto team and is sent with that team's ID_EQ
-// ($id_us / $id_eq of the ProAssur links). ADMIN ONLY. Only Auto teams and their advisers are
-// read or changed.
+// enters the identifiers the advisers already have in ProAssur: the couple ID_US + ID_EQ per
+// adviser (ID_EQ = their ProAssur team), and optionally an ID_EQ per Auto team for an adviser
+// without their own ($id_us / $id_eq of the ProAssur links). ADMIN ONLY. Only Auto teams and
+// their advisers are read or changed.
 //
-//   GET                                   -> Auto teams (ID_EQ, entity, advisers) and Auto advisers (ID_US)
+//   GET                                   -> Auto teams (ID_EQ, entity, advisers), Auto advisers
+//                                            (ID_US, ID_EQ, ID_EQ sent) and ProAssur team names
 //   POST { entity: "ALM"|"CPA", nom, idEq } -> creates an Auto team ("Équipe auto ALM <nom>")
 //   PUT  { teamId, idEq }                 -> a team's ID_EQ (names are not changed here: the base
 //                                            team names also route the standard lines at import)
-//   PUT  { userId, idUs?, teamId? }       -> an adviser's ID_US and/or Auto team
+//   PUT  { userId, idUs?, idEq?, teamId? } -> an adviser's ID_US, ID_EQ and/or Auto team
 //   PUT  { items: [ …same objects… ] }    -> several at once
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
@@ -71,8 +72,12 @@ export async function GET() {
         .flatMap((t) => t.users.map((u) => ({
           id: u.id, name: `${u.prenom} ${u.nom}`.trim(), role: u.role, line: u.phoneNumber,
           teamId: t.id, team: t.nom, idUs: ids.idUs[u.id] ?? "",
+          idEq: ids.idEqUser[u.id] ?? "",
+          // What $id_eq becomes: the adviser's own ProAssur team, else their Auto team's.
+          idEqSent: ids.idEqUser[u.id] ?? ids.idEq[t.id] ?? "",
         })))
         .sort((a, b) => a.name.localeCompare(b.name, "fr")),
+      eqNames: ids.eqName,
     });
   } catch (error) {
     return handleApiError(error, "GET /api/admin/proassur/ids");
@@ -97,7 +102,7 @@ export async function POST(req: NextRequest) {
   }
 }
 
-type Item = { userId?: unknown; idUs?: unknown; teamId?: unknown; idEq?: unknown };
+type Item = { userId?: unknown; idUs?: unknown; idEq?: unknown; teamId?: unknown };
 
 export async function PUT(req: NextRequest) {
   try {
@@ -126,6 +131,10 @@ export async function PUT(req: NextRequest) {
           const idUs = parseId(it.idUs, "ID_US");
           ops.push(() => saveCrmId("us", u.id, idUs, admin.userId));
         }
+        if (it.idEq !== undefined) {
+          const idEq = parseId(it.idEq, "ID_EQ");
+          ops.push(() => saveCrmId("equ", u.id, idEq, admin.userId));
+        }
         if (target && target.id !== u.teamId) ops.push(() => prisma.user.update({ where: { id: u.id }, data: { teamId: target.id } }));
       } else if (typeof it.teamId === "string" && it.teamId) {
         const t = teamById.get(it.teamId);
@@ -135,7 +144,7 @@ export async function PUT(req: NextRequest) {
           ops.push(() => saveCrmId("eq", t.id, idEq, admin.userId));
         }
       } else {
-        throw badRequest("Indiquez userId (+ idUs / teamId) ou teamId (+ idEq)");
+        throw badRequest("Indiquez userId (+ idUs / idEq / teamId) ou teamId (+ idEq)");
       }
     }
     await guarded(async () => { for (const op of ops) await op(); });

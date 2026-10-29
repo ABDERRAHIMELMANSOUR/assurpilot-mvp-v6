@@ -47,10 +47,12 @@ export default function UserFormModal({
   const [teams,       setTeams]       = useState<Team[]>([]);
   const [coachs,      setCoachs]      = useState<Coach[]>([]);
   const [saving,      setSaving]      = useState(false);
-  // ProAssur (Auto CRM): the adviser's ID_US, entered by the admin and saved apart from the
-  // account; the ID_EQ is the one of their Auto team.
+  // ProAssur (Auto CRM): the adviser's couple ID_US + ID_EQ (their ProAssur team), entered by
+  // the admin and saved apart from the account.
   const [idUs,        setIdUs]        = useState("");
   const [idUsLoaded,  setIdUsLoaded]  = useState("");
+  const [idEq,        setIdEq]        = useState("");
+  const [idEqLoaded,  setIdEqLoaded]  = useState("");
   const [teamIdEq,    setTeamIdEq]    = useState<Record<string, string>>({});
   const [error,       setError]       = useState("");
 
@@ -79,13 +81,14 @@ export default function UserFormModal({
     if (!isAdmin) return;
     let cancelled = false;
     void (async () => {
-      const data = await fetchJsonOr<{ teams: Array<{ id: string; idEq: string }>; advisers: Array<{ id: string; idUs: string }> }>(
+      const data = await fetchJsonOr<{ teams: Array<{ id: string; idEq: string }>; advisers: Array<{ id: string; idUs: string; idEq: string }> }>(
         { teams: [], advisers: [] }, "/api/admin/proassur/ids"
       );
       if (cancelled) return;
       setTeamIdEq(Object.fromEntries(data.teams.map((t) => [t.id, t.idEq])));
-      const current = mode === "edit" ? data.advisers.find((a) => a.id === initialData?.id)?.idUs ?? "" : "";
-      setIdUs(current); setIdUsLoaded(current);
+      const current = mode === "edit" ? data.advisers.find((a) => a.id === initialData?.id) : undefined;
+      setIdUs(current?.idUs ?? ""); setIdUsLoaded(current?.idUs ?? "");
+      setIdEq(current?.idEq ?? ""); setIdEqLoaded(current?.idEq ?? "");
     })();
     return () => { cancelled = true; };
   }, [isAdmin, mode, initialData?.id]);
@@ -123,9 +126,11 @@ export default function UserFormModal({
     const url    = mode === "create" ? "/api/users" : `/api/users/${initialData!.id}`;
     const method = mode === "create" ? "POST" : "PUT";
 
-    if (isAutoTeam && idUs.trim() && !/^[A-Za-z0-9 _.\-]{1,40}$/.test(idUs.trim())) {
-      setError("ID_US : lettres, chiffres, espace, « _ », « . » ou « - », 40 caractères au plus.");
-      return;
+    for (const [label, v] of [["ID_US", idUs], ["ID_EQ", idEq]] as const) {
+      if (isAutoTeam && v.trim() && !/^[A-Za-z0-9 _.\-]{1,40}$/.test(v.trim())) {
+        setError(`${label} : lettres, chiffres, espace, « _ », « . » ou « - », 40 caractères au plus.`);
+        return;
+      }
     }
 
     setSaving(true);
@@ -136,16 +141,19 @@ export default function UserFormModal({
         body: JSON.stringify(body),
       });
       const userId = mode === "create" ? saved?.id : initialData!.id;
-      if (isAutoTeam && userId && idUs.trim() !== idUsLoaded) {
+      const ids: Record<string, string> = {};
+      if (idUs.trim() !== idUsLoaded) ids.idUs = idUs.trim();
+      if (idEq.trim() !== idEqLoaded) ids.idEq = idEq.trim();
+      if (isAutoTeam && userId && Object.keys(ids).length) {
         try {
           await fetchJson("/api/admin/proassur/ids", {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ userId, idUs: idUs.trim() }),
+            body: JSON.stringify({ userId, ...ids }),
           });
         } catch (err) {
           // The account is saved; say clearly that only the ID_US is missing.
-          setError(errorMessage(err, "Conseiller enregistré, mais l'ID_US non enregistré : saisissez-le sur Intégration ProAssur."));
+          setError(errorMessage(err, "Conseiller enregistré, mais ID_US / ID_EQ non enregistrés : saisissez-les sur Intégration ProAssur."));
           setSaving(false);
           onSaved();
           return;
@@ -249,13 +257,13 @@ export default function UserFormModal({
                           className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-400" />
                       </div>
                       <div>
-                        <label className="block text-xs font-medium text-slate-600 mb-1">ID_EQ de l&apos;équipe</label>
-                        <p className="px-3 py-2 border border-slate-100 bg-slate-50 rounded-lg text-sm font-mono text-slate-600">
-                          {teamIdEq[teamId] || <span className="font-sans text-amber-700">non saisi</span>}
-                        </p>
+                        <label className="block text-xs font-medium text-slate-600 mb-1">ID_EQ (équipe ProAssur)</label>
+                        <input type="text" value={idEq} onChange={(e) => setIdEq(e.target.value)} maxLength={40}
+                          placeholder={teamIdEq[teamId] ? `${teamIdEq[teamId]} (équipe)` : "Id équipe ProAssur"}
+                          className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-400" />
                       </div>
                     </div>
-                    <p className="text-xs text-slate-400 mt-1">L&apos;ID_EQ appartient à l&apos;équipe : il se saisit sur Intégration ProAssur.</p>
+                    <p className="text-xs text-slate-400 mt-1">Le couple ID_US / ID_EQ du conseiller dans ProAssur (ID_EQ = son équipe ProAssur).</p>
                   </div>
                 )}
                 {targetRole === "CONSEILLER" && (
