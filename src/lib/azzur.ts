@@ -592,7 +592,15 @@ export async function pushCallToAzzur(
     if (isTemplate) {
       // A supplier script (ProAssur…): exactly the template's query, variables filled in,
       // and nothing else — the MER parameters mean nothing there.
-      url = fillTemplateUrl(endpoint.template!, templateValues(event, config));
+      const values = templateValues(event, config);
+      url = fillTemplateUrl(endpoint.template!, values);
+      // Journaled with the result: which ProAssur user the fiche was sent for (when the link carries $id_us).
+      if (endpoint.template!.includes("$id_us")) {
+        idUser = {
+          id: values.id_us,
+          why: values.id_us ? `ID_US ProAssur du conseiller${values.id_eq ? ` (ID_EQ ${values.id_eq})` : ""}` : "conseiller sans ID_US : envoyé vide",
+        };
+      }
       method = "GET";
     } else {
     // Recorded with the result, so every fiche says which AZZUR user it was sent for.

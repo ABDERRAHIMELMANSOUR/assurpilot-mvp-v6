@@ -365,7 +365,7 @@ function SendJournal({ reloadKey }: { reloadKey: unknown }) {
             <thead className="bg-slate-50/70 border-b border-slate-100 sticky top-0">
               <tr>
                 <th className="table-th">Date</th><th className="table-th">Numéro</th><th className="table-th">Lien</th>
-                <th className="table-th">Conseiller (Assurpilot)</th><th className="table-th">id_user envoyé</th><th className="table-th">Réponse AZZUR</th>
+                <th className="table-th">Conseiller (Assurpilot)</th><th className="table-th">id_user / ID_US envoyé</th><th className="table-th">Réponse AZZUR</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
