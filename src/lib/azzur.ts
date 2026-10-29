@@ -132,35 +132,61 @@ function positiveInt(value: string | undefined, fallback: number): number {
 /**
  * AZZUR refuses a fiche without a name, a date of birth and a postal code, none
  * of which a phone call carries. These placeholders let the fiche in so the
- * adviser can complete it; they are deliberately obvious stand-ins (a 1900 birth
- * date, postal code 00000) so they can never pass for real data, and the fiche
- * says so in its observation. Override or blank each one with AZZUR_MER_DEFAULTS.
+ * adviser can complete it; the fiche says so in its observation. Override or blank
+ * each one with AZZUR_MER_DEFAULTS.
+ *
+ * nom / prenom may use {telephone} (the caller's number), {conseiller} (who received the
+ * call on Assurpilot, or "non attribué"), {ligne} and {date}. Default: Nom "APE", Prénom = the
+ * caller's number.
+ *
+ * date_naissance / code_postal use {date_fictive} / {cp_fictif}: a birth date in 1900 and a
+ * postal code starting "00" (no French postal code does), both DERIVED FROM THE CALLER'S NUMBER.
+ * AZZUR de-duplicates on the fiche's identity: with the same 1900-01-01 / 00000 on every fiche,
+ * different callers sent with the right id_user all came back "DOUBLON:<one fiche>" (28/10,
+ * journal azzur_sends) and were filed under another user. Derived values give each caller their
+ * own identity — the same caller always gets the same one, so a real repeat is still a doublon —
+ * while staying obviously fictitious (year 1900, postal code 00xxx).
  */
-// nom / prenom may use {conseiller} (who received the call on Assurpilot, or
-// "non attribué"), {telephone} (the caller's number), {ligne} and {date}.
-// Default: Nom "Appel Assurpilot", Prénom "reçu par <conseiller>" — the format of the fiches
-// that AZZUR filed under the right advisers (28/10, 13:35). The "APE" / <number> format used
-// after it coincided with AZZUR classing the fiches "Doublon Fiche" and filing them under a
-// user of its own choosing, so it is no longer the default (still possible through
-// AZZUR_MER_DEFAULTS: {"nom":"APE","prenom":"{telephone}"}).
 const DEFAULT_PLACEHOLDERS = {
-  nom: "Appel Assurpilot",
-  prenom: "reçu par {conseiller}",
-  date_naissance: "1900-01-01", // AZZUR wants aaaa-mm-jj
-  code_postal: "00000",
+  nom: "APE",
+  prenom: "{telephone}",
+  date_naissance: "{date_fictive}", // AZZUR wants aaaa-mm-jj
+  code_postal: "{cp_fictif}",
 };
+
+/** FNV-1a over the number's digits: a stable, well-spread value per caller. */
+function callerHash(phone: string): number {
+  let h = 0x811c9dc5;
+  for (const ch of phone) {
+    h ^= ch.charCodeAt(0);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h >>> 0;
+}
+
+/** 1900-MM-DD and 00xxx derived from the caller's number (1900-01-01 / 00000 without a number). */
+export function fictitiousIdentity(callerNumber: string | null | undefined): { date: string; cp: string } {
+  const phone = normalizePhone(callerNumber);
+  if (!phone) return { date: "1900-01-01", cp: "00000" };
+  const h = callerHash(phone);
+  const day = new Date(Date.UTC(1900, 0, 1) + (h % 365) * 86_400_000); // 1900 is not a leap year
+  const cp = `00${String((Math.floor(h / 365) % 999) + 1).padStart(3, "0")}`;
+  return { date: day.toISOString().slice(0, 10), cp };
+}
 
 /** Cuts to AZZUR's documented maximum length for a field. */
 function clip(value: string, max: number): string {
   return value.length > max ? value.slice(0, max) : value;
 }
 
-/** Fills {telephone} / {conseiller} / {ligne} / {date} in a placeholder template. */
+/** Fills {telephone} / {date_fictive} / {cp_fictif} / {conseiller} / {ligne} / {date} in a placeholder template. */
 function fillTemplate(template: string, event: AzzurCallEvent): string {
   const who = event.conseiller ? `${event.conseiller.prenom} ${event.conseiller.nom}`.trim() : "non attribué";
   return template
     // Same national form as the tel / port fields; a withheld number says so rather than leaving a blank.
     .replace(/\{telephone\}/g, normalizePhone(event.callerNumber) || "numéro masqué")
+    .replace(/\{date_fictive\}/g, fictitiousIdentity(event.callerNumber).date)
+    .replace(/\{cp_fictif\}/g, fictitiousIdentity(event.callerNumber).cp)
     .replace(/\{conseiller\}/g, who)
     .replace(/\{ligne\}/g, event.lineLabel ?? "")
     .replace(/\{date\}/g, formatParisDate(event.startedAt))
@@ -276,7 +302,7 @@ function formatParisDate(date: Date): string {
  */
 /** The note left on a fiche: where the call came from, and that it must be completed. */
 export function commentaireFor(event: AzzurCallEvent): string {
-  return `Appel entrant${event.lineLabel ? ` - ${event.lineLabel}` : ""} du ${formatParisDate(event.startedAt)} (Assurpilot) : coordonnées à compléter`.slice(0, 255);
+  return `Appel entrant${event.lineLabel ? ` - ${event.lineLabel}` : ""} du ${formatParisDate(event.startedAt)} (Assurpilot) : coordonnées à compléter, date de naissance et CP fictifs`.slice(0, 255);
 }
 
 /** Values of the $variables of a template link (see TEMPLATE_VARIABLES in azzurRouting.ts). */
@@ -359,7 +385,7 @@ export function buildAzzurPayload(event: AzzurCallEvent, config: AzzurConfig): R
   }
   put(
     "observation",
-    clip(`Appel entrant${event.lineLabel ? ` - ${event.lineLabel}` : ""} du ${formatParisDate(event.startedAt)} (Assurpilot) : coordonnées à compléter`, 255)
+    clip(`Appel entrant${event.lineLabel ? ` - ${event.lineLabel}` : ""} du ${formatParisDate(event.startedAt)} (Assurpilot) : coordonnées à compléter, date de naissance et CP fictifs`, 255)
   );
   put("date", formatParisDate(event.startedAt));
   if (event.externalId) put("num_devis_initial", clip(event.externalId, 24));

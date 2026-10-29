@@ -436,6 +436,15 @@ conseillers le 28/10. Un numéro déjà envoyé sur un lien (« Fiche créée »
 `AZZUR_MER_DEDUPE_DAYS` jours n'est **plus renvoyé** (import, renvoi manuel ou saisie). Visible sur
 `/admin/azzur`, carte « Journal des envois » (filtre « Doublons seulement ») et `GET /api/admin/azzur/sends`.
 
+**Identité fictive propre à chaque appelant (29/10).** Le journal a montré que le format n'y était pour rien : en
+« Appel Assurpilot » comme en « APE », des appelants différents recevaient `DOUBLON:172797`. Ce qu'ils avaient en
+commun : `date_naissance=1900-01-01` et `cp=00000`. Depuis, `date_naissance` (`{date_fictive}`) et `cp`
+(`{cp_fictif}`) sont **dérivés du numéro de l'appelant** : une date en 1900 et un code postal `00xxx` (aucun code
+postal français ne commence par 00), toujours les mêmes pour un même numéro (un vrai rappel reste un doublon),
+différents d'un appelant à l'autre (≈ 365 000 combinaisons). Le commentaire de la fiche précise « date de
+naissance et CP fictifs ». Si `AZZUR_MER_DEFAULTS` est défini dans Vercel avec `date_naissance` ou
+`code_postal`, il prend le dessus : le retirer.
+
 **Nom de la fiche et faux doublons.** La documentation MER n'a **aucun paramètre** pour forcer ou
 désactiver le dédoublonnage d'AZZUR (paramètres généraux : `ws`, `id_prov`, `cle_ws`, `retour_ws*`,
 `id_user`, `id_agence`, `type`, `id_etat`) : il se règle dans AZZUR (Administration › Provenances › AE ›
@@ -515,7 +524,7 @@ variables GET »), paramètres encodés par `URLSearchParams` :
 |---|---|
 | `ws`, `id_prov`, `cle_ws` | `mer`, l'`id_prov` et la clé **du lien de la catégorie** (`id_prov` **est** la provenance) |
 | `tel` **et** `port` | le même numéro complet, forme `06…` (un appel ne dit pas fixe ou mobile) |
-| `nom`, `prenom` (obligatoire / non) | `Appel Assurpilot`, `reçu par <conseiller qui a reçu l'appel>` — format des fiches correctement attribuées le 28/10 à 13h35 ; le format `APE` / numéro (`{"nom":"APE","prenom":"{telephone}"}` dans `AZZUR_MER_DEFAULTS`) a coïncidé avec des fiches classées « Doublon Fiche » par AZZUR. Modèles `{conseiller}`, `{telephone}`, `{ligne}`, `{date}` |
+| `nom`, `prenom` (obligatoire / non) | `APE`, et le **numéro de l'appelant** en prénom (réglable sur `/admin/azzur` : « Appel Assurpilot / reçu par <conseiller> ») — modèles `{telephone}`, `{conseiller}`, `{ligne}`, `{date}` |
 | `date_naissance` (obligatoire, aaaa-mm-jj) | `1900-01-01` |
 | `cp` (obligatoire, 5 chiffres) | `00000` |
 | `commentaire` (255 car.) | « Appel entrant - Ligne santé CPA du … (Assurpilot) : coordonnées à compléter » |

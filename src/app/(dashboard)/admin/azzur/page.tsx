@@ -120,10 +120,6 @@ export default function AzzurPage() {
 
   async function changeFormat(next: "conseiller" | "ape") {
     if (!status || status.ficheFormat === next || formatBusy) return;
-    if (next === "ape" && !window.confirm(
-      "Passer au format « APE » + numéro ?\n\nN'activez ce format QUE si le dédoublonnage de la provenance AE dans AZZUR se fait sur le " +
-      "téléphone (Administration › Provenances › AE › Dédoublonnage). Sinon AZZUR considère toutes les fiches « APE » comme la même " +
-      "personne : il répond DOUBLON et les attribue à un autre conseiller que celui envoyé.")) return;
     setFormatBusy(true);
     try {
       await fetchJson("/api/admin/azzur/settings", {
@@ -176,10 +172,9 @@ export default function AzzurPage() {
               <div>
                 <p className="text-sm font-medium text-slate-800">Nom de la fiche AZZUR</p>
                 <p className="text-xs text-slate-500 mt-0.5 max-w-xl">
-                  AZZUR dédoublonne sur l&apos;identité de la fiche (nom, prénom, date de naissance), pas sur le numéro. En « APE » + numéro,
-                  toutes les fiches ont la même identité : AZZUR répond DOUBLON et les attribue à un autre conseiller que celui envoyé
-                  (voir « Faux doublon » dans le journal). N&apos;utilisez « APE » qu&apos;une fois le dédoublonnage de la provenance AE réglé
-                  sur le téléphone dans AZZUR.
+                  AZZUR dédoublonne sur l&apos;identité de la fiche, pas sur le numéro. Chaque fiche part donc avec une date de naissance
+                  (année 1900) et un code postal (00xxx) fictifs <b>propres à l&apos;appelant</b>, calculés à partir de son numéro : deux appelants
+                  différents ne sont plus confondus, le même appelant reste un vrai doublon. Le journal signale tout faux doublon restant.
                 </p>
               </div>
               <div className="inline-flex rounded-xl border border-slate-200 bg-white p-0.5 text-xs flex-shrink-0" role="radiogroup" aria-label="Nom de la fiche AZZUR">
@@ -357,9 +352,9 @@ function SendJournal({ reloadKey }: { reloadKey: unknown }) {
         <div className="mb-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">
           <b>{falseDups.length} faux doublon(s)</b> : AZZUR a répondu « DOUBLON » avec la même fiche pour des numéros différents
           (fiche{[...new Set(falseDups.map((r) => r.azzurFicheId))].length > 1 ? "s" : ""} {[...new Set(falseDups.map((r) => r.azzurFicheId))].join(", ")}).
-          Ce ne sont pas les mêmes appelants : AZZUR compare le nom de la fiche, pas le numéro, et attribue ces fiches à un autre
-          conseiller que l&apos;id_user envoyé. Repassez au format « Appel Assurpilot / reçu par &lt;conseiller&gt; » ou faites régler le
-          dédoublonnage de la provenance AE sur le téléphone dans AZZUR, puis réattribuez ces fiches dans AZZUR.
+          Ce ne sont pas les mêmes appelants : AZZUR compare l&apos;identité de la fiche, pas le numéro, et attribue ces fiches à un autre
+          conseiller que l&apos;id_user envoyé. Depuis le 29/10 chaque appelant a une date de naissance et un CP fictifs propres ; si des faux
+          doublons réapparaissent, faites régler le dédoublonnage de la provenance AE sur le téléphone dans AZZUR, et réattribuez ces fiches.
         </div>
       )}
       {!rows ? <p className="text-sm text-slate-400">Chargement…</p> : shown.length === 0 ? (
