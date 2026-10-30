@@ -314,6 +314,8 @@ export function templateValues(event: AzzurCallEvent, config: AzzurConfig): Reco
     telephone: normalizePhone(event.callerNumber),
     conseiller: c ? `${c.prenom} ${c.nom}`.trim() : "",
     conseiller_email: c?.email ?? "",
+    conseiller_nom: c?.nom ?? "",
+    conseiller_prenom: c?.prenom ?? "",
     nom: fillTemplate(config.placeholders.nom, event),
     prenom: fillTemplate(config.placeholders.prenom, event),
     date: formatParisDate(event.startedAt),

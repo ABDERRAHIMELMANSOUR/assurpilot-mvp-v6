@@ -88,6 +88,8 @@ export const TEMPLATE_VARIABLES: Record<string, string> = {
   telephone: "numéro de l'appelant, complet, forme 06…",
   conseiller: "prénom et nom du conseiller qui a reçu l'appel",
   conseiller_email: "e-mail du conseiller",
+  conseiller_nom: "nom du conseiller qui a reçu l'appel",
+  conseiller_prenom: "prénom du conseiller qui a reçu l'appel",
   nom: "nom de la fiche (« Appel Assurpilot »)",
   prenom: "prénom de la fiche (« reçu par <conseiller> »)",
   date: "date et heure de l'appel (AAAA-MM-JJ HH:MM:SS, Paris)",
