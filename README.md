@@ -1045,13 +1045,27 @@ même logique que Keyyo (`src/lib/keyyoCalls.ts`) :
   ProAssur Auto), une seule fois. **Raccroché** : heure de fin et durée Ringover ; un raccroché avec agent
   sans décroché reçu avant est traité comme décroché puis raccroché. **Manqué** (`event: missed`) :
   « Manqué », fiche envoyée 12 s plus tard s'il l'est toujours.
-- **Filtre : seuls les appels entrants** passent (`direction` = `inbound`, `in`, `incoming`). Les appels
-  sortants (`outbound`), internes (`is_internal`) et les événements sans direction ou d'une autre direction
-  sont ignorés dès la réception : réponse 200 (Ringover ne renvoie pas), aucun appel, **rien au journal**.
-  Les numéros masqués sont ignorés aussi.
+- **Filtre : seuls les appels entrants renvoyés par le standard Keyyo** sont traités. Il faut :
+  1. `direction` = `inbound` (`in`, `incoming`) — sortants (`outbound`), internes (`is_internal`), sans
+     direction ou autre : ignorés ;
+  2. **et** une preuve que l'appel vient du standard Keyyo, au choix :
+     - un champ de renvoi / transfert (`redirected_from`, `redirecting_number`, `forwarded_from`,
+       `diverted_from`, `transferred_from`, `transfer`, `original_called_number`…, en haut du JSON, dans
+       `data` ou dans `metadata` ; valeur = numéro, ou objet `{from | number | from_number}`) qui est une
+       **ligne du standard** (les 4 lignes de production et les lignes actives de « Lignes ») ;
+     - le numéro appelé (`to_number` / `callee`) est lui-même une ligne du standard ;
+     - le numéro appelé est un des **numéros Ringover qui reçoivent les renvois du standard**, déclarés sur
+       `/admin/keyyo` (un par ligne, `0189000000` ou `0189000000=0182287364` pour classer l'appel sur cette
+       ligne du standard ; aussi `RINGOVER_KEYYO_NUMBERS` dans Vercel). Utile car Ringover n'indique pas
+       toujours d'où vient le renvoi.
+
+  Un appel direct à Ringover, ou renvoyé depuis un autre numéro, est ignoré. Tout appel ignoré reçoit une
+  réponse 200 (Ringover ne renvoie pas) : aucun appel, **rien au journal**. Les numéros masqués sont ignorés
+  aussi. Un appel gardé est classé sur la ligne du standard d'où il vient (colonne « Ligne », lien CRM).
 - **Journal** (`/admin/keyyo`, table `keyyo_events`, colonne `called` ajoutée sans toucher aux lignes
-  existantes) : pour chaque appel entrant, le numéro du client (`from_number` / `caller`) et le numéro appelé
-  (`to_number` / `callee`), avec l'événement, la direction et le `call_id` — rien d'autre du payload.
+  existantes) : pour chaque appel gardé, le numéro du client (`from_number` / `caller`), le numéro appelé
+  (`to_number` / `callee`), la ligne du standard Keyyo et comment elle a été reconnue, avec l'événement, la
+  direction et le `call_id` — rien d'autre du payload.
 - **Sécurité** : le jeton secret de `/admin/keyyo` (le même que Keyyo, « Nouvelle URL » change les deux)
   dans l'URL ou l'en-tête `x-ringover-token`, **ou** la signature Ringover (`X-Ringover-Webhook-Signature`,
   JWT HS512) vérifiée avec la clé du webhook mise dans `RINGOVER_WEBHOOK_SECRET`. Sinon 401, rien n'est

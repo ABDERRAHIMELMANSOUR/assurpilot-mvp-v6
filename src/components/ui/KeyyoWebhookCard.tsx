@@ -13,6 +13,7 @@ type EventRow = {
 type Info = {
   enabled: boolean; url: string | null; tokenFromEnv: boolean; events: EventRow[];
   ringover: { answered: string; ended: string } | null; ringoverSigned: boolean;
+  ringoverKeyyoNumbers: string; ringoverKeyyoNumbersEnv: string;
 };
 
 const TYPE_LABEL: Record<string, string> = {
@@ -37,6 +38,23 @@ export default function KeyyoWebhookCard() {
   const [info, setInfo] = useState<Info | null>(null);
   const [busy, setBusy] = useState(false);
   const [showRaw, setShowRaw] = useState<string | null>(null);
+  // Draft of the forward numbers: set from the server once, then only by the admin (the 10 s
+  // refresh must not overwrite what is being typed).
+  const [targets, setTargets] = useState<string | null>(null);
+  useEffect(() => { if (info && targets === null) setTargets(info.ringoverKeyyoNumbers); }, [info, targets]);
+
+  async function saveTargets() {
+    setBusy(true);
+    try {
+      const r = await fetchJson<{ ringoverKeyyoNumbers: string }>("/api/admin/keyyo/webhook", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "ringoverNumbers", value: targets ?? "" }),
+      });
+      setTargets(r.ringoverKeyyoNumbers);
+      await load();
+      toast.success("Numéros de renvoi du standard enregistrés.");
+    } catch (e) { toast.error(errorMessage(e, "Enregistrement impossible.")); }
+    finally { setBusy(false); }
+  }
 
   const load = useCallback(async () => {
     try { setInfo(await fetchJson<Info>("/api/admin/keyyo/webhook")); }
@@ -122,9 +140,12 @@ export default function KeyyoWebhookCard() {
             <ol className="text-[11px] text-slate-600 mt-2 list-decimal pl-4 space-y-0.5">
               <li>Dashboard Ringover → <b>Développeur</b> → <b>Webhooks</b> : collez la 1<sup>re</sup> URL dans <b>Appels décrochés</b>, la 2<sup>e</sup> dans <b>Appels raccrochés</b>
                 {" "}(et, si vous voulez les manqués, aussi dans <b>Appels manqués</b>). Ne touchez pas au webhook <b>After-Call Work</b> (n8n).</li>
-              <li><b>Seuls les appels entrants</b> (<span className="font-mono">direction: inbound</span>) sont traités : les appels sortants, internes ou sans
-                direction sont ignorés, sans rien enregistrer. Pour chaque appel entrant, le journal garde le numéro du client
-                (<span className="font-mono">from_number</span>) et le numéro appelé (<span className="font-mono">to_number</span>).</li>
+              <li><b>Seuls les appels entrants renvoyés par le standard Keyyo</b> sont traités : <span className="font-mono">direction: inbound</span>, et
+                {" "}un champ de renvoi / transfert (<span className="font-mono">redirected_from</span>, <span className="font-mono">transferred_from</span>,
+                {" "}<span className="font-mono">metadata</span>…) qui nomme une ligne du standard, ou un numéro appelé (<span className="font-mono">to_number</span>)
+                {" "}qui est une ligne du standard ou un des numéros de renvoi ci-dessous. Appels sortants, internes, directs ou venant d&apos;ailleurs : ignorés,
+                {" "}sans rien enregistrer. Pour chaque appel gardé, le journal note le numéro du client (<span className="font-mono">from_number</span>), le numéro
+                {" "}appelé (<span className="font-mono">to_number</span>) et la ligne du standard.</li>
               <li>Le conseiller est l&apos;utilisateur Ringover qui a décroché, retrouvé par son <b>e-mail</b> puis ses <b>prénom et nom</b> dans AssurPilot
                 (puis mémorisé) ; le client est le numéro appelant (<span className="font-mono">from_number</span>) ; les deux événements sont reliés par
                 {" "}<span className="font-mono">call_id</span>.</li>
@@ -134,6 +155,25 @@ export default function KeyyoWebhookCard() {
                   : <>facultative — mettez la clé du webhook Ringover dans la variable <span className="font-mono">RINGOVER_WEBHOOK_SECRET</span> de Vercel ; le jeton de l&apos;URL suffit sinon.</>}
               </li>
             </ol>
+            <div className="mt-3">
+              <label className="text-[11px] font-semibold text-slate-700" htmlFor="ringover-keyyo-numbers">
+                Numéros Ringover qui reçoivent les renvois du standard Keyyo
+              </label>
+              <p className="text-[11px] text-slate-500">
+                Un par ligne. Facultatif : <span className="font-mono">numéro Ringover=ligne du standard</span> pour classer l&apos;appel sur cette ligne
+                {" "}(ex. <span className="font-mono">0189000000=0182287364</span>). Sert quand Ringover n&apos;indique pas d&apos;où vient le renvoi.
+              </p>
+              <div className="flex flex-wrap items-start gap-2 mt-1">
+                <textarea
+                  id="ringover-keyyo-numbers" rows={3} className="input text-xs font-mono flex-1 min-w-[220px]"
+                  value={targets ?? ""} onChange={(e) => setTargets(e.target.value)} placeholder="0189000000=0182287364"
+                />
+                <button className="btn btn-secondary text-xs" disabled={busy || targets === null || targets === info.ringoverKeyyoNumbers} onClick={saveTargets}>Enregistrer</button>
+              </div>
+              {info.ringoverKeyyoNumbersEnv && (
+                <p className="text-[11px] text-slate-500 mt-1">Aussi, depuis Vercel (RINGOVER_KEYYO_NUMBERS) : <span className="font-mono">{info.ringoverKeyyoNumbersEnv}</span></p>
+              )}
+            </div>
           </div>
 
           <p className="text-xs font-semibold text-slate-700 mb-1">Dernières notifications reçues</p>

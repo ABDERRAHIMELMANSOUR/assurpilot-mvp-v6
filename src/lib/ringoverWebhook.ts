@@ -24,6 +24,15 @@
 //
 // ONLY INBOUND CALLS are kept: "direction" must say inbound (inbound / in / incoming / entrant).
 // Outbound, internal (is_internal) and calls whose direction is missing or unknown are ignored.
+//
+// And ONLY CALLS FORWARDED FROM THE KEYYO STANDARD (keyyoStandardOrigin), recognised by one of:
+//   1. a redirection / transfer field naming a Keyyo standard line: redirected_from,
+//      redirecting_number, forwarded_from, diverted_from, transferred_from, transfer,
+//      original_called_number… — at the top, in "data" or in "metadata";
+//   2. the number called (to_number / callee) being itself a Keyyo standard line;
+//   3. the number called being one of the Ringover numbers the standard forwards to, declared on
+//      /admin/keyyo (« 0189… » or « 0189…=0182287364 » to name the standard line it serves).
+// A direct call to Ringover, or one redirected from any other number, is ignored.
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { normalizePhone } from "@/lib/phone";
 import { eventType, parisWallClock, type KeyyoEventType, type KeyyoNotification } from "@/lib/keyyoWebhook";
@@ -41,6 +50,10 @@ export type RingoverNotification = KeyyoNotification & {
   rawDirection: string;
   /** Number called (to_number / callee): the Ringover line, national form. */
   called: string;
+  /** Numbers the call was redirected / transferred from, as the payload gives them. */
+  redirectedFrom: string[];
+  /** Ringover IVR number the call went through, if any. */
+  ivrNumber: string;
   /** On a hangup: the call WAS answered (it has an agent), though no "answered" came first. */
   answeredBeforeEnd: Date | null;
 };
@@ -63,6 +76,91 @@ function num(...values: unknown[]): number | null {
     const n = Number(v);
     if (Number.isFinite(n)) return n;
   }
+  return null;
+}
+
+// Field names under which a redirection / transfer origin may come (compared without case or
+// separators). A value may be a number, or an object holding it (from / number / from_number…).
+const REDIRECT_KEYS = [
+  "redirected_from", "redirect_from", "redirected_by", "redirecting", "redirecting_number", "redirection",
+  "redirect", "forwarded_from", "forward_from", "forwarded_by", "forwarding_number", "diverted_from",
+  "diversion", "diversion_number", "transferred_from", "transfer_from", "transfer", "transferred_by",
+  "original_number", "original_called_number", "original_to_number", "original_callee", "origin_number",
+  "keyyo_line", "keyyo_number", "ligne_keyyo", "standard",
+].map((k) => k.replace(/[^a-z0-9]/g, ""));
+const NESTED_NUMBER_KEYS = ["from", "number", "from_number", "numero", "phone", "line", "to_number", "original"];
+
+function redirectNumbers(...sources: Obj[]): string[] {
+  const found: string[] = [];
+  const add = (v: unknown) => {
+    if (typeof v === "string" || typeof v === "number") {
+      const digits = String(v).replace(/\D/g, "");
+      if (digits.length >= 9) found.push(normalizePhone(String(v)));
+    } else if (isObj(v)) {
+      for (const k of NESTED_NUMBER_KEYS) if (k in v) add(v[k]);
+    } else if (Array.isArray(v)) {
+      v.forEach(add);
+    }
+  };
+  for (const src of sources) {
+    for (const [k, v] of Object.entries(src)) {
+      if (REDIRECT_KEYS.includes(k.toLowerCase().replace(/[^a-z0-9]/g, ""))) add(v);
+    }
+  }
+  return [...new Set(found.filter(Boolean))];
+}
+
+export type KeyyoOrigin = {
+  /** The Keyyo standard line the call came from, when known (national form). */
+  line: string | null;
+  via: "redirection" | "numéro appelé" | "numéro de renvoi";
+};
+
+/**
+ * Parses the « Numéros Ringover recevant les renvois du standard Keyyo » setting: one entry per
+ * line (or separated by commas / semicolons; spaces inside a number are fine), optionally
+ * « ringover=keyyo ». An entry that is not a phone number (under 9 digits) is skipped.
+ */
+export function forwardTargetEntries(textValue: string | null | undefined): string[] {
+  return (textValue ?? "").split(/[\n\r,;]+/).map((x) => x.trim()).filter(Boolean);
+}
+
+const isPhone = (x: string | undefined) => (x ?? "").replace(/\D/g, "").length >= 9;
+
+export function parseForwardTargets(textValue: string | null | undefined): Map<string, string | null> {
+  const out = new Map<string, string | null>();
+  for (const entry of forwardTargetEntries(textValue)) {
+    const [target, line] = entry.split("=").map((x) => x.trim());
+    if (!isPhone(target)) continue;
+    out.set(normalizePhone(target), isPhone(line) ? normalizePhone(line) : null);
+  }
+  return out;
+}
+
+/** Entries of the setting that are not « number » or « number=number ». */
+export function invalidForwardTargets(textValue: string | null | undefined): string[] {
+  return forwardTargetEntries(textValue).filter((entry) => {
+    const parts = entry.split("=").map((x) => x.trim());
+    return parts.length > 2 || !isPhone(parts[0]) || (parts.length === 2 && !isPhone(parts[1]));
+  });
+}
+
+/**
+ * Did this Ringover call come from the Keyyo standard? `keyyoLines`: the standard's lines
+ * (national form); `forwardTargets`: Ringover numbers the standard forwards to. null = no.
+ */
+export function keyyoStandardOrigin(
+  n: Pick<RingoverNotification, "redirectedFrom" | "called" | "ivrNumber">,
+  keyyoLines: Set<string>,
+  forwardTargets: Map<string, string | null>,
+): KeyyoOrigin | null {
+  const redirected = n.redirectedFrom.find((x) => keyyoLines.has(x));
+  if (redirected) return { line: redirected, via: "redirection" };
+  const reached = [n.called, n.ivrNumber].filter(Boolean);
+  const direct = reached.find((x) => keyyoLines.has(x));
+  if (direct) return { line: direct, via: "numéro appelé" };
+  const target = reached.find((x) => forwardTargets.has(x));
+  if (target) return { line: forwardTargets.get(target) ?? null, via: "numéro de renvoi" };
   return null;
 }
 
@@ -154,6 +252,8 @@ export function parseRingoverPayload(body: Obj, endpoint: RingoverEndpoint): Rin
     inbound,
     rawDirection: dir,
     called: to,
+    redirectedFrom: redirectNumbers(body, data, ...[body.metadata, data.metadata, body.meta, data.meta, data.custom_data, data.tags].filter(isObj)),
+    ivrNumber: normalizePhone(text(ivr.number)),
     answeredBeforeEnd,
   };
 }
