@@ -971,21 +971,25 @@ immédiatement.
 
 ### Appels en temps réel : Notification d'appels Keyyo (webhook)
 
-Référence : [API de notification d'appels Keyyo](https://www.keyyo.com/fr/telephonie-api/notification-appels).
+Référence : [API de notification d'appels Keyyo](https://www.keyyo.com/fr/telephonie-api/notification-appels)
+et le « Guide d'utilisation CTI / API / TAPI » Keyyo v1.6.
 Keyyo appelle AssurPilot à chaque événement d'une ligne, sans saisie ni import. L'URL se règle **sur la
 ligne directe de chaque conseiller**, dans le Manager Keyyo : onglet « Configurer » de la ligne →
 « Paramètres avancés » → « CTI » → « API serveur ». Elle est affichée, prête à coller, sur `/admin/keyyo` :
 
 ```
-https://<app>/api/keyyo/webhook?token=<secret>&account=_ACCOUNT_&caller=_CALLER_&callee=_CALLEE_&callref=_CALLREF_&type=_N_TYPE_&session=_SESSION_ID_&acd=_IS_ACD_&redirecting=_REDIRECTING_NUMBER_&dref=_DREF_&version=_N_VERSION_
+https://<app>/api/keyyo/webhook?token=<secret>&account=_ACCOUNT_&caller=_CALLER_&callee=_CALLEE_&callref=_CALLREF_&type=_N_TYPE_&session=_SESSION_ID_&acd=_IS_ACD_&redirecting=_REDIRECTING_NUMBER_&tsms=_TSMS_&dref=_DREF_&drefreplace=_DREF_REPLACE_&version=_N_VERSION_
 ```
 
 Keyyo remplace les mots-clés à chaque notification : `_ACCOUNT_` la ligne (= le conseiller), `_CALLER_`
 l'appelant (= le client ; égal à la ligne : appel **sortant**, ignoré), `_CALLEE_` l'appelé (égal à la ligne :
 appel **entrant**), `_CALLREF_` l'appel sur cette ligne, `_N_TYPE_` = `SETUP` / `CONNECT` / `RELEASE`,
 `_SESSION_ID_` commun à toutes les lignes qu'un même appel sur un **numéro d'accueil** fait sonner,
-`_IS_ACD_` = 1 pour un appel venant d'un numéro d'accueil. Keyyo n'envoie pas de date : le début d'appel est
-la réception de la première notification. Les noms de l'export Keyyo (« Début d'appel », « Numéro
+`_IS_ACD_` = 1 pour un appel venant d'un numéro d'accueil, `_TSMS_` l'heure de l'événement chez Keyyo (en
+millisecondes) : début, décroché et fin d'appel en sont tirés (heure de Paris, comme l'import) ; une URL
+sans `_TSMS_` (ancienne) prend l'heure de réception. `_DREF_` identifie le dialogue, `_DREF_REPLACE_` le
+dialogue repris (interception, transfert accompagné). Un mot-clé que Keyyo laisse tel quel
+(`_SESSION_ID_`…) compte comme vide. Les noms de l'export Keyyo (« Début d'appel », « Numéro
 présenté », « Numéro appelé », « Numéro appelant ») sont aussi acceptés, avec le sens de l'import.
 
 | Notification | Dans AssurPilot |
@@ -993,8 +997,9 @@ présenté », « Numéro appelé », « Numéro appelant ») sont aussi accept�
 | `SETUP` (initiation) | l'appel apparaît « En cours » chez le conseiller dont la ligne sonne (listes rafraîchies toutes les 10 s) |
 | `CONNECT` (connexion) | « Répondu », rattaché au conseiller qui a décroché ; fiche envoyée (AZZUR Santé « APE » + numéro avec son id_user, ProAssur Auto) |
 | `RELEASE` (fin) de la ligne qui a décroché | heure de fin et durée |
-| `RELEASE` sans décroché, ligne directe | « Manqué », fiche envoyée à ce moment |
-| `RELEASE` sans décroché, numéro d'accueil | « Manqué » en attendant (une autre ligne peut encore sonner et décrocher) ; **pas envoyé automatiquement**, envoyable depuis la vérification d'Intégration AZZUR |
+| `RELEASE` sans décroché | « Manqué » ; fiche envoyée **12 s plus tard s'il est toujours manqué** (sur un numéro d'accueil une autre ligne peut encore décrocher, une interception arrive comme un nouveau dialogue) — sauf si seuls les appels répondus sont envoyés |
+| `CONNECT` de la messagerie (numéro répondant de 22 chiffres) | pas un décroché : l'appel reste « En cours » puis « Manqué » |
+| `SETUP` avec `_DREF_REPLACE_` (interception par supervision, transfert accompagné) | l'appel repris (celui dont le `_DREF_` correspond) passe au conseiller qui le prend, « Répondu » ; sa fin est le `RELEASE` de ce conseiller. Keyyo y met la ligne qui prend en *appelant* et le client en *appelé* : ce n'est pas traité comme un appel sortant |
 | sans type | appel reçu : « Répondu » et fiche envoyée tout de suite |
 
 - **Un seul appel par appel client** : regroupé sur `_SESSION_ID_` (numéro d'accueil), sinon sur `_CALLREF_`
@@ -1005,6 +1010,9 @@ présenté », « Numéro appelé », « Numéro appelant ») sont aussi accept�
 - **Sécurité** : jeton secret dans l'URL (ou en-tête `x-keyyo-token`), comparé en temps constant ;
   mauvais jeton = 401, rien n'est écrit. Généré sur `/admin/keyyo` (« Nouvelle URL » l'invalide : à recoller
   sur chaque ligne) ou fixé par `KEYYO_WEBHOOK_TOKEN`. Interrupteur on/off sur la même page.
+  En plus, facultatif : `KEYYO_ALLOWED_IPS=83.136.160.79` (adresse d'envoi des notifications selon le
+  guide Keyyo ; plusieurs séparées par des virgules) refuse toute autre adresse (403).
+  `KEYYO_MISSED_DELAY_MS` règle le délai d'envoi d'un appel manqué (12 000 par défaut, 25 000 au plus).
 - **Journal** : `/admin/keyyo` affiche les dernières notifications reçues, les paramètres exacts envoyés par
   Keyyo (sans le jeton) et ce qu'AssurPilot en a fait (table `keyyo_events`, créée au premier usage).
 - **Import Excel ensuite** : une ligne de l'export Keyyo qui correspond à un appel déjà reçu par webhook

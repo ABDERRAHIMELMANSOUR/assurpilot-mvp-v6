@@ -4,9 +4,11 @@
 // Keyyo line. Pure parsing here — no database, no request — so the rules can be read and tested
 // on their own; src/app/api/keyyo/webhook/route.ts applies them.
 //
-// Reference: https://www.keyyo.com/fr/telephonie-api/notification-appels — the URL is set per
-// line in the Keyyo Manager (Configurer > Paramètres avancés > CTI > API serveur) and may contain
-// keywords Keyyo replaces on each notification. The URL we hand out (KEYYO_URL_PARAMS) names them:
+// Reference: Keyyo "Guide d'utilisation CTI / API / TAPI" v1.6 and
+// https://www.keyyo.com/fr/telephonie-api/notification-appels — the URL is set per line in the
+// Keyyo Manager (Configurer > Paramètres avancés > CTI > API serveur), called by HTTP GET from
+// Keyyo (source IP 83.136.160.79), and contains keywords Keyyo replaces on each notification.
+// The URL we hand out (KEYYO_URL_PARAMS) names them:
 //   account=_ACCOUNT_       the Keyyo line, international form         -> the adviser's line
 //   caller=_CALLER_         the calling number (= account: outgoing)    -> the customer
 //   callee=_CALLEE_         the called number (= account: incoming)
@@ -16,8 +18,14 @@
 //                           d'accueil (standard): the lines it rang share it
 //   acd=_IS_ACD_            1 when the call comes from a numéro d'accueil
 //   redirecting=_REDIRECTING_NUMBER_  the line forwarding the call, on a forwarded call
-//   dref=_DREF_, version=_N_VERSION_
-// Keyyo sends no date: the call starts when its first notification arrives.
+//   tsms=_TSMS_             timestamp of the event, in milliseconds     -> start / end times
+//   dref=_DREF_             the dialogue (differs from the callref)
+//   drefreplace=_DREF_REPLACE_  on an interception (supervision) or an attended transfer: the
+//                           _DREF_ of the dialogue taken over. In that new dialogue the line that
+//                           takes the call is the CALLER and the customer the CALLEE.
+//   version=_N_VERSION_
+// When voicemail answers, the answering number is far longer than a phone number (22 digits):
+// that CONNECT is not an adviser answering.
 //
 // The names of the Keyyo call export are accepted too ("Début d'appel", "Numéro appelant",
 // "Numéro présenté", "Numéro appelé"), with the import's meaning: présenté = the customer, appelé
@@ -28,7 +36,8 @@ import { normalizePhone } from "@/lib/phone";
 /** Query string to append to our webhook URL in the Keyyo Manager. */
 export const KEYYO_URL_PARAMS =
   "account=_ACCOUNT_&caller=_CALLER_&callee=_CALLEE_&callref=_CALLREF_&type=_N_TYPE_" +
-  "&session=_SESSION_ID_&acd=_IS_ACD_&redirecting=_REDIRECTING_NUMBER_&dref=_DREF_&version=_N_VERSION_";
+  "&session=_SESSION_ID_&acd=_IS_ACD_&redirecting=_REDIRECTING_NUMBER_&tsms=_TSMS_" +
+  "&dref=_DREF_&drefreplace=_DREF_REPLACE_&version=_N_VERSION_";
 
 export type KeyyoEventType = "ringing" | "answered" | "ended" | "unknown";
 export type KeyyoDirection = "incoming" | "outgoing" | "unknown";
@@ -53,9 +62,19 @@ export type KeyyoNotification = {
   lineCandidates: string[];
   /** Start of the call when given ("Début d'appel"); otherwise null (= now). */
   startedAt: Date | null;
+  /** Time of this event (_TSMS_), Paris wall-clock like startedAt; null if not sent (= now). */
+  eventAt: Date | null;
   /** Duration in seconds when given. */
   durationSeconds: number | null;
   dref: string | null;
+  /** _DREF_REPLACE_: the dialogue this one takes over (interception, attended transfer). */
+  drefReplace: string | null;
+  /** The line itself (account), national form. */
+  account: string;
+  /** The other party when the line is the CALLER (interception): the customer of the taken call. */
+  callee: string;
+  /** A CONNECT answered by voicemail (22-digit answering number), not by the adviser. */
+  voicemail: boolean;
 };
 
 function key(name: string): string {
@@ -129,6 +148,8 @@ export function parseKeyyoNotification(raw: Record<string, unknown>): KeyyoNotif
   const customer = normalizePhone(pick(params, "Numéro présenté", "numero_presente")) || caller;
   const start = pick(params, "Début d'appel", "debut_appel", "debut", "date", "start", "starttime", "datetime", "timestamp");
   const duration = pick(params, "Durée réelle", "duree", "duration");
+  const tsms = pick(params, "tsms", "_tsms_", "event_time");
+  const rawCallee = pick(params, "callee", "called", "to").replace(/\D/g, "");
 
   // Keyyo's own rule (only meaningful when it sent the line).
   const direction: KeyyoDirection = !account ? "unknown" : caller && caller === account ? "outgoing" : callee && callee === account ? "incoming" : "unknown";
@@ -146,7 +167,13 @@ export function parseKeyyoNotification(raw: Record<string, unknown>): KeyyoNotif
     adviserCandidates: uniq([account, appele, callee]),
     lineCandidates: uniq([appelant, redirecting, callee]),
     startedAt: start ? parisWallClock(start) : null,
+    eventAt: /^\d{10,13}$/.test(tsms) ? parisWallClock(tsms) : null,
     durationSeconds: duration && /^\d+$/.test(duration) ? Number(duration) : null,
     dref: pick(params, "dref") || null,
+    drefReplace: pick(params, "drefreplace", "dref_replace") || null,
+    account,
+    callee,
+    // Keyyo: a call answered by voicemail shows an answering number of 22 digits.
+    voicemail: rawType ? eventType(rawType) === "answered" && rawCallee.length >= 20 : false,
   };
 }

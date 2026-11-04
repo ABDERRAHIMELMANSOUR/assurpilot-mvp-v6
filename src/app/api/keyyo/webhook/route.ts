@@ -7,8 +7,11 @@
 // Security: no session here, so the secret token decides (query "token" or header
 // x-keyyo-token, compared in constant time; set on /admin/keyyo or by KEYYO_WEBHOOK_TOKEN).
 // Wrong token -> 401, nothing written. Switched off on /admin/keyyo -> journaled, no call.
+// Optionally, KEYYO_ALLOWED_IPS (comma-separated, e.g. 83.136.160.79 — the address Keyyo's guide
+// gives for its notifications) also restricts the sender's address: any other -> 403.
 //
-// Always answers fast: Keyyo does not wait for the CRM — the fiche is sent in the background.
+// Always answers fast: Keyyo does not wait for the CRM — the fiche is sent in the background
+// (a missed call a few seconds after the hang-up, hence the longer maxDuration).
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { parseKeyyoNotification } from "@/lib/keyyoWebhook";
@@ -17,7 +20,7 @@ import { loadKeyyoWebhookSettings, recordKeyyoEvent, tokenMatches } from "@/lib/
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 20;
+export const maxDuration = 30;
 
 async function readParams(req: NextRequest): Promise<Record<string, unknown>> {
   const params: Record<string, unknown> = Object.fromEntries(req.nextUrl.searchParams.entries());
@@ -38,7 +41,18 @@ async function readParams(req: NextRequest): Promise<Record<string, unknown>> {
   return params;
 }
 
+function senderAllowed(req: NextRequest): boolean {
+  const allowed = (process.env.KEYYO_ALLOWED_IPS ?? "").split(",").map((x) => x.trim()).filter(Boolean);
+  if (!allowed.length) return true;
+  const ip = (req.headers.get("x-forwarded-for") ?? "").split(",")[0].trim() || (req.headers.get("x-real-ip") ?? "").trim();
+  return allowed.includes(ip);
+}
+
 async function handle(req: NextRequest) {
+  if (!senderAllowed(req)) {
+    console.warn("[keyyo] notification refusée : adresse d'envoi non autorisée");
+    return new NextResponse("forbidden", { status: 403 });
+  }
   const params = await readParams(req);
   const settings = await loadKeyyoWebhookSettings().catch(() => ({ token: null, enabled: false }));
   const given = req.headers.get("x-keyyo-token") ?? (typeof params.token === "string" ? params.token : null);
