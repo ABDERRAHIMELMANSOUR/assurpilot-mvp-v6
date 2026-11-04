@@ -969,6 +969,38 @@ cartes du tableau de bord, aux statistiques détaillées, au classement, aux
 appels. Rien n'est réécrit en base : les appels déjà qualifiés sont comptés
 immédiatement.
 
+### Appels en temps réel : Notification d'appels Keyyo (webhook)
+
+Keyyo appelle AssurPilot à chaque changement d'état d'un appel, sans saisie ni import :
+`GET /api/keyyo/webhook?token=<secret>` (POST formulaire ou JSON accepté aussi), à configurer dans Keyyo
+(« Notification d'appels ») **sur la ligne directe de chaque conseiller** : Keyyo ne notifie pas les
+standards (ACD). Paramètres Keyyo lus : `account` (la ligne notifiée = le conseiller), `caller` (le
+client), `callee`, `callref` (identifiant de l'appel), `type` = `SETUP` / `CONNECT` / `RELEASE`, `dref`.
+Les noms de l'export Keyyo sont aussi acceptés, avec le même sens qu'à l'import : « Début d'appel »,
+« Numéro présenté » (client), « Numéro appelé » (ligne du conseiller), « Numéro appelant » (standard).
+Keyyo n'envoie pas de date : le début d'appel est la réception de la première notification.
+
+| Notification | Dans AssurPilot |
+|---|---|
+| `SETUP` (sonnerie) | l'appel apparaît « En cours » chez le conseiller (listes rafraîchies toutes les 10 s) |
+| `CONNECT` (décroché) | « Répondu », rattaché au conseiller qui a décroché ; fiche envoyée (AZZUR Santé « APE » + numéro, ProAssur Auto) |
+| `RELEASE` (raccroché) | heure de fin et durée ; jamais décroché = « Manqué », fiche envoyée à ce moment |
+| sans `type` | appel reçu : « Répondu » et fiche envoyée tout de suite |
+
+- **Un appel par `callref`** (sans callref : même conseiller + même client à 2 minutes près), quel que soit
+  l'ordre ou le nombre de notifications (verrou par appel). Un appel passé par un conseiller (sortant) et
+  une ligne sans conseiller sont ignorés ; un numéro masqué aussi (comme à l'import).
+- **Envoi CRM** : même chemin qu'un appel saisi à la main — interrupteur « Envois automatiques »
+  d'Intégration AZZUR, une fiche par numéro (journal des envois), lien choisi par l'équipe du conseiller.
+- **Sécurité** : jeton secret dans l'URL (ou en-tête `x-keyyo-token`), comparé en temps constant ;
+  mauvais jeton = 401, rien n'est écrit. Généré sur `/admin/keyyo` (« Nouvelle URL » l'invalide) ou fixé par
+  `KEYYO_WEBHOOK_TOKEN`. Interrupteur on/off sur la même page (`setting:keyyoWebhookEnabled`).
+- **Journal** : `/admin/keyyo` affiche les dernières notifications reçues, les paramètres exacts envoyés par
+  Keyyo (sans le jeton) et ce qu'AssurPilot en a fait (table `keyyo_events`, créée au premier usage).
+- **Import Excel ensuite** : une ligne de l'export Keyyo qui correspond à un appel déjà reçu par webhook
+  (même conseiller, même client, début à 3 minutes près) n'est pas réimportée ; sa durée et son statut
+  (répondu / manqué) sont appliqués à l'appel existant.
+
 ### Import de fichiers d'appels
 
 `POST /api/calls/import` (multipart, champ `file`, `preview=true` pour un essai

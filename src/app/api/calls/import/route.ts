@@ -147,6 +147,8 @@ type ParsedRow = {
   durationSeconds: number;
   isMissed: boolean;
   statut: string;
+  /** A call already created live by the Keyyo webhook that this row is (import mode updates it). */
+  liveCallId?: string;
   destination: string;
   dureeValorisee: number;
   site: string;
@@ -187,6 +189,9 @@ type ParsedRow = {
  * vs "0687814485") still recognises its own rows. With the timestamp and the
  * duration both exact, that cannot collide two different calls.
  */
+/** How far apart a Keyyo webhook call and the same call in a Keyyo export may start. */
+const WEBHOOK_MATCH_MS = 3 * 60_000;
+
 function duplicateKey(
   conseillerId: string,
   callerNumber: string,
@@ -447,28 +452,39 @@ export async function POST(req: NextRequest) {
           assignedUserId: { in: conseillerIds },
           // Exactly the span the file covers: with exact timestamps nothing
           // outside it can possibly match.
+          // Exactly the span the file covers, widened by the tolerance of the
+          // live (Keyyo webhook) calls below.
           startedAt: {
-            gte: new Date(Math.min(...timestamps)),
-            lte: new Date(Math.max(...timestamps)),
+            gte: new Date(Math.min(...timestamps) - WEBHOOK_MATCH_MS),
+            lte: new Date(Math.max(...timestamps) + WEBHOOK_MATCH_MS),
           },
         },
         select: {
+          id: true,
           assignedUserId: true,
           callerNumber: true,
           durationSeconds: true,
           startedAt: true,
+          rawMeta: true,
         },
       });
 
       const seen = new Set<string>();
       const inDatabase = new Set<string>();
+      // Calls already created live by the Keyyo webhook, per adviser + customer.
+      const live = new Map<string, Array<{ id: string; t: number }>>();
 
       for (const call of existing) {
         if (!call.assignedUserId) continue;
         const dbKey = duplicateKey(call.assignedUserId, call.callerNumber, call.startedAt, call.durationSeconds);
         seen.add(dbKey);
         inDatabase.add(dbKey);
+        if (call.rawMeta?.includes('"source":"keyyo-webhook"')) {
+          const k = `${call.assignedUserId}|${normalizePhone(call.callerNumber)}`;
+          live.set(k, [...(live.get(k) ?? []), { id: call.id, t: call.startedAt.getTime() }]);
+        }
       }
+      const claimed = new Set<string>();
 
       for (const row of candidates) {
         const key = duplicateKey(
@@ -478,7 +494,22 @@ export async function POST(req: NextRequest) {
           row.durationSeconds
         );
 
-        if (seen.has(key)) {
+        // The same call already notified live by Keyyo: its timing is the notification's, so
+        // it is matched within WEBHOOK_MATCH_MS rather than to the second. The file's duration
+        // and status are the authoritative ones and are applied to that call on import.
+        const liveMatch = seen.has(key)
+          ? undefined
+          : (live.get(`${row.conseiller!.id}|${normalizePhone(row.callerNumber)}`) ?? [])
+              .filter((c) => !claimed.has(c.id) && Math.abs(c.t - row.startedAt!.getTime()) <= WEBHOOK_MATCH_MS)
+              .sort((a, b) => Math.abs(a.t - row.startedAt!.getTime()) - Math.abs(b.t - row.startedAt!.getTime()))[0];
+
+        if (liveMatch) {
+          claimed.add(liveMatch.id);
+          row.isDuplicate = true;
+          row.duplicateOf = "db";
+          row.error = "duplicate";
+          row.liveCallId = liveMatch.id;
+        } else if (seen.has(key)) {
           row.isDuplicate = true;
           row.duplicateOf = inDatabase.has(key) ? "db" : "file";
           row.error = "duplicate";
@@ -540,6 +571,25 @@ export async function POST(req: NextRequest) {
     // A file whose rows are ALL already-known numbers is the expected outcome
     // of re-uploading an export, not a failure: report it as a successful
     // import of nothing. Only a file with genuinely unusable rows is an error.
+    // Calls already created live by the Keyyo webhook: the export's duration and answered /
+    // missed status are the reference, applied to them (nothing else is touched).
+    const liveRows = parsed.filter((row) => row.liveCallId && row.startedAt);
+    if (liveRows.length) {
+      await prisma.$transaction(
+        liveRows.map((row) =>
+          prisma.call.update({
+            where: { id: row.liveCallId! },
+            data: {
+              durationSeconds: row.durationSeconds,
+              isMissed: row.isMissed,
+              statut: row.statut,
+              endedAt: row.isMissed ? null : new Date(row.startedAt!.getTime() + row.durationSeconds * 1000),
+            },
+          })
+        )
+      );
+    }
+
     if (!validRows.length && duplicateRows.length) {
       return NextResponse.json({
         success: true,

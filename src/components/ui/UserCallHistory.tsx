@@ -6,6 +6,7 @@ import StatCard from "./StatCard";
 import DateFilter, { DateFilterState, buildQueryString } from "./DateFilter";
 import { errorMessage, fetchJsonOr } from "@/lib/fetchJson";
 import { isContractResult, isDevisResult } from "@/lib/contracts";
+import { usePolling } from "@/lib/usePolling";
 import { useResultLabels } from "@/lib/useResultLabels";
 
 type Profile = {
@@ -69,8 +70,9 @@ export default function UserCallHistory({
     return () => { cancelled = true; };
   }, [userId]);
 
-  const fetchCalls = useCallback(async () => {
-    setLoading(true); setError("");
+  // `silent`: the live refresh below, without the loading state.
+  const fetchCalls = useCallback(async (silent = false) => {
+    if (!silent) { setLoading(true); setError(""); }
     try {
       const qs = buildQueryString(filter);
       const url = `/api/calls${qs ? qs + "&" : "?"}userId=${encodeURIComponent(userId)}`;
@@ -82,14 +84,18 @@ export default function UserCallHistory({
       const data = await res.json();
       setCalls(Array.isArray(data) ? data : []);
     } catch (err) {
-      setCalls([]);
-      setError(errorMessage(err, "Impossible de charger les appels."));
+      if (!silent) {
+        setCalls([]);
+        setError(errorMessage(err, "Impossible de charger les appels."));
+      }
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [filter, userId]);
 
   useEffect(() => { fetchCalls(); }, [fetchCalls]);
+  // Calls notified by Keyyo appear by themselves.
+  usePolling(() => fetchCalls(true), 10_000);
 
   // Ungrouped list, so one row is one call and these counts are exact.
   const answered = calls.filter((c) => !c.isMissed).length;
@@ -148,7 +154,7 @@ export default function UserCallHistory({
             isAdmin={isAdmin}
             allowTransfer={allowTransfer}
             currentUserId={currentUserId}
-            onRefresh={fetchCalls}
+            onRefresh={() => fetchCalls()}
           />
       }
     </div>

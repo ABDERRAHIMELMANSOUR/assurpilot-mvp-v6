@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import KeyyoWebhookCard from "@/components/ui/KeyyoWebhookCard";
 
 const DISTRIBUTION_MODES = [
   { value: "ROUND_ROBIN",  label: "Tourniquet (Round Robin)", desc: "Les appels sont distribués équitablement entre tous les conseillers disponibles" },
@@ -109,6 +110,8 @@ export default function KeyyoConfigPage() {
           Paramètres de l'intégration VoIP pour la réception des appels entrants
         </p>
       </div>
+
+      <KeyyoWebhookCard />
 
       {/* Status banner */}
       <div className={`mb-6 rounded-xl px-4 py-3 border flex items-center gap-3 ${

@@ -6,6 +6,7 @@ import StatCard from "@/components/ui/StatCard";
 import DateFilter, { DateFilterState, buildQueryString } from "@/components/ui/DateFilter";
 import GroupToggle from "@/components/ui/GroupToggle";
 import { withGroup } from "@/lib/query";
+import { usePolling } from "@/lib/usePolling";
 
 const EMPTY_FILTER: DateFilterState = { period: "", dateFrom: "", dateTo: "" };
 
@@ -18,8 +19,9 @@ export default function ConseillerPage() {
   const [filter,  setFilter]  = useState<DateFilterState>(EMPTY_FILTER);
   const [grouped, setGrouped] = useState(true);
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
+  // `silent`: the live refresh below, without the loading skeleton.
+  const fetchData = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     const qs = buildQueryString(filter);
     const [callsRes, statsRes] = await Promise.all([
       fetch("/api/calls" + withGroup(qs, grouped)),
@@ -35,6 +37,8 @@ export default function ConseillerPage() {
   }, [filter, grouped]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+  // Calls notified by Keyyo appear by themselves (« En cours », then « Répondu » / « Manqué »).
+  usePolling(() => fetchData(true), 10_000);
 
   const user         = session?.user as any;
   const pendingCount = calls.filter((c) => !c.result).length;
@@ -106,7 +110,7 @@ export default function ConseillerPage() {
             allowTransfer
             currentUserId={currentUserId}
             showNotes
-            onRefresh={fetchData}
+            onRefresh={() => fetchData()}
           />
       }
     </div>
