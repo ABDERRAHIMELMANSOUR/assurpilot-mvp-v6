@@ -67,7 +67,7 @@ export default function KeyyoWebhookCard() {
       {!info ? <p className="text-sm text-slate-400">Chargement…</p> : (
         <>
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 mb-3">
-            <p className="text-xs font-semibold text-slate-700 mb-1">URL à configurer dans Keyyo (Notification d&apos;appels, sur chaque ligne de conseiller)</p>
+            <p className="text-xs font-semibold text-slate-700 mb-1">URL à coller dans le Manager Keyyo, sur chaque ligne de conseiller</p>
             {info.url ? (
               <div className="flex flex-wrap items-center gap-2">
                 <code className="text-xs break-all bg-white border border-slate-200 rounded-lg px-2 py-1 flex-1 min-w-0">{info.url}</code>
@@ -77,11 +77,17 @@ export default function KeyyoWebhookCard() {
             ) : (
               <p className="text-xs text-slate-500">Activez l&apos;interrupteur pour générer l&apos;URL sécurisée.</p>
             )}
+            <ol className="text-[11px] text-slate-600 mt-2 list-decimal pl-4 space-y-0.5">
+              <li>Manager Keyyo → la ligne du conseiller → onglet <b>Configurer</b> → <b>Paramètres avancés</b> → <b>CTI</b> → <b>API serveur</b>.</li>
+              <li>Collez l&apos;URL telle quelle : Keyyo remplace lui-même <span className="font-mono">_ACCOUNT_</span>, <span className="font-mono">_CALLER_</span>,{" "}
+                <span className="font-mono">_CALLEE_</span>, <span className="font-mono">_CALLREF_</span>, <span className="font-mono">_N_TYPE_</span>,{" "}
+                <span className="font-mono">_SESSION_ID_</span>… à chaque appel.</li>
+              <li>Faites-le sur la ligne directe de <b>chaque conseiller</b> (Santé et Auto), puis passez un appel de test : il apparaît ci-dessous.</li>
+            </ol>
             <p className="text-[11px] text-slate-500 mt-2">
-              L&apos;URL contient un jeton secret : ne la partagez pas. Keyyo y ajoute lui-même <span className="font-mono">account</span>,{" "}
-              <span className="font-mono">caller</span>, <span className="font-mono">callee</span>, <span className="font-mono">callref</span>,{" "}
-              <span className="font-mono">type</span> (SETUP / CONNECT / RELEASE). Les notifications Keyyo existent par ligne, pas sur les standards :
-              activez-les sur la ligne directe de chaque conseiller. L&apos;envoi CRM suit l&apos;interrupteur « Envois automatiques » d&apos;Intégration AZZUR.
+              L&apos;URL contient un jeton secret : ne la partagez pas. Un appel arrivé par un standard et qui fait sonner plusieurs lignes reste
+              un seul appel (même <span className="font-mono">_SESSION_ID_</span>), attribué au conseiller qui décroche. L&apos;envoi CRM suit
+              l&apos;interrupteur « Envois automatiques » d&apos;Intégration AZZUR.
             </p>
           </div>
 

@@ -1,17 +1,24 @@
 // src/lib/keyyoCalls.ts
 //
 // Turns Keyyo "Notification d'appels" into calls, live:
-//   SETUP    (ringing)   -> the call appears at once in the adviser's list, « En cours »
+//   SETUP    (ringing)   -> the call appears at once in the list of the adviser whose line rings,
+//                           « En cours »
 //   CONNECT  (answered)  -> « Répondu », filed under the adviser who answered; the fiche is
 //                           sent to AZZUR (Santé) / ProAssur (Auto) — same path as a manual call
-//   RELEASE  (hung up)   -> end time and duration; never answered = « Manqué » (and sent then,
-//                           unless only answered calls are sent)
-// One call per Keyyo callref, whatever order or how many times the notifications arrive. A
-// notification without a type is a received call: shown « Répondu » and sent at once.
+//   RELEASE  (hung up)   -> end time and duration of the line that answered; never answered =
+//                           « Manqué » (and sent then, unless only answered calls are sent)
+// A notification without a type is a received call: shown « Répondu » and sent at once.
 //
-// Same rules as the Excel import: the adviser is the one whose line was called, the line is the
+// ONE call per customer call: a call on a numéro d'accueil (standard) rings several lines, each
+// with its own CALLREF but the same SESSION_ID — they are grouped on the session (else on the
+// callref), whatever order or how many times the notifications arrive. On a standard, one line's
+// RELEASE without answer does not make the call missed (another line may still pick up): it is
+// shown « Manqué » meanwhile but not sent; a later ring or answer of the same session takes over.
+//
+// Same rules as the Excel import: the adviser is the one whose line rang, the line is the
 // standard number it came in on, the call's team is the adviser's team, times are Paris
-// wall-clock (see parisWallClock). Calls made BY an adviser (outgoing) are ignored.
+// wall-clock (see parisWallClock). Calls made by a line (outgoing, per Keyyo: caller = account)
+// and calls between our own lines are ignored.
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { normalizePhone, routeForNumber } from "@/lib/phone";
@@ -24,6 +31,11 @@ export type KeyyoMeta = {
   numeroAppelant: string | null;
   events: string[];
   answeredAt?: string;
+  /** CALLREF of the line that answered: only its RELEASE ends the call. */
+  answeredRef?: string | null;
+  /** CALLREFs of the lines this call rang. */
+  callRefs?: string[];
+  acd?: boolean;
   pushed?: boolean;
   dref?: string | null;
 };
@@ -54,8 +66,8 @@ export async function applyKeyyoNotification(n: KeyyoNotification, now: Date = n
   });
   const byPhone = new Map(advisers.map((a) => [normalizePhone(a.phoneNumber), a] as const).filter(([p]) => p));
 
-  // A call PLACED by an adviser (the "caller" is one of our lines) is not an incoming lead.
-  if (n.customer && (byPhone.has(n.customer) || routeForNumber(n.customer))) {
+  // A call PLACED from a line (Keyyo: caller = account), or between our own lines, is not a lead.
+  if (n.direction === "outgoing" || (n.customer && (byPhone.has(n.customer) || routeForNumber(n.customer)))) {
     return { outcome: "appel sortant ou interne : ignoré", callId: null, adviserId: null, adviserName: null };
   }
   const adviser = n.adviserCandidates.map((p) => byPhone.get(p)).find(Boolean) ?? null;
@@ -79,8 +91,10 @@ export async function applyKeyyoNotification(n: KeyyoNotification, now: Date = n
   const lineId = line.id ?? lines[0]?.id;
   if (!lineId) return { outcome: "aucune ligne téléphonique active configurée", callId: null, adviserId: adviser.id, adviserName };
 
-  // Without a callref, a call is identified by adviser + customer within two minutes.
-  const ref = n.callRef ?? `${adviser.id}|${n.customer}|${Math.floor(nowWall.getTime() / 120_000)}`;
+  // One customer call: its standard session, else its callref, else adviser + customer within
+  // two minutes.
+  const ref = n.sessionId ? `session:${n.sessionId}` : n.callRef ?? `${adviser.id}|${n.customer}|${Math.floor(nowWall.getTime() / 120_000)}`;
+  const onStandard = !!n.sessionId || n.isAcd;
 
   const result = await prisma.$transaction(async (tx) => {
     // Serialises the notifications of ONE call: SETUP and CONNECT can arrive together.
@@ -95,19 +109,27 @@ export async function applyKeyyoNotification(n: KeyyoNotification, now: Date = n
     const meta: KeyyoMeta = readMeta(existing?.rawMeta) ?? {
       source: "keyyo-webhook", keyyoRef: ref, numeroAppelant: line.numero, events: [], dref: n.dref,
     };
-    meta.events = [...meta.events, n.rawType || n.type].slice(-12);
+    meta.events = [...meta.events, n.rawType || n.type].slice(-20);
+    if (n.callRef) meta.callRefs = [...new Set([...(meta.callRefs ?? []), n.callRef])].slice(-20);
+    if (onStandard) meta.acd = true;
+    if (!meta.numeroAppelant && line.numero) meta.numeroAppelant = line.numero;
 
-    const answered = n.type === "answered" || n.type === "unknown" || !!meta.answeredAt;
-    if ((n.type === "answered" || n.type === "unknown") && !meta.answeredAt) meta.answeredAt = nowWall.toISOString();
-    const ended = n.type === "ended";
+    const answersNow = n.type === "answered" || n.type === "unknown";
+    if (answersNow && !meta.answeredAt) {
+      meta.answeredAt = nowWall.toISOString();
+      meta.answeredRef = n.callRef;
+    }
+    const answered = !!meta.answeredAt;
+    // The call ends with the RELEASE of the line that answered, or of the only line it rang.
+    const endsCall = n.type === "ended" && (answered ? !meta.answeredRef || !n.callRef || n.callRef === meta.answeredRef : true);
 
     const data: Prisma.CallUncheckedUpdateInput = {};
-    if (n.type === "answered" || n.type === "unknown" || !existing) {
-      // Filed under the adviser who answered (a hunt group rings several lines first).
+    if (answersNow || !existing || (n.type === "ringing" && !answered)) {
+      // Shown to the adviser whose line rings, filed under the one who answers.
       data.assignedUserId = adviser.id;
       data.teamId = adviser.teamId;
     }
-    if (ended) {
+    if (endsCall) {
       const endWall = n.startedAt && n.durationSeconds !== null ? new Date(n.startedAt.getTime() + n.durationSeconds * 1000) : nowWall;
       data.endedAt = endWall;
       data.durationSeconds = n.durationSeconds ?? (meta.answeredAt ? Math.max(0, Math.round((endWall.getTime() - new Date(meta.answeredAt).getTime()) / 1000)) : 0);
@@ -116,11 +138,18 @@ export async function applyKeyyoNotification(n: KeyyoNotification, now: Date = n
     } else if (answered) {
       data.isMissed = false;
       data.statut = "REPONDU";
+    } else if (n.type === "ringing" && existing) {
+      // A standard call ringing the next line: still in progress.
+      data.isMissed = false;
+      data.statut = "EN_COURS";
+      data.endedAt = null;
     }
 
-    // Sent once: when answered (or a plain notification), else at the end of a missed call.
-    const sendNow = !meta.pushed && (answered || ended);
+    // Sent once: when answered (or a plain notification), else when a missed call is over —
+    // except on a standard, where one line hanging up does not end the call.
+    const sendNow = !meta.pushed && (answered || (endsCall && !onStandard));
     if (sendNow) meta.pushed = true;
+    const ended = endsCall;
 
     let call;
     if (existing) {

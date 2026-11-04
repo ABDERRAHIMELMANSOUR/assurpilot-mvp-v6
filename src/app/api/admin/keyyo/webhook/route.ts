@@ -2,7 +2,8 @@
 //
 // Settings of the Keyyo "Notification d'appels" webhook, for /admin/keyyo. ADMIN ONLY.
 //
-//   GET                              -> on/off, the URL to configure on each Keyyo line, the
+//   GET                              -> on/off, the URL (with Keyyo's _KEYWORDS_) to configure on
+//                                       each line in the Keyyo Manager, the
 //                                       last notifications received
 //   POST { action: "regenerate" }    -> new secret token (the old URL stops working)
 //   POST { action: "enable" | "disable" }
@@ -10,6 +11,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { badRequest, handleApiError, readJson, requireRole } from "@/lib/api";
 import { getSiteUrl } from "@/lib/site-url";
+import { KEYYO_URL_PARAMS } from "@/lib/keyyoWebhook";
 import { loadKeyyoEvents, loadKeyyoWebhookSettings, regenerateKeyyoToken, setKeyyoWebhookEnabled } from "@/lib/keyyoStore";
 
 export const runtime = "nodejs";
@@ -19,7 +21,8 @@ function webhookUrl(req: NextRequest, token: string | null): string | null {
   if (!token) return null;
   // The address Keyyo must call: this deployment's public origin.
   const origin = req.headers.get("x-forwarded-host") ? `https://${req.headers.get("x-forwarded-host")}` : getSiteUrl();
-  return `${origin}/api/keyyo/webhook?token=${encodeURIComponent(token)}`;
+  // Keyyo replaces the _KEYWORDS_ on each notification (see src/lib/keyyoWebhook.ts).
+  return `${origin}/api/keyyo/webhook?token=${encodeURIComponent(token)}&${KEYYO_URL_PARAMS}`;
 }
 
 export async function GET(req: NextRequest) {
