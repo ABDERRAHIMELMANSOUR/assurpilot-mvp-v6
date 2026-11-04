@@ -7,7 +7,7 @@ import { usePolling } from "@/lib/usePolling";
 import { useToast } from "@/components/ui/Toast";
 
 type EventRow = {
-  id: string; receivedAt: string; type: string; callRef: string | null; customer: string;
+  id: string; receivedAt: string; type: string; callRef: string | null; customer: string; called: string;
   adviserName: string | null; callId: string | null; outcome: string; params: string;
 };
 type Info = {
@@ -122,6 +122,9 @@ export default function KeyyoWebhookCard() {
             <ol className="text-[11px] text-slate-600 mt-2 list-decimal pl-4 space-y-0.5">
               <li>Dashboard Ringover → <b>Développeur</b> → <b>Webhooks</b> : collez la 1<sup>re</sup> URL dans <b>Appels décrochés</b>, la 2<sup>e</sup> dans <b>Appels raccrochés</b>
                 {" "}(et, si vous voulez les manqués, aussi dans <b>Appels manqués</b>). Ne touchez pas au webhook <b>After-Call Work</b> (n8n).</li>
+              <li><b>Seuls les appels entrants</b> (<span className="font-mono">direction: inbound</span>) sont traités : les appels sortants, internes ou sans
+                direction sont ignorés, sans rien enregistrer. Pour chaque appel entrant, le journal garde le numéro du client
+                (<span className="font-mono">from_number</span>) et le numéro appelé (<span className="font-mono">to_number</span>).</li>
               <li>Le conseiller est l&apos;utilisateur Ringover qui a décroché, retrouvé par son <b>e-mail</b> puis ses <b>prénom et nom</b> dans AssurPilot
                 (puis mémorisé) ; le client est le numéro appelant (<span className="font-mono">from_number</span>) ; les deux événements sont reliés par
                 {" "}<span className="font-mono">call_id</span>.</li>
@@ -138,9 +141,9 @@ export default function KeyyoWebhookCard() {
             <p className="text-xs text-slate-400">Aucune notification reçue pour l&apos;instant.</p>
           ) : (
             <div className="overflow-x-auto max-h-[380px] overflow-y-auto">
-              <table className="w-full" style={{ minWidth: "720px" }}>
+              <table className="w-full" style={{ minWidth: "820px" }}>
                 <thead className="bg-slate-50/70 border-b border-slate-100 sticky top-0">
-                  <tr><th className="table-th">Reçue</th><th className="table-th">Type</th><th className="table-th">Client</th><th className="table-th">Conseiller</th><th className="table-th">Résultat</th></tr>
+                  <tr><th className="table-th">Reçue</th><th className="table-th">Type</th><th className="table-th">Client</th><th className="table-th">Numéro appelé</th><th className="table-th">Conseiller</th><th className="table-th">Résultat</th></tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {info.events.map((e) => (
@@ -148,6 +151,7 @@ export default function KeyyoWebhookCard() {
                       <td className="table-td text-xs whitespace-nowrap">{new Date(e.receivedAt).toLocaleTimeString("fr-FR", { timeZone: "Europe/Paris" })}</td>
                       <td className="table-td text-xs">{TYPE_LABEL[e.type.toUpperCase()] ?? e.type ?? "—"}</td>
                       <td className="table-td font-mono text-xs">{e.customer || "—"}</td>
+                      <td className="table-td font-mono text-xs">{e.called || "—"}</td>
                       <td className="table-td text-xs">{e.adviserName ?? <span className="text-slate-400">—</span>}</td>
                       <td className="table-td text-xs">
                         {e.outcome}

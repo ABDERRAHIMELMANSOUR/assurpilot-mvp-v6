@@ -76,7 +76,7 @@ async function handle(req: NextRequest) {
       console.error("[keyyo] notification non traitée:", outcome);
     }
   }
-  await recordKeyyoEvent({ type: n.rawType || n.type, callRef: n.callRef, customer: n.customer, adviserId, adviserName, callId, outcome, params });
+  await recordKeyyoEvent({ type: n.rawType || n.type, callRef: n.callRef, customer: n.customer, called: n.account, adviserId, adviserName, callId, outcome, params });
   console.log(`[keyyo] ${n.rawType || n.type} ref=${n.callRef ?? "-"} -> ${outcome}`);
   // Keyyo only needs a 200; the text helps when testing the URL by hand.
   return new NextResponse(`OK ${outcome}`, { status: 200, headers: { "Content-Type": "text/plain; charset=utf-8" } });

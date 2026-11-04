@@ -12,6 +12,11 @@
 //     webhook key of the Ringover dashboard, set as RINGOVER_WEBHOOK_SECRET in Vercel.
 // Otherwise 401 and nothing is written. The on/off switch of /admin/keyyo applies.
 // Always answers 200 fast (Ringover retries otherwise); the CRM sending runs in the background.
+//
+// FILTER: only INBOUND calls go through (data.direction = inbound). Outbound, internal calls and
+// events without a direction are answered 200 and dropped: no call, no journal row, no number
+// logged. For an inbound call the journal keeps the customer's number (from_number / caller)
+// and the number called (to_number / callee), with the event, direction and call_id.
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { applyKeyyoNotification, type ApplyResult } from "@/lib/keyyoCalls";
@@ -49,13 +54,21 @@ export async function handleRingoverWebhook(req: NextRequest, endpoint: Ringover
 
   const n = parseRingoverPayload(body, endpoint);
   const resource = typeof body.resource === "string" ? body.resource.toLowerCase() : "call";
+
+  // Inbound calls only. Everything else is dropped here, before anything is written.
+  const dropped =
+    resource !== "call" ? `ressource « ${resource} »`
+      : n.internal ? "appel interne"
+        : !n.inbound ? (n.rawDirection ? `appel ${n.rawDirection === "out" || n.rawDirection === "outbound" ? "sortant" : `« ${n.rawDirection} »`}` : "direction absente")
+          : null;
+  if (dropped) {
+    console.log(`[ringover] ${endpoint} ${n.rawType} ${n.callRef ?? "-"} : ${dropped}, ignoré (seuls les appels entrants sont traités)`);
+    return NextResponse.json({ ok: true, ignored: true, outcome: `${dropped} : ignoré (seuls les appels entrants sont traités)` });
+  }
+
   let result: ApplyResult = { outcome: "", callId: null, adviserId: null, adviserName: null };
-  if (resource !== "call") {
-    result.outcome = `ressource Ringover « ${resource} » : ignorée`;
-  } else if (!settings.enabled) {
+  if (!settings.enabled) {
     result.outcome = "notifications désactivées sur /admin/keyyo : reçu, aucun appel créé";
-  } else if (n.internal) {
-    result.outcome = "appel interne Ringover : ignoré";
   } else {
     try {
       const users = await loadRingoverUserMap();
@@ -74,10 +87,12 @@ export async function handleRingoverWebhook(req: NextRequest, endpoint: Ringover
       console.error("[ringover] événement non traité:", result.outcome);
     }
   }
+  // Journal: the two numbers of the inbound call, and only what identifies the event.
   await recordKeyyoEvent({
-    type: `ringover:${n.rawType}`, callRef: n.callRef, customer: n.customer, adviserId: result.adviserId,
-    adviserName: result.adviserName, callId: result.callId, outcome: result.outcome, params: body,
+    type: `ringover:${n.rawType}`, callRef: n.callRef, customer: n.customer, called: n.called, adviserId: result.adviserId,
+    adviserName: result.adviserName, callId: result.callId, outcome: result.outcome,
+    params: { endpoint, event: n.rawType, direction: n.rawDirection, call_id: n.callRef?.replace(/^ringover:/, "") ?? null, from_number: n.customer, to_number: n.called },
   });
-  console.log(`[ringover] ${endpoint} ${n.rawType} ${n.callRef ?? "-"} -> ${result.outcome}`);
+  console.log(`[ringover] ${endpoint} ${n.rawType} entrant ${n.callRef ?? "-"} client=${n.customer || "(masqué)"} appelé=${n.called || "-"} -> ${result.outcome}`);
   return NextResponse.json({ ok: true, outcome: result.outcome, callId: result.callId });
 }

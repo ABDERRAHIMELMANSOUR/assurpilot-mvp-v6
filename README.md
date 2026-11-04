@@ -1045,7 +1045,13 @@ même logique que Keyyo (`src/lib/keyyoCalls.ts`) :
   ProAssur Auto), une seule fois. **Raccroché** : heure de fin et durée Ringover ; un raccroché avec agent
   sans décroché reçu avant est traité comme décroché puis raccroché. **Manqué** (`event: missed`) :
   « Manqué », fiche envoyée 12 s plus tard s'il l'est toujours.
-- Appels sortants (`direction: outbound`), internes (`is_internal`) et numéros masqués : ignorés.
+- **Filtre : seuls les appels entrants** passent (`direction` = `inbound`, `in`, `incoming`). Les appels
+  sortants (`outbound`), internes (`is_internal`) et les événements sans direction ou d'une autre direction
+  sont ignorés dès la réception : réponse 200 (Ringover ne renvoie pas), aucun appel, **rien au journal**.
+  Les numéros masqués sont ignorés aussi.
+- **Journal** (`/admin/keyyo`, table `keyyo_events`, colonne `called` ajoutée sans toucher aux lignes
+  existantes) : pour chaque appel entrant, le numéro du client (`from_number` / `caller`) et le numéro appelé
+  (`to_number` / `callee`), avec l'événement, la direction et le `call_id` — rien d'autre du payload.
 - **Sécurité** : le jeton secret de `/admin/keyyo` (le même que Keyyo, « Nouvelle URL » change les deux)
   dans l'URL ou l'en-tête `x-ringover-token`, **ou** la signature Ringover (`X-Ringover-Webhook-Signature`,
   JWT HS512) vérifiée avec la clé du webhook mise dans `RINGOVER_WEBHOOK_SECRET`. Sinon 401, rien n'est

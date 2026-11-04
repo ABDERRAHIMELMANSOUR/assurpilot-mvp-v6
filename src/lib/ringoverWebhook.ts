@@ -20,7 +20,10 @@
 //
 // Flat payloads (a relay such as n8n) are accepted too, with the names of the specification:
 // from_number / caller, to_number / callee, user_name / user_id / user_email, duration,
-// call_id / session_id, event / type.
+// call_id / session_id, event / type, direction.
+//
+// ONLY INBOUND CALLS are kept: "direction" must say inbound (inbound / in / incoming / entrant).
+// Outbound, internal (is_internal) and calls whose direction is missing or unknown are ignored.
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { normalizePhone } from "@/lib/phone";
 import { eventType, parisWallClock, type KeyyoEventType, type KeyyoNotification } from "@/lib/keyyoWebhook";
@@ -32,6 +35,12 @@ export type RingoverNotification = KeyyoNotification & {
   ringoverUserId: string | null;
   /** Internal call between Ringover users: not a lead. */
   internal: boolean;
+  /** Ringover said "inbound": the only calls processed. */
+  inbound: boolean;
+  /** The direction as received ("" when absent), for the reason of an ignored event. */
+  rawDirection: string;
+  /** Number called (to_number / callee): the Ringover line, national form. */
+  called: string;
   /** On a hangup: the call WAS answered (it has an agent), though no "answered" came first. */
   answeredBeforeEnd: Date | null;
 };
@@ -88,13 +97,14 @@ export function parseRingoverPayload(body: Obj, endpoint: RingoverEndpoint): Rin
   const effective: KeyyoEventType = type === "unknown" ? (endpoint === "answered" ? "answered" : "ended") : type;
   const missed = rawEvent === "missed" || rawEvent === "voicemail";
 
-  const dir = text(data.direction).toLowerCase();
+  const dir = text(data.direction, data.call_direction).toLowerCase();
   const direction = /^(in|inbound|incoming|entrant)$/.test(dir) ? "incoming" : /^(out|outbound|outgoing|sortant)$/.test(dir) ? "outgoing" : "unknown";
+  const inbound = direction === "incoming";
   const from = normalizePhone(text(data.from_number, data.caller, data.from, data.caller_number));
   const to = normalizePhone(text(data.to_number, data.callee, data.to, data.called_number));
   const anonymous = data.is_anonymous === true || data.is_anonymous === "true";
-  // The customer: the caller of an inbound call (outbound calls are ignored anyway).
-  const customer = anonymous ? "" : direction === "outgoing" ? to : from;
+  // The customer: the caller of an inbound call (nothing else is processed).
+  const customer = anonymous || !inbound ? "" : from;
 
   const callId = text(data.call_id, data.session_id, data.callid, data.id);
   const firstname = text(user.firstname, data.user_firstname) || null;
@@ -121,7 +131,8 @@ export function parseRingoverPayload(body: Obj, endpoint: RingoverEndpoint): Rin
   return {
     type: effective,
     rawType: rawEvent || endpoint,
-    direction: direction === "unknown" ? "incoming" : direction,
+    // Anything not explicitly inbound is treated as outgoing, i.e. ignored by the call logic too.
+    direction: inbound ? "incoming" : "outgoing",
     callRef: callId ? `ringover:${callId}` : null,
     sessionId: null,
     isAcd: false,
@@ -139,7 +150,10 @@ export function parseRingoverPayload(body: Obj, endpoint: RingoverEndpoint): Rin
     adviserHint: { email, firstname, lastname, fullName },
     provider: "ringover",
     ringoverUserId,
-    internal: data.is_internal === true || data.is_internal === "true",
+    internal: data.is_internal === true || data.is_internal === "true" || data.is_internal === 1 || data.is_internal === "1",
+    inbound,
+    rawDirection: dir,
+    called: to,
     answeredBeforeEnd,
   };
 }
