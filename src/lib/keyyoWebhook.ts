@@ -75,6 +75,13 @@ export type KeyyoNotification = {
   callee: string;
   /** A CONNECT answered by voicemail (22-digit answering number), not by the adviser. */
   voicemail: boolean;
+  /**
+   * Who handled the call when the source names a USER rather than a line (Ringover): an
+   * AssurPilot user id already known for it, else the email / name to look the adviser up by.
+   */
+  adviserHint?: { userId?: string | null; email?: string | null; firstname?: string | null; lastname?: string | null; fullName?: string | null };
+  /** Source of the notification, kept in the call's rawMeta ("ringover"); Keyyo when absent. */
+  provider?: "ringover";
 };
 
 function key(name: string): string {

@@ -10,9 +10,27 @@ type EventRow = {
   id: string; receivedAt: string; type: string; callRef: string | null; customer: string;
   adviserName: string | null; callId: string | null; outcome: string; params: string;
 };
-type Info = { enabled: boolean; url: string | null; tokenFromEnv: boolean; events: EventRow[] };
+type Info = {
+  enabled: boolean; url: string | null; tokenFromEnv: boolean; events: EventRow[];
+  ringover: { answered: string; ended: string } | null; ringoverSigned: boolean;
+};
 
-const TYPE_LABEL: Record<string, string> = { SETUP: "Sonnerie", CONNECT: "Décroché", RELEASE: "Raccroché" };
+const TYPE_LABEL: Record<string, string> = {
+  SETUP: "Sonnerie", CONNECT: "Décroché", RELEASE: "Raccroché",
+  "RINGOVER:RINGING": "Sonnerie (Ringover)", "RINGOVER:ANSWERED": "Décroché (Ringover)",
+  "RINGOVER:HANGUP": "Raccroché (Ringover)", "RINGOVER:ENDED": "Raccroché (Ringover)", "RINGOVER:MISSED": "Manqué (Ringover)",
+};
+
+function CopyUrl({ label, url }: { label: string; url: string }) {
+  const toast = useToast();
+  return (
+    <div className="flex flex-wrap items-center gap-2 mt-1">
+      <span className="text-[11px] font-medium text-slate-600 w-36 shrink-0">{label}</span>
+      <code className="text-xs break-all bg-white border border-slate-200 rounded-lg px-2 py-1 flex-1 min-w-0">{url}</code>
+      <button className="btn btn-secondary text-xs" onClick={() => { navigator.clipboard?.writeText(url); toast.success("URL copiée."); }}>Copier</button>
+    </div>
+  );
+}
 
 export default function KeyyoWebhookCard() {
   const toast = useToast();
@@ -29,7 +47,7 @@ export default function KeyyoWebhookCard() {
   usePolling(load, 10_000);
 
   async function act(action: "enable" | "disable" | "regenerate") {
-    if (action === "regenerate" && !window.confirm("Générer une nouvelle URL ? L'ancienne cessera de fonctionner : il faudra mettre la nouvelle sur chaque ligne Keyyo.")) return;
+    if (action === "regenerate" && !window.confirm("Générer une nouvelle URL ? L'ancienne cessera de fonctionner : il faudra mettre la nouvelle sur chaque ligne Keyyo et dans les webhooks Ringover.")) return;
     setBusy(true);
     try {
       await fetchJson("/api/admin/keyyo/webhook", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) });
@@ -43,7 +61,7 @@ export default function KeyyoWebhookCard() {
     <div className="card p-5 mb-6">
       <div className="flex flex-wrap items-start gap-3 mb-3">
         <div className="mr-auto">
-          <h2 className="text-sm font-semibold text-slate-800">Notification d&apos;appels Keyyo (temps réel)</h2>
+          <h2 className="text-sm font-semibold text-slate-800">Notification d&apos;appels Keyyo / Ringover (temps réel)</h2>
           <p className="text-xs text-slate-500 mt-0.5 max-w-xl">
             Keyyo prévient AssurPilot à chaque appel : sonnerie (l&apos;appel apparaît « En cours » chez le conseiller), décroché
             (« Répondu », fiche envoyée vers AZZUR pour la Santé / ProAssur pour l&apos;Auto), raccroché (durée ; jamais décroché = « Manqué »).
@@ -91,6 +109,30 @@ export default function KeyyoWebhookCard() {
             </p>
           </div>
 
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 mb-3">
+            <p className="text-xs font-semibold text-slate-700">Webhooks Ringover (appels passant par Ringover)</p>
+            {info.ringover ? (
+              <>
+                <CopyUrl label="Appels décrochés" url={info.ringover.answered} />
+                <CopyUrl label="Appels raccrochés" url={info.ringover.ended} />
+              </>
+            ) : (
+              <p className="text-xs text-slate-500 mt-1">Activez l&apos;interrupteur pour générer les URL sécurisées.</p>
+            )}
+            <ol className="text-[11px] text-slate-600 mt-2 list-decimal pl-4 space-y-0.5">
+              <li>Dashboard Ringover → <b>Développeur</b> → <b>Webhooks</b> : collez la 1<sup>re</sup> URL dans <b>Appels décrochés</b>, la 2<sup>e</sup> dans <b>Appels raccrochés</b>
+                {" "}(et, si vous voulez les manqués, aussi dans <b>Appels manqués</b>). Ne touchez pas au webhook <b>After-Call Work</b> (n8n).</li>
+              <li>Le conseiller est l&apos;utilisateur Ringover qui a décroché, retrouvé par son <b>e-mail</b> puis ses <b>prénom et nom</b> dans AssurPilot
+                (puis mémorisé) ; le client est le numéro appelant (<span className="font-mono">from_number</span>) ; les deux événements sont reliés par
+                {" "}<span className="font-mono">call_id</span>.</li>
+              <li>
+                Signature Ringover : {info.ringoverSigned
+                  ? <span className="text-emerald-700 font-medium">vérifiée (RINGOVER_WEBHOOK_SECRET)</span>
+                  : <>facultative — mettez la clé du webhook Ringover dans la variable <span className="font-mono">RINGOVER_WEBHOOK_SECRET</span> de Vercel ; le jeton de l&apos;URL suffit sinon.</>}
+              </li>
+            </ol>
+          </div>
+
           <p className="text-xs font-semibold text-slate-700 mb-1">Dernières notifications reçues</p>
           {info.events.length === 0 ? (
             <p className="text-xs text-slate-400">Aucune notification reçue pour l&apos;instant.</p>
@@ -117,7 +159,7 @@ export default function KeyyoWebhookCard() {
               </table>
             </div>
           )}
-          <p className="text-[11px] text-slate-400 mt-1">Cliquez une ligne pour voir les paramètres exacts envoyés par Keyyo.</p>
+          <p className="text-[11px] text-slate-400 mt-1">Cliquez une ligne pour voir les paramètres exacts envoyés par Keyyo ou Ringover.</p>
         </>
       )}
     </div>

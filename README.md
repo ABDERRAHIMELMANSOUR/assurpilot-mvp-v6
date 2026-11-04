@@ -1019,6 +1019,38 @@ présenté », « Numéro appelé », « Numéro appelant ») sont aussi accept�
   (même conseiller, même client, début à 3 minutes près) n'est pas réimportée ; sa durée et son statut
   (répondu / manqué) sont appliqués à l'appel existant.
 
+### Appels en temps réel : webhooks Ringover
+
+Pour les appels qui passent par **Ringover** (numéros Google Ads renvoyés Keyyo → Ringover), deux
+endpoints publics, à coller dans le Dashboard Ringover → Développeur → Webhooks (URL affichées, prêtes à
+copier, sur `/admin/keyyo`) :
+
+| Webhook Ringover | URL |
+|---|---|
+| Appels décrochés | `https://<app>/api/ringover/answered?token=<secret>` |
+| Appels raccrochés (et, si voulu, Appels manqués) | `https://<app>/api/ringover/ended?token=<secret>` |
+
+Le webhook **After-Call Work** (workflow n8n existant) n'est pas concerné. Les deux événements suivent la
+même logique que Keyyo (`src/lib/keyyoCalls.ts`) :
+
+- **Données lues** (format JSON Ringover `{event, resource, timestamp, data: {…}}`, ou à plat) :
+  `from_number` / `caller` = le client, `to_number` / `callee` = le numéro Ringover appelé (ligne),
+  `user` (`firstname`, `lastname`, `email`, `user_id`) / `user_name` = l'agent, `duration_in_seconds` /
+  `duration`, `call_id` / `session_id` = l'appel (relie décroché et raccroché), `start_time`,
+  `hangup_time`, `timestamp` (heures, converties en heure de Paris comme l'import).
+- **Conseiller** : l'utilisateur Ringover retrouvé par son **e-mail**, puis ses **prénom + nom** (un homonyme
+  n'est pas deviné), puis le numéro appelé ; le lien `user_id` Ringover → conseiller est ensuite mémorisé
+  (`azzur_routes` « ringover:user:<id> »), ce qui sert aux événements « missed » sans agent.
+- **Décroché** : « Répondu » chez l'agent, fiche envoyée (AZZUR Santé « APE » + numéro avec son id_user,
+  ProAssur Auto), une seule fois. **Raccroché** : heure de fin et durée Ringover ; un raccroché avec agent
+  sans décroché reçu avant est traité comme décroché puis raccroché. **Manqué** (`event: missed`) :
+  « Manqué », fiche envoyée 12 s plus tard s'il l'est toujours.
+- Appels sortants (`direction: outbound`), internes (`is_internal`) et numéros masqués : ignorés.
+- **Sécurité** : le jeton secret de `/admin/keyyo` (le même que Keyyo, « Nouvelle URL » change les deux)
+  dans l'URL ou l'en-tête `x-ringover-token`, **ou** la signature Ringover (`X-Ringover-Webhook-Signature`,
+  JWT HS512) vérifiée avec la clé du webhook mise dans `RINGOVER_WEBHOOK_SECRET`. Sinon 401, rien n'est
+  écrit. L'interrupteur et le journal de `/admin/keyyo` s'appliquent aussi.
+
 ### Import de fichiers d'appels
 
 `POST /api/calls/import` (multipart, champ `file`, `preview=true` pour un essai

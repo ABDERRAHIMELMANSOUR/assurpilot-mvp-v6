@@ -112,3 +112,26 @@ export async function loadKeyyoEvents(limit = 100): Promise<KeyyoEventRow[]> {
     return [];
   }
 }
+
+// ── Ringover users ──────────────────────────────────────────────────────────────────
+// Ringover names the agent by ITS user id (and email / name). Once an adviser has been found by
+// email or name, the link is remembered (azzur_routes "ringover:user:<ringover id>" -> AssurPilot
+// user id), so a later event carrying only the id (a "missed") finds the adviser too.
+const RINGOVER_USER_PREFIX = "ringover:user:";
+
+export async function loadRingoverUserMap(): Promise<Map<string, string>> {
+  try {
+    const rows = await prisma.azzurRoute.findMany({ where: { key: { startsWith: RINGOVER_USER_PREFIX } }, select: { key: true, url: true } });
+    return new Map(rows.map((r) => [r.key.slice(RINGOVER_USER_PREFIX.length), r.url] as const));
+  } catch {
+    return new Map();
+  }
+}
+
+export async function saveRingoverUser(ringoverUserId: string, userId: string): Promise<void> {
+  try {
+    await saveSetting(`${RINGOVER_USER_PREFIX}${ringoverUserId}`, userId, null);
+  } catch (error) {
+    console.error("[ringover] lien utilisateur non enregistré:", error instanceof Error ? error.message : error);
+  }
+}

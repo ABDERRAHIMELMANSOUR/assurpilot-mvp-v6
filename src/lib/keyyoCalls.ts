@@ -23,6 +23,9 @@
 // RELEASE without answer does not make the call missed (another line may still pick up): it is
 // shown « Manqué » meanwhile but not sent; a later ring or answer of the same session takes over.
 //
+// Ringover (src/lib/ringoverWebhook.ts) feeds the same logic: its events name the USER who
+// handled the call (id, email, name) instead of a line, see adviserHint.
+//
 // Same rules as the Excel import: the adviser is the one whose line rang, the line is the
 // standard number it came in on, the call's team is the adviser's team, times are Paris
 // wall-clock (see parisWallClock). Calls made by a line (outgoing, per Keyyo: caller = account)
@@ -49,6 +52,8 @@ export type KeyyoMeta = {
   dref?: string | null;
   /** _DREF_ of every dialogue of this call, to find it again on an interception or transfer. */
   drefs?: string[];
+  /** "ringover" for a call notified by Ringover; absent = Keyyo. */
+  provider?: "ringover";
 };
 
 /** How long a missed call waits before it is sent (another line or an interception may answer). */
@@ -59,7 +64,14 @@ export type ApplyResult = {
   callId: string | null;
   adviserId: string | null;
   adviserName: string | null;
+  /** How the adviser was found (Ringover learns its user ids from email / name matches). */
+  matchedBy?: "id" | "email" | "nom" | "ligne" | "appel";
 };
+
+/** Lower case, no accents, single spaces: names compared as people type them. */
+function plainName(x: string | null | undefined): string {
+  return (x ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
 
 function readMeta(raw: string | null | undefined): KeyyoMeta | null {
   try {
@@ -155,7 +167,43 @@ export async function applyKeyyoNotification(n: KeyyoNotification, now: Date = n
   if (n.direction === "outgoing" || (n.customer && (byPhone.has(n.customer) || routeForNumber(n.customer)))) {
     return { outcome: "appel sortant ou interne : ignoré", callId: null, adviserId: null, adviserName: null };
   }
-  const adviser = n.adviserCandidates.map((p) => byPhone.get(p)).find(Boolean) ?? null;
+  // The adviser: the USER the source names (Ringover: known id, email, then first + last name),
+  // else the line that rang, else whoever the call already belongs to (a Ringover "missed"
+  // carries no user).
+  const hint = n.adviserHint;
+  let matchedBy: ApplyResult["matchedBy"];
+  const find = (by: NonNullable<ApplyResult["matchedBy"]>, f: () => (typeof advisers)[number] | null | undefined) => {
+    if (matchedBy) return null;
+    const a = f() ?? null;
+    if (a) matchedBy = by;
+    return a;
+  };
+  const hintNames = hint
+    ? [plainName(`${hint.firstname ?? ""} ${hint.lastname ?? ""}`), plainName(`${hint.lastname ?? ""} ${hint.firstname ?? ""}`), plainName(hint.fullName)].filter(Boolean)
+    : [];
+  const byName = (name: string) => {
+    const found = advisers.filter((a) => [plainName(`${a.prenom} ${a.nom}`), plainName(`${a.nom} ${a.prenom}`)].includes(name));
+    return found.length === 1 ? found[0] : null; // two advisers with the same name: not guessed
+  };
+  let adviser =
+    find("id", () => (hint?.userId ? advisers.find((a) => a.id === hint.userId) : null)) ??
+    find("email", () => (hint?.email ? advisers.find((a) => a.email.toLowerCase() === hint.email!.trim().toLowerCase()) : null)) ??
+    find("nom", () => hintNames.map(byName).find(Boolean)) ??
+    find("ligne", () => n.adviserCandidates.map((p) => byPhone.get(p)).find(Boolean));
+  if (!adviser && n.callRef && !n.sessionId) {
+    const prior = await prisma.call.findFirst({
+      where: { rawMeta: { contains: `"keyyoRef":${JSON.stringify(n.callRef)}` }, startedAt: { gte: new Date(nowWall.getTime() - 12 * 3600_000) } },
+      orderBy: { startedAt: "desc" },
+      select: { assignedUserId: true },
+    });
+    adviser = find("appel", () => advisers.find((a) => a.id === prior?.assignedUserId));
+  }
+  if (!adviser) {
+    const who = [hint?.fullName || [hint?.firstname, hint?.lastname].filter(Boolean).join(" "), hint?.email].filter(Boolean).join(" / ");
+    if (who) {
+      return { outcome: `aucun conseiller actif « ${who} » (ni par e-mail ni par nom${n.adviserCandidates.length ? `, ni par la ligne ${n.adviserCandidates.join(" / ")}` : ""}) : ignoré`, callId: null, adviserId: null, adviserName: null };
+    }
+  }
   if (!adviser) {
     return { outcome: `aucun conseiller avec la ligne ${n.adviserCandidates.join(" / ") || "(vide)"} : ignoré`, callId: null, adviserId: null, adviserName: null };
   }
@@ -199,6 +247,7 @@ export async function applyKeyyoNotification(n: KeyyoNotification, now: Date = n
         });
     const meta: KeyyoMeta = readMeta(existing?.rawMeta) ?? {
       source: "keyyo-webhook", keyyoRef: ref, numeroAppelant: line.numero, events: [], dref: n.dref,
+      ...(n.provider ? { provider: n.provider } : {}),
     };
     meta.events = [...meta.events, `${n.rawType || n.type}${n.voicemail ? " (messagerie)" : ""}${taken ? " (interception)" : ""}`].slice(-20);
     if (n.callRef) meta.callRefs = [...new Set([...(meta.callRefs ?? []), n.callRef])].slice(-20);
@@ -226,7 +275,8 @@ export async function applyKeyyoNotification(n: KeyyoNotification, now: Date = n
       data.teamId = adviser.teamId;
     }
     if (endsCall) {
-      const endWall = n.startedAt && n.durationSeconds !== null ? new Date(n.startedAt.getTime() + n.durationSeconds * 1000) : nowWall;
+      // The event's own time when sent (_TSMS_, Ringover hangup_time), else start + duration.
+      const endWall = !n.eventAt && n.startedAt && n.durationSeconds !== null ? new Date(n.startedAt.getTime() + n.durationSeconds * 1000) : nowWall;
       data.endedAt = endWall;
       data.durationSeconds = n.durationSeconds ?? (meta.answeredAt ? Math.max(0, Math.round((endWall.getTime() - new Date(meta.answeredAt).getTime()) / 1000)) : 0);
       data.isMissed = !answered;
@@ -283,5 +333,6 @@ export async function applyKeyyoNotification(n: KeyyoNotification, now: Date = n
     callId: call.id,
     adviserId: adviser.id,
     adviserName,
+    matchedBy,
   };
 }
