@@ -63,15 +63,13 @@ export function standardName(l: Pick<StandardLine, "space" | "agency" | "label">
 export type StandardOverview = StandardLine & {
   name: string;
   advisers: Array<{ id: string; name: string; email: string; role: string; ringoverLinked: boolean }>;
-  /** Ringover numbers declared for this line on /admin/keyyo (and RINGOVER_KEYYO_NUMBERS). */
-  ringoverNumbers: string[];
   /** What would stop a call of this line from being filed on the right adviser. */
   problems: string[];
 };
 
 const plain = (x: string) => x.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 
-export async function loadStandardOverview(forwardTargets: Map<string, string | null>, ringoverUsers: Map<string, string>): Promise<StandardOverview[]> {
+export async function loadStandardOverview(ringoverUsers: Map<string, string>): Promise<StandardOverview[]> {
   const standard = await loadStandardLines();
   const users = await prisma.user.findMany({
     where: { isActive: true, role: { in: ["CONSEILLER", "SUPERVISEUR"] } },
@@ -111,7 +109,6 @@ export async function loadStandardOverview(forwardTargets: Map<string, string | 
       ...line,
       name: standardName(line),
       advisers: members.map((u) => ({ id: u.id, name: `${u.prenom} ${u.nom}`.trim(), email: u.email, role: u.role, ringoverLinked: linked.has(u.id) })),
-      ringoverNumbers: [...forwardTargets].filter(([, l]) => l === line.numero).map(([r]) => r),
       problems,
     });
   }

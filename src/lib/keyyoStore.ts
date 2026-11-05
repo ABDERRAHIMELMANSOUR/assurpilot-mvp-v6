@@ -149,19 +149,3 @@ export async function saveRingoverUser(ringoverUserId: string, userId: string): 
     console.error("[ringover] lien utilisateur non enregistré:", error instanceof Error ? error.message : error);
   }
 }
-
-// ── Ringover numbers fed by the Keyyo standard ──────────────────────────────────────
-// Only Ringover calls coming from the Keyyo standard are kept (src/lib/ringoverWebhook.ts,
-// keyyoStandardOrigin). When Ringover does not say where a call was forwarded from, the Ringover
-// numbers the standard forwards to identify them: set on /admin/keyyo (azzur_routes
-// "setting:ringoverKeyyoNumbers"), plus RINGOVER_KEYYO_NUMBERS in the environment.
-const RINGOVER_TARGETS_KEY = "setting:ringoverKeyyoNumbers";
-
-export async function loadRingoverForwardTargetsText(): Promise<string> {
-  const row = await prisma.azzurRoute.findUnique({ where: { key: RINGOVER_TARGETS_KEY } }).catch(() => null);
-  return row?.url ?? "";
-}
-
-export async function saveRingoverForwardTargetsText(value: string, by: string | null): Promise<void> {
-  await saveSetting(RINGOVER_TARGETS_KEY, value.trim().slice(0, 2000), by);
-}

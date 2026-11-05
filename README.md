@@ -1048,18 +1048,15 @@ même logique que Keyyo (`src/lib/keyyoCalls.ts`) :
 - **Filtre : seuls les appels entrants renvoyés par le standard Keyyo** sont traités. Il faut :
   1. `direction` = `inbound` (`in`, `incoming`) — sortants (`outbound`), internes (`is_internal`), sans
      direction ou autre : ignorés ;
-  2. **et** une preuve que l'appel vient du standard Keyyo, au choix :
+  2. **et** la ligne du standard Keyyo d'origine, lue **uniquement dans le payload** (rien à configurer) :
      - un champ de renvoi / transfert (`redirected_from`, `redirecting_number`, `forwarded_from`,
        `diverted_from`, `transferred_from`, `transfer`, `original_called_number`…, en haut du JSON, dans
        `data` ou dans `metadata` ; valeur = numéro, ou objet `{from | number | from_number}`) qui est une
        **ligne du standard** (les 4 lignes de production et les lignes actives de « Lignes ») ;
-     - le numéro appelé est un des **numéros Ringover qui reçoivent les renvois du standard**, déclarés sur
-       `/admin/keyyo` **chacun avec sa ligne du standard Keyyo** (`0189000000=0182287364`), dans un bloc
-       **Agence CPA** et un bloc **Agence ALM** (la liste ne propose que les lignes de l'agence). Un numéro
-       sans sa ligne n'est pas accepté (et ne compte pas). Cette association est prioritaire : elle fixe la
-       ligne, donc l'agence (CPA / ALM) et l'espace (Santé / Auto). Aussi `RINGOVER_KEYYO_NUMBERS` dans
-       Vercel, même format. Utile car Ringover n'indique pas toujours d'où vient le renvoi ;
-     - le numéro appelé (`to_number` / `callee`) est lui-même une ligne du standard.
+     - sinon (renvoi direct) le numéro appelé (`to_number` / `callee`, ou le numéro de SVI) est lui-même
+       une ligne du standard.
+
+     Cette ligne fixe l'équipe, donc l'agence (CPA / ALM) et l'espace (Santé / Auto).
 
   Un appel direct à Ringover, ou renvoyé depuis un autre numéro, est ignoré. Tout appel ignoré reçoit une
   réponse 200 (Ringover ne renvoie pas) : aucun appel, **rien au journal**. Les numéros masqués sont ignorés
@@ -1080,7 +1077,7 @@ même logique que Keyyo (`src/lib/keyyoCalls.ts`) :
   seulement à défaut) ; ses conseillers actifs sont ceux de la ligne. Pour un appel Ringover, le conseiller
   de **l'équipe de la ligne** est préféré, puis celui de la même agence (même personne avec plusieurs
   comptes, homonymes). `/admin/keyyo` affiche cette correspondance par agence (équipe, conseillers, e-mails,
-  « lié à Ringover », numéros Ringover déclarés) et signale ce qui empêcherait une attribution sûre :
+  « lié à Ringover ») et signale ce qui empêcherait une attribution sûre :
   ligne sans équipe, équipe sans conseiller, deux comptes actifs au même nom ou au même numéro.
 - **Traçabilité Keyyo → Ringover** (client → standard Keyyo publié sur Google Ads pour CPA ou ALM → renvoi
   vers Ringover → agent qui décroche). Pour chaque appel gardé, le **journal** (`/admin/keyyo`, table
@@ -1091,13 +1088,8 @@ même logique que Keyyo (`src/lib/keyyoCalls.ts`) :
   Ringover le nomme (nom, e-mail, id) **→ le conseiller AssurPilot** retenu. Filtre par agence. L'appel
   garde le même parcours dans `rawMeta.trace` (`standardLine`, `agency`, `ringoverNumber`, `answeredBy` —
   le dernier agent qui a décroché, après un transfert sur Ringover —, `answeredByAdviser`).
-- **Aucune ambiguïté CPA / ALM** dans `numéro_ringover=ligne_standard_keyyo` : un numéro Ringover a une seule
-  ligne (deux lignes, même l'une sur `/admin/keyyo` et l'autre dans `RINGOVER_KEYYO_NUMBERS` : refusé à
-  l'enregistrement, signalé sur la page, et ignoré par le webhook — jamais « le dernier gagne » ; un appel
-  sur ce numéro est noté « agence ambiguë » au journal, sans créer d'appel) ; une ligne du standard ne peut
-  pas être déclarée comme numéro Ringover d'une autre ligne ; si le champ de renvoi de Ringover et
-  l'association déclarée désignent deux lignes différentes, le renvoi l'emporte et le journal le signale ;
-  un conseiller d'une autre agence que la ligne est signalé aussi.
+- **CPA / ALM sans ambiguïté** : une ligne du standard appartient à une seule équipe, donc à une seule agence ;
+  un conseiller d'une autre agence ou d'une autre équipe que la ligne est signalé au journal.
 - **Sécurité** : le jeton secret de `/admin/keyyo` (le même que Keyyo, « Nouvelle URL » change les deux)
   dans l'URL ou l'en-tête `x-ringover-token`, **ou** la signature Ringover (`X-Ringover-Webhook-Signature`,
   JWT HS512) vérifiée avec la clé du webhook mise dans `RINGOVER_WEBHOOK_SECRET`. Sinon 401, rien n'est

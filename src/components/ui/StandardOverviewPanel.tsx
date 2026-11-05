@@ -1,13 +1,11 @@
 "use client";
 // /admin/keyyo — the Keyyo standard as AssurPilot sees it: each line (Google Ads number) with its
-// agency (ALM / CPA), its space (Santé / Auto), its team and the team's advisers, the Ringover
-// numbers declared for it and anything that would stop a call from reaching the right adviser.
-import type { StandardLine } from "@/components/ui/RingoverForwardsEditor";
-
-export type StandardOverview = StandardLine & {
+// agency (ALM / CPA), its space (Santé / Auto), its team and the team's advisers, and anything that
+// would stop a call from reaching the right adviser.
+export type StandardOverview = {
+  numero: string; label: string; agency: "CPA" | "ALM" | null; space: "SANTE" | "AUTO" | null;
   teamId: string | null; teamName: string | null; name: string;
   advisers: Array<{ id: string; name: string; email: string; role: string; ringoverLinked: boolean }>;
-  ringoverNumbers: string[];
   problems: string[];
 };
 
@@ -45,12 +43,6 @@ export default function StandardOverviewPanel({ lines }: { lines: StandardOvervi
                 <p className="text-[11px] text-slate-600 mt-0.5">
                   Équipe : <b>{l.teamName ?? "—"}</b> · {l.advisers.length} conseiller{l.advisers.length > 1 ? "s" : ""} actif{l.advisers.length > 1 ? "s" : ""}
                   {" "}· {l.advisers.filter((a) => a.ringoverLinked).length} lié{l.advisers.filter((a) => a.ringoverLinked).length > 1 ? "s" : ""} à Ringover
-                </p>
-                <p className="text-[11px] text-slate-600">
-                  Numéro{l.ringoverNumbers.length > 1 ? "s" : ""} Ringover :{" "}
-                  {l.ringoverNumbers.length
-                    ? <span className="font-mono">{l.ringoverNumbers.join(", ")}</span>
-                    : <span className="text-slate-400">aucun déclaré (reconnu seulement si Ringover indique le renvoi depuis {l.numero})</span>}
                 </p>
                 {l.problems.map((p) => <p key={p} className="text-[11px] text-amber-700 mt-0.5">⚠ {p}</p>)}
                 {l.advisers.length > 0 && (

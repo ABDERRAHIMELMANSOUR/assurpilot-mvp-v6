@@ -5,7 +5,6 @@ import { useCallback, useEffect, useState } from "react";
 import { errorMessage, fetchJson } from "@/lib/fetchJson";
 import { usePolling } from "@/lib/usePolling";
 import { useToast } from "@/components/ui/Toast";
-import RingoverForwardsEditor, { type ForwardRow, type StandardLine } from "@/components/ui/RingoverForwardsEditor";
 import StandardOverviewPanel, { type StandardOverview } from "@/components/ui/StandardOverviewPanel";
 
 type EventRow = {
@@ -16,7 +15,6 @@ type EventRow = {
 type Info = {
   enabled: boolean; url: string | null; tokenFromEnv: boolean; events: EventRow[];
   ringover: { answered: string; ended: string } | null; ringoverSigned: boolean;
-  ringoverForwards: ForwardRow[]; ringoverForwardsEnv: ForwardRow[]; standardLines: StandardLine[];
   standardOverview: StandardOverview[];
 };
 
@@ -131,7 +129,8 @@ export default function KeyyoWebhookCard() {
               <li><b>Seuls les appels entrants renvoyés par le standard Keyyo</b> sont traités : <span className="font-mono">direction: inbound</span>, et
                 {" "}un champ de renvoi / transfert (<span className="font-mono">redirected_from</span>, <span className="font-mono">transferred_from</span>,
                 {" "}<span className="font-mono">metadata</span>…) qui nomme une ligne du standard, ou un numéro appelé (<span className="font-mono">to_number</span>)
-                {" "}qui est un des numéros Ringover ci-dessous (avec sa ligne du standard) ou une ligne du standard. Appels sortants, internes, directs ou venant d&apos;ailleurs : ignorés,
+                {" "}qui est lui-même une ligne du standard (renvoi direct). Rien à configurer : la ligne d&apos;origine est lue dans ce que Ringover envoie.
+                {" "}Appels sortants, internes, directs ou venant d&apos;ailleurs : ignorés,
                 {" "}sans rien enregistrer. Pour chaque appel gardé, le journal note le numéro du client (<span className="font-mono">from_number</span>), le numéro
                 {" "}appelé (<span className="font-mono">to_number</span>) et la ligne du standard.</li>
               <li>Le conseiller est l&apos;utilisateur Ringover qui a décroché, retrouvé par son <b>e-mail</b> puis ses <b>prénom et nom</b> dans AssurPilot
@@ -144,7 +143,6 @@ export default function KeyyoWebhookCard() {
               </li>
             </ol>
             <StandardOverviewPanel lines={info.standardOverview} />
-            <RingoverForwardsEditor rows={info.ringoverForwards} envRows={info.ringoverForwardsEnv} standardLines={info.standardLines} onSaved={load} />
           </div>
 
           <div className="flex flex-wrap items-center gap-2 mb-1">

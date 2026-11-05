@@ -25,16 +25,15 @@
 // ONLY INBOUND CALLS are kept: "direction" must say inbound (inbound / in / incoming / entrant).
 // Outbound, internal (is_internal) and calls whose direction is missing or unknown are ignored.
 //
-// And ONLY CALLS FORWARDED FROM THE KEYYO STANDARD (keyyoStandardOrigin), recognised by, in order:
+// And ONLY CALLS FORWARDED FROM THE KEYYO STANDARD (keyyoStandardOrigin), recognised from the
+// payload alone — nothing to configure:
 //   1. a redirection / transfer field naming a Keyyo standard line: redirected_from,
 //      redirecting_number, forwarded_from, diverted_from, transferred_from, transfer,
 //      original_called_number… — at the top, in "data" or in "metadata";
-//   2. the number called (to_number / callee) being a Ringover number declared on /admin/keyyo
-//      WITH the standard line it serves (« 0189…=0182287364 »): that line, so the agency (CPA /
-//      ALM) and the space (Santé / Auto), is the one declared — an entry without its line counts
-//      for nothing;
-//   3. the number called being itself a Keyyo standard line.
-// A direct call to Ringover, or one redirected from any other number, is ignored.
+//   2. otherwise (direct forward) the number called (to_number / callee, or the IVR number) being
+//      itself a Keyyo standard line.
+// That line gives the agency (CPA / ALM) and the space (Santé / Auto). A direct call to Ringover,
+// or one redirected from any other number, is ignored.
 //
 // The customer is from_number / caller. If that is one of our own numbers (the standard showing
 // its line when forwarding), the original caller is looked for in original_from_number,
@@ -129,115 +128,23 @@ function redirectNumbers(...sources: Obj[]): string[] {
 }
 
 export type KeyyoOrigin = {
-  /** The Keyyo standard line the call came from, when known (national form). */
-  line: string | null;
-  via: "redirection" | "numéro appelé" | "numéro de renvoi";
-  /**
-   * Another standard line the same call also points to (a redirection field naming one line, the
-   * Ringover number declared for another): the call is kept on `line`, the journal flags it.
-   */
-  divergent?: string | null;
+  /** The Keyyo standard line the call came from (national form). */
+  line: string;
+  via: "redirection" | "numéro appelé";
 };
 
 /**
- * Parses the « Numéros Ringover recevant les renvois du standard Keyyo » setting: one entry per
- * line (or separated by commas / semicolons; spaces inside a number are fine), « ringover=keyyo ».
- * An entry that is not a phone number (under 9 digits) is skipped; one without its Keyyo line is
- * kept with line null, and counts for nothing in keyyoStandardOrigin.
- */
-export function forwardTargetEntries(textValue: string | null | undefined): string[] {
-  return (textValue ?? "").split(/[\n\r,;]+/).map((x) => x.trim()).filter(Boolean);
-}
-
-const isPhone = (x: string | undefined) => (x ?? "").replace(/\D/g, "").length >= 9;
-
-function rawForwardPairs(textValue: string | null | undefined): Array<[string, string | null]> {
-  const out: Array<[string, string | null]> = [];
-  for (const entry of forwardTargetEntries(textValue)) {
-    const [target, line] = entry.split("=").map((x) => x.trim());
-    if (!isPhone(target)) continue;
-    out.push([normalizePhone(target), isPhone(line) ? normalizePhone(line) : null]);
-  }
-  return out;
-}
-
-/**
- * Ringover numbers given with DIFFERENT standard lines (e.g. one on /admin/keyyo, another in
- * RINGOVER_KEYYO_NUMBERS): ambiguous, so not used at all — never "the last one wins".
- */
-export function forwardTargetConflicts(textValue: string | null | undefined): Map<string, string[]> {
-  const lines = new Map<string, Set<string>>();
-  for (const [target, line] of rawForwardPairs(textValue)) {
-    if (!line) continue;
-    lines.set(target, (lines.get(target) ?? new Set()).add(line));
-  }
-  return new Map([...lines].filter(([, ls]) => ls.size > 1).map(([t, ls]) => [t, [...ls]] as [string, string[]]));
-}
-
-/** Ringover number -> its standard line (null = given without one). Conflicting numbers are left out. */
-export function parseForwardTargets(textValue: string | null | undefined): Map<string, string | null> {
-  const conflicts = forwardTargetConflicts(textValue);
-  const out = new Map<string, string | null>();
-  for (const [target, line] of rawForwardPairs(textValue)) {
-    if (conflicts.has(target)) continue;
-    if (line || !out.get(target)) out.set(target, line);
-  }
-  return out;
-}
-
-/**
- * Checks the pairs typed on /admin/keyyo: each Ringover number with ONE line of the Keyyo standard.
- * Returns the normalised pairs to store, or the errors (empty rows skipped).
- */
-export function validateForwardPairs(
-  pairs: Array<{ ringover: string; keyyo: string }>,
-  standardLines: Set<string>,
-): { pairs: Array<[string, string]>; errors: string[] } {
-  const seen = new Map<string, string>();
-  const errors: string[] = [];
-  for (const { ringover, keyyo } of pairs) {
-    if (!ringover.trim() && !keyyo.trim()) continue;
-    const r = normalizePhone(ringover);
-    const k = normalizePhone(keyyo);
-    if (!isPhone(ringover)) { errors.push(`« ${ringover} » n'est pas un numéro`); continue; }
-    if (!k) { errors.push(`${r} : choisissez la ligne du standard Keyyo (CPA ou ALM) qu'il reçoit`); continue; }
-    if (!standardLines.has(k)) { errors.push(`${r} : ${keyyo} n'est pas une ligne du standard Keyyo`); continue; }
-    // A Ringover number that is itself another line of the standard would file that line's calls
-    // under a different line — possibly the other agency: refused.
-    if (standardLines.has(r) && r !== k) { errors.push(`${r} est une ligne du standard Keyyo : elle ne peut pas être déclarée comme numéro Ringover d'une autre ligne (${k})`); continue; }
-    if (seen.has(r) && seen.get(r) !== k) { errors.push(`${r} est associé à deux lignes : un numéro Ringover ne sert qu'une ligne du standard`); continue; }
-    seen.set(r, k);
-  }
-  return { pairs: [...seen], errors };
-}
-
-/** Entries of the setting that are not « ringover number=Keyyo standard line ». */
-export function invalidForwardTargets(textValue: string | null | undefined): string[] {
-  return forwardTargetEntries(textValue).filter((entry) => {
-    const parts = entry.split("=").map((x) => x.trim());
-    return parts.length !== 2 || !isPhone(parts[0]) || !isPhone(parts[1]);
-  });
-}
-
-/**
- * Did this Ringover call come from the Keyyo standard? `keyyoLines`: the standard's lines
- * (national form); `forwardTargets`: Ringover numbers the standard forwards to. null = no.
+ * Did this Ringover call come from the Keyyo standard, and from which line? Read from the payload
+ * only: a redirection field naming a standard line, else the number called being one.
+ * `keyyoLines`: the standard's lines (national form). null = not from the standard.
  */
 export function keyyoStandardOrigin(
   n: Pick<RingoverNotification, "redirectedFrom" | "called" | "ivrNumber">,
   keyyoLines: Set<string>,
-  forwardTargets: Map<string, string | null>,
 ): KeyyoOrigin | null {
-  const reached = [n.called, n.ivrNumber].filter(Boolean);
   const redirected = n.redirectedFrom.find((x) => keyyoLines.has(x));
-  if (redirected) {
-    const declared = reached.map((x) => forwardTargets.get(x)).find(Boolean) ?? null;
-    return { line: redirected, via: "redirection", divergent: declared && declared !== redirected ? declared : null };
-  }
-  // A declared Ringover number counts only with its Keyyo line, and that line wins.
-  const target = reached.find((x) => forwardTargets.get(x));
-  if (target) return { line: forwardTargets.get(target)!, via: "numéro de renvoi" };
-  const direct = reached.find((x) => keyyoLines.has(x));
+  if (redirected) return { line: redirected, via: "redirection" };
+  const direct = [n.called, n.ivrNumber].filter(Boolean).find((x) => keyyoLines.has(x));
   if (direct) return { line: direct, via: "numéro appelé" };
   return null;
 }
