@@ -55,6 +55,17 @@ export type KeyyoMeta = {
   drefs?: string[];
   /** "ringover" for a call notified by Ringover; absent = Keyyo. */
   provider?: "ringover";
+  /**
+   * Route of a call Keyyo standard -> Ringover: the standard line (and its agency), the Ringover
+   * number it reached, who picked up on Ringover and which adviser that is.
+   */
+  trace?: CallTrace;
+};
+
+export type CallTrace = {
+  standardLine?: string | null; standardLabel?: string | null; agency?: string | null;
+  ringoverNumber?: string | null; ringoverAgent?: string | null;
+  answeredBy?: string | null; answeredByAdviser?: string | null;
 };
 
 /** How long a missed call waits before it is sent (another line or an interception may answer). */
@@ -275,6 +286,11 @@ export async function applyKeyyoNotification(n: KeyyoNotification, now: Date = n
     if (n.callRef) meta.callRefs = [...new Set([...(meta.callRefs ?? []), n.callRef])].slice(-20);
     if (n.dref) meta.drefs = [...new Set([...(meta.drefs ?? []), ...(meta.dref ? [meta.dref] : []), n.dref])].slice(-20);
     if (onStandard) meta.acd = true;
+    if (n.trace) {
+      const { ringoverAgent, ...route } = n.trace;
+      meta.trace = { ...meta.trace, ...Object.fromEntries(Object.entries(route).filter(([, v]) => v)) };
+      if (ringoverAgent && !meta.trace.ringoverAgent) meta.trace.ringoverAgent = ringoverAgent;
+    }
     if (!meta.numeroAppelant && line.numero) meta.numeroAppelant = line.numero;
 
     // The line taking a call over (its SETUP is all the stealer gets) now holds it.
@@ -285,6 +301,10 @@ export async function applyKeyyoNotification(n: KeyyoNotification, now: Date = n
     if (firstAnswer) {
       meta.answeredAt ??= nowWall.toISOString();
       meta.answeredRef = n.callRef;
+    }
+    // Who picked up: the agent of the answer (the last one, after a transfer on Ringover).
+    if (answersNow && n.trace) {
+      meta.trace = { ...meta.trace, answeredBy: n.trace.ringoverAgent ?? meta.trace?.answeredBy ?? null, answeredByAdviser: adviserName };
     }
     const answered = !!meta.answeredAt;
     // The call ends with the RELEASE of the line that answered, or of the only line it rang.

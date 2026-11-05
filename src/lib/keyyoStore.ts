@@ -61,6 +61,10 @@ export const KEYYO_EVENTS_SQL = `CREATE TABLE IF NOT EXISTS public.keyyo_events 
 );
 CREATE INDEX IF NOT EXISTS "keyyo_events_receivedAt_idx" ON public.keyyo_events ("receivedAt");
 ALTER TABLE public.keyyo_events ADD COLUMN IF NOT EXISTS "called" TEXT NOT NULL DEFAULT '';
+ALTER TABLE public.keyyo_events ADD COLUMN IF NOT EXISTS "standardLine" TEXT NOT NULL DEFAULT '';
+ALTER TABLE public.keyyo_events ADD COLUMN IF NOT EXISTS "standardLabel" TEXT NOT NULL DEFAULT '';
+ALTER TABLE public.keyyo_events ADD COLUMN IF NOT EXISTS "agency" TEXT NOT NULL DEFAULT '';
+ALTER TABLE public.keyyo_events ADD COLUMN IF NOT EXISTS "agent" TEXT NOT NULL DEFAULT '';
 ALTER TABLE public.keyyo_events ENABLE ROW LEVEL SECURITY;`;
 
 let ensured = false;
@@ -80,6 +84,12 @@ export type KeyyoEventRow = {
   customer: string;
   /** Number called (the line / Ringover number). */
   called: string;
+  /** Ringover: the Keyyo standard line the call came from (number, label, agency CPA / ALM). */
+  standardLine: string;
+  standardLabel: string;
+  agency: string;
+  /** Ringover: the agent as Ringover named them (who picked up), before matching to an adviser. */
+  agent: string;
   adviserName: string | null;
   callId: string | null;
   outcome: string;
@@ -88,15 +98,16 @@ export type KeyyoEventRow = {
 
 /** Journals one notification. Never throws: the call itself is what matters. */
 export async function recordKeyyoEvent(e: {
-  type: string; callRef: string | null; customer: string; called?: string; adviserId: string | null; adviserName: string | null;
+  type: string; callRef: string | null; customer: string; called?: string;
+  standardLine?: string | null; standardLabel?: string | null; agency?: string | null; agent?: string | null; adviserId: string | null; adviserName: string | null;
   callId: string | null; outcome: string; params: Record<string, unknown>;
 }): Promise<void> {
   try {
     await ensureTable();
     // The token is a secret: never journaled.
     const params = Object.fromEntries(Object.entries(e.params).filter(([k]) => !/^(token|key|secret)$/i.test(k)));
-    await prisma.$executeRaw`INSERT INTO public.keyyo_events ("type", "callRef", "customer", "called", "adviserId", "adviserName", "callId", "outcome", "params")
-      VALUES (${e.type}, ${e.callRef}, ${e.customer}, ${e.called ?? ""}, ${e.adviserId}, ${e.adviserName}, ${e.callId}, ${e.outcome.slice(0, 500)}, ${JSON.stringify(params).slice(0, 2000)})`;
+    await prisma.$executeRaw`INSERT INTO public.keyyo_events ("type", "callRef", "customer", "called", "standardLine", "standardLabel", "agency", "agent", "adviserId", "adviserName", "callId", "outcome", "params")
+      VALUES (${e.type}, ${e.callRef}, ${e.customer}, ${e.called ?? ""}, ${e.standardLine ?? ""}, ${e.standardLabel ?? ""}, ${e.agency ?? ""}, ${(e.agent ?? "").slice(0, 200)}, ${e.adviserId}, ${e.adviserName}, ${e.callId}, ${e.outcome.slice(0, 500)}, ${JSON.stringify(params).slice(0, 2000)})`;
   } catch (error) {
     console.error("[keyyo] journal non écrit:", error instanceof Error ? error.message : error);
   }
@@ -106,7 +117,7 @@ export async function loadKeyyoEvents(limit = 100): Promise<KeyyoEventRow[]> {
   try {
     await ensureTable();
     const rows = await prisma.$queryRaw<Array<Omit<KeyyoEventRow, "id" | "receivedAt"> & { id: bigint; receivedAt: Date }>>(
-      Prisma.sql`SELECT "id", "receivedAt", "type", "callRef", "customer", "called", "adviserName", "callId", "outcome", "params"
+      Prisma.sql`SELECT "id", "receivedAt", "type", "callRef", "customer", "called", "standardLine", "standardLabel", "agency", "agent", "adviserName", "callId", "outcome", "params"
         FROM public.keyyo_events ORDER BY "receivedAt" DESC, "id" DESC LIMIT ${Math.min(Math.max(limit, 1), 500)}`
     );
     return rows.map((r) => ({ ...r, id: String(r.id), receivedAt: r.receivedAt.toISOString() }));

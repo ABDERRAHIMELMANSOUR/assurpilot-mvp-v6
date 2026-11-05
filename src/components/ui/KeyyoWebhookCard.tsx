@@ -9,6 +9,7 @@ import RingoverForwardsEditor, { type ForwardRow, type StandardLine } from "@/co
 
 type EventRow = {
   id: string; receivedAt: string; type: string; callRef: string | null; customer: string; called: string;
+  standardLine: string; standardLabel: string; agency: string; agent: string;
   adviserName: string | null; callId: string | null; outcome: string; params: string;
 };
 type Info = {
@@ -39,6 +40,7 @@ export default function KeyyoWebhookCard() {
   const [info, setInfo] = useState<Info | null>(null);
   const [busy, setBusy] = useState(false);
   const [showRaw, setShowRaw] = useState<string | null>(null);
+  const [agencyFilter, setAgencyFilter] = useState<"" | "CPA" | "ALM" | "KEYYO">("");
 
   const load = useCallback(async () => {
     try { setInfo(await fetchJson<Info>("/api/admin/keyyo/webhook")); }
@@ -142,23 +144,51 @@ export default function KeyyoWebhookCard() {
             <RingoverForwardsEditor rows={info.ringoverForwards} envRows={info.ringoverForwardsEnv} standardLines={info.standardLines} onSaved={load} />
           </div>
 
-          <p className="text-xs font-semibold text-slate-700 mb-1">Dernières notifications reçues</p>
-          {info.events.length === 0 ? (
-            <p className="text-xs text-slate-400">Aucune notification reçue pour l&apos;instant.</p>
-          ) : (
-            <div className="overflow-x-auto max-h-[380px] overflow-y-auto">
-              <table className="w-full" style={{ minWidth: "820px" }}>
+          <div className="flex flex-wrap items-center gap-2 mb-1">
+            <p className="text-xs font-semibold text-slate-700 mr-auto">Dernières notifications reçues</p>
+            <label className="text-[11px] text-slate-500" htmlFor="journal-agency">Agence</label>
+            <select id="journal-agency" className="input text-xs w-44" value={agencyFilter} onChange={(e) => setAgencyFilter(e.target.value as typeof agencyFilter)}>
+              <option value="">Toutes</option>
+              <option value="CPA">Ringover — standard CPA</option>
+              <option value="ALM">Ringover — standard ALM</option>
+              <option value="KEYYO">Keyyo (lignes directes)</option>
+            </select>
+          </div>
+          {(() => {
+            const rows = info.events.filter((e) =>
+              !agencyFilter ? true : agencyFilter === "KEYYO" ? !e.type.toLowerCase().startsWith("ringover:") : e.agency === agencyFilter);
+            if (rows.length === 0) return <p className="text-xs text-slate-400">Aucune notification{agencyFilter ? " pour ce filtre" : " reçue pour l'instant"}.</p>;
+            return (
+            <div className="overflow-x-auto max-h-[420px] overflow-y-auto">
+              <table className="w-full" style={{ minWidth: "1080px" }}>
                 <thead className="bg-slate-50/70 border-b border-slate-100 sticky top-0">
-                  <tr><th className="table-th">Reçue</th><th className="table-th">Type</th><th className="table-th">Client</th><th className="table-th">Numéro appelé</th><th className="table-th">Conseiller</th><th className="table-th">Résultat</th></tr>
+                  <tr>
+                    <th className="table-th">Reçue</th><th className="table-th">Type</th><th className="table-th">Client</th>
+                    <th className="table-th">Standard Keyyo</th><th className="table-th">N° appelé</th>
+                    <th className="table-th">A décroché</th><th className="table-th">Résultat</th>
+                  </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {info.events.map((e) => (
-                    <tr key={e.id} className="cursor-pointer hover:bg-slate-50" onClick={() => setShowRaw(showRaw === e.id ? null : e.id)}>
+                  {rows.map((e) => (
+                    <tr key={e.id} className="cursor-pointer hover:bg-slate-50 align-top" onClick={() => setShowRaw(showRaw === e.id ? null : e.id)}>
                       <td className="table-td text-xs whitespace-nowrap">{new Date(e.receivedAt).toLocaleTimeString("fr-FR", { timeZone: "Europe/Paris" })}</td>
                       <td className="table-td text-xs">{TYPE_LABEL[e.type.toUpperCase()] ?? e.type ?? "—"}</td>
                       <td className="table-td font-mono text-xs">{e.customer || "—"}</td>
+                      <td className="table-td text-xs">
+                        {e.standardLine ? (
+                          <>
+                            {e.agency && (
+                              <span className={`inline-block rounded px-1.5 py-0.5 mr-1 text-[10px] font-semibold ${e.agency === "CPA" ? "bg-sky-100 text-sky-800" : "bg-violet-100 text-violet-800"}`}>{e.agency}</span>
+                            )}
+                            {e.standardLabel || "Ligne"} <span className="font-mono text-slate-500">{e.standardLine}</span>
+                          </>
+                        ) : <span className="text-slate-400">—</span>}
+                      </td>
                       <td className="table-td font-mono text-xs">{e.called || "—"}</td>
-                      <td className="table-td text-xs">{e.adviserName ?? <span className="text-slate-400">—</span>}</td>
+                      <td className="table-td text-xs">
+                        {e.agent && <span className="block text-slate-500">Ringover : {e.agent}</span>}
+                        {e.adviserName ? <span className="font-medium text-slate-800">{e.agent ? "→ " : ""}{e.adviserName}</span> : <span className="text-slate-400">—</span>}
+                      </td>
                       <td className="table-td text-xs">
                         {e.outcome}
                         {showRaw === e.id && <code className="block mt-1 text-[10px] text-slate-500 break-all">{e.params}</code>}
@@ -168,8 +198,12 @@ export default function KeyyoWebhookCard() {
                 </tbody>
               </table>
             </div>
-          )}
-          <p className="text-[11px] text-slate-400 mt-1">Cliquez une ligne pour voir les paramètres exacts envoyés par Keyyo ou Ringover.</p>
+            );
+          })()}
+          <p className="text-[11px] text-slate-400 mt-1">
+            Ringover : client → ligne du standard Keyyo d&apos;origine (agence) → numéro Ringover appelé → agent qui a décroché sur Ringover → conseiller
+            AssurPilot. Cliquez une ligne pour voir les paramètres exacts envoyés par Keyyo ou Ringover.
+          </p>
         </>
       )}
     </div>

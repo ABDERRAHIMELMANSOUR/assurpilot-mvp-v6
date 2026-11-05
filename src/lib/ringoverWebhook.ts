@@ -132,6 +132,11 @@ export type KeyyoOrigin = {
   /** The Keyyo standard line the call came from, when known (national form). */
   line: string | null;
   via: "redirection" | "numéro appelé" | "numéro de renvoi";
+  /**
+   * Another standard line the same call also points to (a redirection field naming one line, the
+   * Ringover number declared for another): the call is kept on `line`, the journal flags it.
+   */
+  divergent?: string | null;
 };
 
 /**
@@ -146,12 +151,36 @@ export function forwardTargetEntries(textValue: string | null | undefined): stri
 
 const isPhone = (x: string | undefined) => (x ?? "").replace(/\D/g, "").length >= 9;
 
-export function parseForwardTargets(textValue: string | null | undefined): Map<string, string | null> {
-  const out = new Map<string, string | null>();
+function rawForwardPairs(textValue: string | null | undefined): Array<[string, string | null]> {
+  const out: Array<[string, string | null]> = [];
   for (const entry of forwardTargetEntries(textValue)) {
     const [target, line] = entry.split("=").map((x) => x.trim());
     if (!isPhone(target)) continue;
-    out.set(normalizePhone(target), isPhone(line) ? normalizePhone(line) : null);
+    out.push([normalizePhone(target), isPhone(line) ? normalizePhone(line) : null]);
+  }
+  return out;
+}
+
+/**
+ * Ringover numbers given with DIFFERENT standard lines (e.g. one on /admin/keyyo, another in
+ * RINGOVER_KEYYO_NUMBERS): ambiguous, so not used at all — never "the last one wins".
+ */
+export function forwardTargetConflicts(textValue: string | null | undefined): Map<string, string[]> {
+  const lines = new Map<string, Set<string>>();
+  for (const [target, line] of rawForwardPairs(textValue)) {
+    if (!line) continue;
+    lines.set(target, (lines.get(target) ?? new Set()).add(line));
+  }
+  return new Map([...lines].filter(([, ls]) => ls.size > 1).map(([t, ls]) => [t, [...ls]] as [string, string[]]));
+}
+
+/** Ringover number -> its standard line (null = given without one). Conflicting numbers are left out. */
+export function parseForwardTargets(textValue: string | null | undefined): Map<string, string | null> {
+  const conflicts = forwardTargetConflicts(textValue);
+  const out = new Map<string, string | null>();
+  for (const [target, line] of rawForwardPairs(textValue)) {
+    if (conflicts.has(target)) continue;
+    if (line || !out.get(target)) out.set(target, line);
   }
   return out;
 }
@@ -173,6 +202,9 @@ export function validateForwardPairs(
     if (!isPhone(ringover)) { errors.push(`« ${ringover} » n'est pas un numéro`); continue; }
     if (!k) { errors.push(`${r} : choisissez la ligne du standard Keyyo (CPA ou ALM) qu'il reçoit`); continue; }
     if (!standardLines.has(k)) { errors.push(`${r} : ${keyyo} n'est pas une ligne du standard Keyyo`); continue; }
+    // A Ringover number that is itself another line of the standard would file that line's calls
+    // under a different line — possibly the other agency: refused.
+    if (standardLines.has(r) && r !== k) { errors.push(`${r} est une ligne du standard Keyyo : elle ne peut pas être déclarée comme numéro Ringover d'une autre ligne (${k})`); continue; }
     if (seen.has(r) && seen.get(r) !== k) { errors.push(`${r} est associé à deux lignes : un numéro Ringover ne sert qu'une ligne du standard`); continue; }
     seen.set(r, k);
   }
@@ -196,9 +228,12 @@ export function keyyoStandardOrigin(
   keyyoLines: Set<string>,
   forwardTargets: Map<string, string | null>,
 ): KeyyoOrigin | null {
-  const redirected = n.redirectedFrom.find((x) => keyyoLines.has(x));
-  if (redirected) return { line: redirected, via: "redirection" };
   const reached = [n.called, n.ivrNumber].filter(Boolean);
+  const redirected = n.redirectedFrom.find((x) => keyyoLines.has(x));
+  if (redirected) {
+    const declared = reached.map((x) => forwardTargets.get(x)).find(Boolean) ?? null;
+    return { line: redirected, via: "redirection", divergent: declared && declared !== redirected ? declared : null };
+  }
   // A declared Ringover number counts only with its Keyyo line, and that line wins.
   const target = reached.find((x) => forwardTargets.get(x));
   if (target) return { line: forwardTargets.get(target)!, via: "numéro de renvoi" };
