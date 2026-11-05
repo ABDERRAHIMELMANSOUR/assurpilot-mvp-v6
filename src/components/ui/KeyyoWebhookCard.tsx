@@ -6,6 +6,7 @@ import { errorMessage, fetchJson } from "@/lib/fetchJson";
 import { usePolling } from "@/lib/usePolling";
 import { useToast } from "@/components/ui/Toast";
 import RingoverForwardsEditor, { type ForwardRow, type StandardLine } from "@/components/ui/RingoverForwardsEditor";
+import StandardOverviewPanel, { type StandardOverview } from "@/components/ui/StandardOverviewPanel";
 
 type EventRow = {
   id: string; receivedAt: string; type: string; callRef: string | null; customer: string; called: string;
@@ -16,6 +17,7 @@ type Info = {
   enabled: boolean; url: string | null; tokenFromEnv: boolean; events: EventRow[];
   ringover: { answered: string; ended: string } | null; ringoverSigned: boolean;
   ringoverForwards: ForwardRow[]; ringoverForwardsEnv: ForwardRow[]; standardLines: StandardLine[];
+  standardOverview: StandardOverview[];
 };
 
 const TYPE_LABEL: Record<string, string> = {
@@ -141,6 +143,7 @@ export default function KeyyoWebhookCard() {
                   : <>facultative — mettez la clé du webhook Ringover dans la variable <span className="font-mono">RINGOVER_WEBHOOK_SECRET</span> de Vercel ; le jeton de l&apos;URL suffit sinon.</>}
               </li>
             </ol>
+            <StandardOverviewPanel lines={info.standardOverview} />
             <RingoverForwardsEditor rows={info.ringoverForwards} envRows={info.ringoverForwardsEnv} standardLines={info.standardLines} onSaved={load} />
           </div>
 

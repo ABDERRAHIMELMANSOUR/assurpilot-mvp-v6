@@ -84,9 +84,11 @@ export type KeyyoNotification = {
   provider?: "ringover";
   /** Agency of the standard line the call came from: the adviser of that agency is preferred. */
   preferAgency?: "CPA" | "ALM" | null;
+  /** Team of that standard line (Santé / Auto of the agency): its adviser is preferred first. */
+  preferTeamId?: string | null;
   /** Route Keyyo standard -> Ringover, kept in the call's rawMeta (see CallTrace in keyyoCalls). */
   trace?: {
-    standardLine?: string | null; standardLabel?: string | null; agency?: string | null;
+    standardLine?: string | null; standardLabel?: string | null; agency?: string | null; team?: string | null;
     ringoverNumber?: string | null; ringoverAgent?: string | null;
   };
 };

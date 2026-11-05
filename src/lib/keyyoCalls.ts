@@ -63,7 +63,7 @@ export type KeyyoMeta = {
 };
 
 export type CallTrace = {
-  standardLine?: string | null; standardLabel?: string | null; agency?: string | null;
+  standardLine?: string | null; standardLabel?: string | null; agency?: string | null; team?: string | null;
   ringoverNumber?: string | null; ringoverAgent?: string | null;
   answeredBy?: string | null; answeredByAdviser?: string | null;
 };
@@ -196,13 +196,22 @@ export async function applyKeyyoNotification(n: KeyyoNotification, now: Date = n
   type Adviser = (typeof advisers)[number];
   const agencyOf = (a: Adviser) => entityOfTeamName(a.team?.nom);
   const namesOf = (a: Adviser) => [plainName(`${a.prenom} ${a.nom}`), plainName(`${a.nom} ${a.prenom}`)];
-  // The agency (CPA / ALM) of the standard line the call came from, when known: among the
-  // advisers a clue points to, the one of that agency; the same person's account in that agency
-  // when the clue points to their account in the other one. Otherwise only a single match counts
-  // (two advisers with the same name are not guessed).
+  // The standard line the call came from, when known: its TEAM (Santé / Auto of CPA / ALM), then
+  // its agency. Among the advisers a clue points to, the one of that team, else of that agency;
+  // the same person's account there when the clue points to their account elsewhere. Otherwise
+  // only a single match counts (two advisers with the same name are not guessed).
   const pick = (candidates: Adviser[]): Adviser | null => {
     const unique = [...new Map(candidates.map((a) => [a.id, a] as const)).values()];
     if (!unique.length) return null;
+    if (n.preferTeamId) {
+      const inTeam = unique.filter((a) => a.teamId === n.preferTeamId);
+      if (inTeam.length === 1) return inTeam[0];
+      if (inTeam.length === 0 && !unique.some((a) => agencyOf(a) === n.preferAgency)) {
+        const names = new Set(unique.flatMap(namesOf));
+        const sameperson = advisers.filter((a) => a.teamId === n.preferTeamId && namesOf(a).some((x) => names.has(x)));
+        if (sameperson.length === 1) return sameperson[0];
+      }
+    }
     if (n.preferAgency) {
       const inAgency = unique.filter((a) => agencyOf(a) === n.preferAgency);
       if (inAgency.length === 1) return inAgency[0];
@@ -240,7 +249,9 @@ export async function applyKeyyoNotification(n: KeyyoNotification, now: Date = n
   const adviserAgency = entityOfTeamName(adviser.team?.nom);
   const agencyWarning = n.preferAgency && adviserAgency && adviserAgency !== n.preferAgency
     ? ` — attention : appel du standard ${n.preferAgency}, conseiller de l'équipe ${adviser.team?.nom ?? adviserAgency}`
-    : "";
+    : n.preferTeamId && adviser.teamId && adviser.teamId !== n.preferTeamId
+      ? ` — à noter : conseiller de l'équipe ${adviser.team?.nom ?? "?"}, pas de l'équipe de la ligne`
+      : "";
   if (!n.customer) {
     return { outcome: "numéro de l'appelant absent ou masqué : ignoré", callId: null, adviserId: adviser.id, adviserName };
   }

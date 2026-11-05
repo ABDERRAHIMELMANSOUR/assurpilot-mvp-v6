@@ -100,7 +100,7 @@ export default function RingoverForwardsEditor({
                       >
                         <option value="">— ligne du standard {g.id !== "AUTRE" ? g.id : ""} —</option>
                         {lines.map((l) => (
-                          <option key={l.numero} value={l.numero}>{l.label} · {l.numero}{l.space ? ` (${SPACE[l.space]})` : ""}</option>
+                          <option key={l.numero} value={l.numero}>{l.space && l.agency ? `Standard ${SPACE[l.space]} ${l.agency} — ` : ""}{l.label} · {l.numero}</option>
                         ))}
                         {d.keyyo && !lines.some((l) => l.numero === d.keyyo) && <option value={d.keyyo}>{d.keyyo} (pas une ligne de cette agence)</option>}
                       </select>

@@ -17,10 +17,10 @@ import { badRequest, handleApiError, readJson, requireRole } from "@/lib/api";
 import { getSiteUrl } from "@/lib/site-url";
 import { KEYYO_URL_PARAMS } from "@/lib/keyyoWebhook";
 import {
-  loadKeyyoEvents, loadKeyyoWebhookSettings, loadRingoverForwardTargetsText, regenerateKeyyoToken, saveRingoverForwardTargetsText, setKeyyoWebhookEnabled,
+  loadKeyyoEvents, loadKeyyoWebhookSettings, loadRingoverForwardTargetsText, loadRingoverUserMap, regenerateKeyyoToken, saveRingoverForwardTargetsText, setKeyyoWebhookEnabled,
 } from "@/lib/keyyoStore";
 import { forwardTargetConflicts, forwardTargetEntries, parseForwardTargets, validateForwardPairs } from "@/lib/ringoverWebhook";
-import { loadStandardLines, type StandardLine } from "@/lib/keyyoStandard";
+import { loadStandardLines, loadStandardOverview, type StandardLine } from "@/lib/keyyoStandard";
 import { normalizePhone } from "@/lib/phone";
 
 type ForwardRow = {
@@ -86,7 +86,9 @@ export async function GET(req: NextRequest) {
       loadKeyyoWebhookSettings(), loadKeyyoEvents(100), loadRingoverForwardTargetsText(), loadStandardLines(),
     ]);
     const envText = (process.env.RINGOVER_KEYYO_NUMBERS ?? "").trim();
+    const standardOverview = await loadStandardOverview(parseForwardTargets(`${ringoverKeyyoNumbers}\n${envText}`), await loadRingoverUserMap());
     return NextResponse.json({
+      standardOverview,
       enabled: settings.enabled,
       url: webhookUrl(req, settings.token),
       ringover: ringoverUrls(req, settings.token),

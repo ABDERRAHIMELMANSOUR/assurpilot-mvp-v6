@@ -1073,6 +1073,15 @@ même logique que Keyyo (`src/lib/keyyoCalls.ts`) :
   `from_number` ; si c'est une de nos lignes (le standard présentant sa ligne lors du renvoi), le numéro
   d'origine est pris dans `original_caller`, `original_from_number`, `customer_number`…, sinon l'appel n'est
   pas créé (journal : « numéro de l'appelant absent »).
+- **Lignes du standard ↔ agences ↔ équipes ↔ conseillers** (`src/lib/keyyoStandard.ts`) : chaque ligne du
+  standard est rattachée à son équipe sur la page Lignes (`phone_lines.teamId`) — Ligne santé ALM → Standard
+  Santé ALM (« Équipe sante ALM », agence ALM), Ligne auto ALM → Standard Auto ALM, Ligne santé CPA →
+  Standard Santé CPA, Ligne auto CPA → Standard Auto CPA. L'**équipe** fixe l'agence et l'espace (le libellé
+  seulement à défaut) ; ses conseillers actifs sont ceux de la ligne. Pour un appel Ringover, le conseiller
+  de **l'équipe de la ligne** est préféré, puis celui de la même agence (même personne avec plusieurs
+  comptes, homonymes). `/admin/keyyo` affiche cette correspondance par agence (équipe, conseillers, e-mails,
+  « lié à Ringover », numéros Ringover déclarés) et signale ce qui empêcherait une attribution sûre :
+  ligne sans équipe, équipe sans conseiller, deux comptes actifs au même nom ou au même numéro.
 - **Traçabilité Keyyo → Ringover** (client → standard Keyyo publié sur Google Ads pour CPA ou ALM → renvoi
   vers Ringover → agent qui décroche). Pour chaque appel gardé, le **journal** (`/admin/keyyo`, table
   `keyyo_events` ; colonnes `called`, `standardLine`, `standardLabel`, `agency`, `agent` ajoutées par

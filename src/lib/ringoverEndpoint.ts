@@ -115,6 +115,7 @@ export async function handleRingoverWebhook(req: NextRequest, endpoint: Ringover
   const standardLine = origin.line ? standard.get(origin.line) ?? null : null;
   if (origin.line) n.lineCandidates = [origin.line, ...n.lineCandidates.filter((x) => x !== origin.line)];
   n.preferAgency = standardLine?.agency ?? null;
+  n.preferTeamId = standardLine?.teamId ?? null;
   const divergent = origin.divergent ? standard.get(origin.divergent) ?? null : null;
   const divergence = divergent
     ? ` — attention : renvoi depuis ${standardLine?.label ?? origin.line} mais ${n.called} est associé à ${divergent.label} sur /admin/keyyo`
@@ -126,7 +127,7 @@ export async function handleRingoverWebhook(req: NextRequest, endpoint: Ringover
   const agent = [agentName, hint.email ? `<${hint.email}>` : "", n.ringoverUserId ? `(id ${n.ringoverUserId})` : ""].filter(Boolean).join(" ");
   n.trace = {
     standardLine: origin.line, standardLabel: standardLine?.label ?? null, agency: standardLine?.agency ?? null,
-    ringoverNumber: n.called || null, ringoverAgent: agent || null,
+    team: standardLine?.teamName ?? null, ringoverNumber: n.called || null, ringoverAgent: agent || null,
   };
 
   // The customer: from_number, unless that is one of our own numbers (the standard presenting its
