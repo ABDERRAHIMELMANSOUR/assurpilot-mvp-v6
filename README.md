@@ -1053,15 +1053,26 @@ même logique que Keyyo (`src/lib/keyyoCalls.ts`) :
        `diverted_from`, `transferred_from`, `transfer`, `original_called_number`…, en haut du JSON, dans
        `data` ou dans `metadata` ; valeur = numéro, ou objet `{from | number | from_number}`) qui est une
        **ligne du standard** (les 4 lignes de production et les lignes actives de « Lignes ») ;
-     - le numéro appelé (`to_number` / `callee`) est lui-même une ligne du standard ;
      - le numéro appelé est un des **numéros Ringover qui reçoivent les renvois du standard**, déclarés sur
-       `/admin/keyyo` (un par ligne, `0189000000` ou `0189000000=0182287364` pour classer l'appel sur cette
-       ligne du standard ; aussi `RINGOVER_KEYYO_NUMBERS` dans Vercel). Utile car Ringover n'indique pas
-       toujours d'où vient le renvoi.
+       `/admin/keyyo` **chacun avec sa ligne du standard Keyyo** (`0189000000=0182287364`), dans un bloc
+       **Agence CPA** et un bloc **Agence ALM** (la liste ne propose que les lignes de l'agence). Un numéro
+       sans sa ligne n'est pas accepté (et ne compte pas). Cette association est prioritaire : elle fixe la
+       ligne, donc l'agence (CPA / ALM) et l'espace (Santé / Auto). Aussi `RINGOVER_KEYYO_NUMBERS` dans
+       Vercel, même format. Utile car Ringover n'indique pas toujours d'où vient le renvoi ;
+     - le numéro appelé (`to_number` / `callee`) est lui-même une ligne du standard.
 
   Un appel direct à Ringover, ou renvoyé depuis un autre numéro, est ignoré. Tout appel ignoré reçoit une
   réponse 200 (Ringover ne renvoie pas) : aucun appel, **rien au journal**. Les numéros masqués sont ignorés
   aussi. Un appel gardé est classé sur la ligne du standard d'où il vient (colonne « Ligne », lien CRM).
+- **Bonne agence, bon conseiller, bon client** : l'agence de cette ligne est prioritaire pour trouver le
+  conseiller — parmi les comptes que désignent l'utilisateur Ringover (lien mémorisé, e-mail, nom), celui de
+  l'agence ; si c'est le compte de l'autre agence, le compte de la même personne dans cette agence (une
+  personne peut avoir un compte CPA et un compte ALM) ; deux homonymes sont départagés par l'agence. Le lien
+  utilisateur Ringover → conseiller est mémorisé **par agence** (`ringover:user:<id>@CPA`). Si seul un
+  conseiller de l'autre agence correspond, l'appel lui est attribué et le journal le signale. Le client est
+  `from_number` ; si c'est une de nos lignes (le standard présentant sa ligne lors du renvoi), le numéro
+  d'origine est pris dans `original_caller`, `original_from_number`, `customer_number`…, sinon l'appel n'est
+  pas créé (journal : « numéro de l'appelant absent »).
 - **Journal** (`/admin/keyyo`, table `keyyo_events`, colonne `called` ajoutée sans toucher aux lignes
   existantes) : pour chaque appel gardé, le numéro du client (`from_number` / `caller`), le numéro appelé
   (`to_number` / `callee`), la ligne du standard Keyyo et comment elle a été reconnue, avec l'événement, la

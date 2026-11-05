@@ -82,6 +82,8 @@ export type KeyyoNotification = {
   adviserHint?: { userId?: string | null; email?: string | null; firstname?: string | null; lastname?: string | null; fullName?: string | null };
   /** Source of the notification, kept in the call's rawMeta ("ringover"); Keyyo when absent. */
   provider?: "ringover";
+  /** Agency of the standard line the call came from: the adviser of that agency is preferred. */
+  preferAgency?: "CPA" | "ALM" | null;
 };
 
 function key(name: string): string {

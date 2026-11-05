@@ -8,7 +8,9 @@
 //                                       received
 //   POST { action: "regenerate" }    -> new secret token (the old URL stops working)
 //   POST { action: "enable" | "disable" }
-//   POST { action: "ringoverNumbers", value } -> Ringover numbers the Keyyo standard forwards to
+//   POST { action: "ringoverNumbers", entries: [{ ringover, keyyo }] }
+//                                    -> Ringover numbers the Keyyo standard forwards to, EACH with
+//                                       the standard line it serves (so its agency CPA / ALM)
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { badRequest, handleApiError, readJson, requireRole } from "@/lib/api";
@@ -17,7 +19,27 @@ import { KEYYO_URL_PARAMS } from "@/lib/keyyoWebhook";
 import {
   loadKeyyoEvents, loadKeyyoWebhookSettings, loadRingoverForwardTargetsText, regenerateKeyyoToken, saveRingoverForwardTargetsText, setKeyyoWebhookEnabled,
 } from "@/lib/keyyoStore";
-import { invalidForwardTargets, parseForwardTargets } from "@/lib/ringoverWebhook";
+import { forwardTargetEntries, parseForwardTargets, validateForwardPairs } from "@/lib/ringoverWebhook";
+import { loadStandardLines, type StandardLine } from "@/lib/keyyoStandard";
+
+type ForwardRow = {
+  ringover: string; keyyo: string | null; label: string | null; agency: StandardLine["agency"]; space: StandardLine["space"];
+  /** Why the entry does not count (no line, or not a standard line); null when it is fine. */
+  problem: string | null;
+};
+
+/** The stored setting as rows, each with its standard line, agency and space. */
+function forwardRows(text: string, standard: Map<string, StandardLine>): ForwardRow[] {
+  const rows: ForwardRow[] = [];
+  for (const [ringover, keyyo] of parseForwardTargets(text)) {
+    const line = keyyo ? standard.get(keyyo) : undefined;
+    rows.push({
+      ringover, keyyo, label: line?.label ?? null, agency: line?.agency ?? null, space: line?.space ?? null,
+      problem: !keyyo ? "ligne du standard Keyyo à choisir" : !line ? `${keyyo} n'est pas une ligne du standard Keyyo` : null,
+    });
+  }
+  return rows;
+}
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -43,14 +65,18 @@ function webhookUrl(req: NextRequest, token: string | null): string | null {
 export async function GET(req: NextRequest) {
   try {
     await requireRole("ADMINISTRATEUR");
-    const [settings, events, ringoverKeyyoNumbers] = await Promise.all([loadKeyyoWebhookSettings(), loadKeyyoEvents(100), loadRingoverForwardTargetsText()]);
+    const [settings, events, ringoverKeyyoNumbers, standard] = await Promise.all([
+      loadKeyyoWebhookSettings(), loadKeyyoEvents(100), loadRingoverForwardTargetsText(), loadStandardLines(),
+    ]);
+    const envText = (process.env.RINGOVER_KEYYO_NUMBERS ?? "").trim();
     return NextResponse.json({
       enabled: settings.enabled,
       url: webhookUrl(req, settings.token),
       ringover: ringoverUrls(req, settings.token),
       ringoverSigned: !!(process.env.RINGOVER_WEBHOOK_SECRET ?? "").trim(),
-      ringoverKeyyoNumbers,
-      ringoverKeyyoNumbersEnv: (process.env.RINGOVER_KEYYO_NUMBERS ?? "").trim(),
+      ringoverForwards: forwardRows(ringoverKeyyoNumbers, standard),
+      ringoverForwardsEnv: forwardRows(envText, standard),
+      standardLines: [...standard.values()],
       tokenFromEnv: !!(process.env.KEYYO_WEBHOOK_TOKEN ?? "").trim(),
       events,
     });
@@ -62,15 +88,21 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const admin = await requireRole("ADMINISTRATEUR");
-    const { action, value } = await readJson<{ action?: unknown; value?: unknown }>(req);
+    const { action, value, entries } = await readJson<{ action?: unknown; value?: unknown; entries?: unknown }>(req);
     if (action === "ringoverNumbers") {
-      const text = typeof value === "string" ? value : "";
-      const bad = invalidForwardTargets(text);
-      if (bad.length) throw badRequest(`Numéro non reconnu : ${bad.join(", ")}`);
-      const parsed = parseForwardTargets(text);
-      // Stored normalised: « 0189… » or « 0189…=0182… », one per line.
-      await saveRingoverForwardTargetsText([...parsed].map(([t, l]) => (l ? `${t}=${l}` : t)).join("\n"), admin.userId);
-      return NextResponse.json({ ok: true, ringoverKeyyoNumbers: await loadRingoverForwardTargetsText() });
+      // Rows { ringover, keyyo } (the page), or the « ringover=keyyo » text (one per line).
+      const pairs: Array<{ ringover: string; keyyo: string }> = Array.isArray(entries)
+        ? entries.map((e) => ({ ringover: String((e as { ringover?: unknown })?.ringover ?? ""), keyyo: String((e as { keyyo?: unknown })?.keyyo ?? "") }))
+        : forwardTargetEntries(typeof value === "string" ? value : "").map((x) => {
+            const [ringover, keyyo] = x.split("=");
+            return { ringover: ringover ?? "", keyyo: keyyo ?? "" };
+          });
+      const standard = await loadStandardLines();
+      const checked = validateForwardPairs(pairs, new Set(standard.keys()));
+      if (checked.errors.length) throw badRequest(checked.errors.join(" ; "));
+      // Stored normalised, one « ringover=keyyo » per line.
+      await saveRingoverForwardTargetsText(checked.pairs.map(([r, k]) => `${r}=${k}`).join("\n"), admin.userId);
+      return NextResponse.json({ ok: true, ringoverForwards: forwardRows(await loadRingoverForwardTargetsText(), standard) });
     }
     if (action === "regenerate") {
       if ((process.env.KEYYO_WEBHOOK_TOKEN ?? "").trim()) throw badRequest("Le jeton est fixé par la variable KEYYO_WEBHOOK_TOKEN de Vercel.");

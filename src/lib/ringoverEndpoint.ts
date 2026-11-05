@@ -16,28 +16,24 @@
 // FILTER: only INBOUND calls FORWARDED FROM THE KEYYO STANDARD go through:
 //   - data.direction = inbound (outbound, internal, missing direction: dropped);
 //   - and the call comes from a Keyyo standard line (keyyoStandardOrigin in ringoverWebhook.ts:
-//     a redirection / transfer field naming a standard line, the number called being a standard
-//     line, or the number called being a Ringover number the standard forwards to, declared on
-//     /admin/keyyo). A direct call to Ringover or from elsewhere: dropped.
+//     a redirection / transfer field naming a standard line, the number called being a Ringover
+//     number declared on /admin/keyyo WITH its standard line, or the number called being a
+//     standard line). A direct call to Ringover or from elsewhere: dropped.
+// The standard line gives the agency (CPA / ALM): the call is filed on that line and the
+// adviser of that agency is preferred (same person with an account in each agency).
 // Dropped events are answered 200 (Ringover does not retry): no call, no journal row, no number
 // logged. A kept call is filed on the standard line it came from; the journal keeps the
 // customer's number (from_number / caller), the number called (to_number / callee), the Keyyo
 // standard line, with the event, direction and call_id.
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { prisma } from "@/lib/prisma";
-import { LINE_ROUTES, normalizePhone } from "@/lib/phone";
+import { loadStandardLines } from "@/lib/keyyoStandard";
 import { applyKeyyoNotification, type ApplyResult } from "@/lib/keyyoCalls";
 import { keyyoStandardOrigin, parseForwardTargets, parseRingoverPayload, ringoverSignatureValid, type RingoverEndpoint } from "@/lib/ringoverWebhook";
 import {
   loadKeyyoWebhookSettings, loadRingoverForwardTargetsText, loadRingoverUserMap, recordKeyyoEvent, saveRingoverUser, tokenMatches,
 } from "@/lib/keyyoStore";
 
-/** The Keyyo standard's lines: the four production lines and the active lines of the database. */
-async function keyyoStandardLines(): Promise<Set<string>> {
-  const lines = await prisma.phoneLine.findMany({ where: { isActive: true }, select: { numeroMasque: true } }).catch(() => []);
-  return new Set([...LINE_ROUTES.map((r) => r.numero), ...lines.map((l) => normalizePhone(l.numeroMasque))].filter(Boolean));
-}
 
 async function readBody(req: NextRequest): Promise<Record<string, unknown>> {
   const out: Record<string, unknown> = Object.fromEntries(req.nextUrl.searchParams.entries());
@@ -83,31 +79,47 @@ export async function handleRingoverWebhook(req: NextRequest, endpoint: Ringover
   }
 
   // …and only those forwarded from the Keyyo standard.
-  const [standardLines, targetsText] = await Promise.all([keyyoStandardLines(), loadRingoverForwardTargetsText()]);
+  const [standard, targetsText] = await Promise.all([loadStandardLines(), loadRingoverForwardTargetsText()]);
   const targets = parseForwardTargets(`${targetsText}\n${process.env.RINGOVER_KEYYO_NUMBERS ?? ""}`);
-  const origin = keyyoStandardOrigin(n, standardLines, targets);
+  const origin = keyyoStandardOrigin(n, new Set(standard.keys()), targets);
   if (!origin) {
     console.log(`[ringover] ${endpoint} ${n.rawType} ${n.callRef ?? "-"} : ne vient pas du standard Keyyo, ignoré`);
     return NextResponse.json({ ok: true, ignored: true, outcome: "appel ne venant pas du standard Keyyo : ignoré" });
   }
-  // Filed on the standard line it came from (the "Ligne" column, the CRM link of the team).
+  // Filed on the standard line it came from (the "Ligne" column, the CRM link of the team), in its
+  // agency: the adviser of that agency is preferred.
+  const standardLine = origin.line ? standard.get(origin.line) ?? null : null;
   if (origin.line) n.lineCandidates = [origin.line, ...n.lineCandidates.filter((x) => x !== origin.line)];
+  n.preferAgency = standardLine?.agency ?? null;
+
+  // The customer: from_number, unless that is one of our own numbers (the standard presenting its
+  // line, or a declared Ringover number) — then the original caller of another field.
+  const ours = (x: string) => standard.has(x) || targets.has(x);
+  if (n.from && ours(n.from)) {
+    const original = n.customerAlternates.find((x) => !ours(x));
+    n.customer = original ?? "";
+  }
 
   let result: ApplyResult = { outcome: "", callId: null, adviserId: null, adviserName: null };
   if (!settings.enabled) {
     result.outcome = "notifications désactivées sur /admin/keyyo : reçu, aucun appel créé";
   } else {
     try {
+      // The adviser already linked to this Ringover user in this agency (else in any).
       const users = await loadRingoverUserMap();
-      if (n.ringoverUserId && users.has(n.ringoverUserId)) n.adviserHint = { ...n.adviserHint, userId: users.get(n.ringoverUserId) };
+      const userKey = n.ringoverUserId && n.preferAgency ? `${n.ringoverUserId}@${n.preferAgency}` : null;
+      const linked = (userKey && users.get(userKey)) || (n.ringoverUserId && users.get(n.ringoverUserId)) || null;
+      if (linked) n.adviserHint = { ...n.adviserHint, userId: linked };
       // A hangup of an answered call whose "answered" never came (lost, or that webhook not set):
       // the answer is applied first, so the call is « Répondu » with its agent, not « Manqué ».
       if (n.type === "ended" && n.answeredBeforeEnd) {
         await applyKeyyoNotification({ ...n, type: "answered", rawType: `${n.rawType} (décroché)`, eventAt: n.answeredBeforeEnd, durationSeconds: null });
       }
       result = await applyKeyyoNotification(n);
-      if (n.ringoverUserId && result.adviserId && (result.matchedBy === "email" || result.matchedBy === "nom") && users.get(n.ringoverUserId) !== result.adviserId) {
-        await saveRingoverUser(n.ringoverUserId, result.adviserId);
+      if (n.ringoverUserId && result.adviserId && (result.matchedBy === "email" || result.matchedBy === "nom" || result.matchedBy === "id")) {
+        // Remembered per agency: one Ringover user may have an AssurPilot account in CPA and in ALM.
+        const key = userKey ?? n.ringoverUserId;
+        if (users.get(key) !== result.adviserId) await saveRingoverUser(key, result.adviserId);
       }
     } catch (error) {
       result.outcome = `erreur : ${error instanceof Error ? error.message : String(error)}`.slice(0, 300);
@@ -120,9 +132,10 @@ export async function handleRingoverWebhook(req: NextRequest, endpoint: Ringover
     adviserName: result.adviserName, callId: result.callId, outcome: result.outcome,
     params: {
       endpoint, event: n.rawType, direction: n.rawDirection, call_id: n.callRef?.replace(/^ringover:/, "") ?? null,
-      from_number: n.customer, to_number: n.called, standard_keyyo: origin.line, via: origin.via,
+      from_number: n.customer, ...(n.from !== n.customer ? { from_number_recu: n.from } : {}), to_number: n.called,
+      standard_keyyo: origin.line, ligne: standardLine?.label ?? null, agence: standardLine?.agency ?? null, via: origin.via,
     },
   });
-  console.log(`[ringover] ${endpoint} ${n.rawType} entrant (standard Keyyo ${origin.line ?? "?"}, ${origin.via}) ${n.callRef ?? "-"} client=${n.customer || "(masqué)"} appelé=${n.called || "-"} -> ${result.outcome}`);
+  console.log(`[ringover] ${endpoint} ${n.rawType} entrant (standard Keyyo ${standardLine?.label ?? origin.line ?? "?"}, ${origin.via}) ${n.callRef ?? "-"} client=${n.customer || "(masqué)"} appelé=${n.called || "-"} -> ${result.outcome}`);
   return NextResponse.json({ ok: true, outcome: result.outcome, callId: result.callId });
 }

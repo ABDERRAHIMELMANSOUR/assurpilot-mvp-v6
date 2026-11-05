@@ -25,14 +25,20 @@
 // ONLY INBOUND CALLS are kept: "direction" must say inbound (inbound / in / incoming / entrant).
 // Outbound, internal (is_internal) and calls whose direction is missing or unknown are ignored.
 //
-// And ONLY CALLS FORWARDED FROM THE KEYYO STANDARD (keyyoStandardOrigin), recognised by one of:
+// And ONLY CALLS FORWARDED FROM THE KEYYO STANDARD (keyyoStandardOrigin), recognised by, in order:
 //   1. a redirection / transfer field naming a Keyyo standard line: redirected_from,
 //      redirecting_number, forwarded_from, diverted_from, transferred_from, transfer,
 //      original_called_number… — at the top, in "data" or in "metadata";
-//   2. the number called (to_number / callee) being itself a Keyyo standard line;
-//   3. the number called being one of the Ringover numbers the standard forwards to, declared on
-//      /admin/keyyo (« 0189… » or « 0189…=0182287364 » to name the standard line it serves).
+//   2. the number called (to_number / callee) being a Ringover number declared on /admin/keyyo
+//      WITH the standard line it serves (« 0189…=0182287364 »): that line, so the agency (CPA /
+//      ALM) and the space (Santé / Auto), is the one declared — an entry without its line counts
+//      for nothing;
+//   3. the number called being itself a Keyyo standard line.
 // A direct call to Ringover, or one redirected from any other number, is ignored.
+//
+// The customer is from_number / caller. If that is one of our own numbers (the standard showing
+// its line when forwarding), the original caller is looked for in original_from_number,
+// original_caller, customer_number… (customerAlternates).
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { normalizePhone } from "@/lib/phone";
 import { eventType, parisWallClock, type KeyyoEventType, type KeyyoNotification } from "@/lib/keyyoWebhook";
@@ -54,6 +60,10 @@ export type RingoverNotification = KeyyoNotification & {
   redirectedFrom: string[];
   /** Ringover IVR number the call went through, if any. */
   ivrNumber: string;
+  /** The caller as received (from_number / caller), national form, even when it is our own line. */
+  from: string;
+  /** Other fields that may hold the original caller when from_number is our own line. */
+  customerAlternates: string[];
   /** On a hangup: the call WAS answered (it has an agent), though no "answered" came first. */
   answeredBeforeEnd: Date | null;
 };
@@ -89,8 +99,12 @@ const REDIRECT_KEYS = [
   "keyyo_line", "keyyo_number", "ligne_keyyo", "standard",
 ].map((k) => k.replace(/[^a-z0-9]/g, ""));
 const NESTED_NUMBER_KEYS = ["from", "number", "from_number", "numero", "phone", "line", "to_number", "original"];
+const CUSTOMER_KEYS = [
+  "original_from_number", "original_from", "original_caller", "original_caller_number", "original_caller_id",
+  "customer_number", "customer", "client_number", "numero_client", "caller_number", "calling_number", "cli",
+].map((k) => k.replace(/[^a-z0-9]/g, ""));
 
-function redirectNumbers(...sources: Obj[]): string[] {
+function numbersUnder(keys: string[], sources: Obj[]): string[] {
   const found: string[] = [];
   const add = (v: unknown) => {
     if (typeof v === "string" || typeof v === "number") {
@@ -104,10 +118,14 @@ function redirectNumbers(...sources: Obj[]): string[] {
   };
   for (const src of sources) {
     for (const [k, v] of Object.entries(src)) {
-      if (REDIRECT_KEYS.includes(k.toLowerCase().replace(/[^a-z0-9]/g, ""))) add(v);
+      if (keys.includes(k.toLowerCase().replace(/[^a-z0-9]/g, ""))) add(v);
     }
   }
   return [...new Set(found.filter(Boolean))];
+}
+
+function redirectNumbers(...sources: Obj[]): string[] {
+  return numbersUnder(REDIRECT_KEYS, sources);
 }
 
 export type KeyyoOrigin = {
@@ -118,8 +136,9 @@ export type KeyyoOrigin = {
 
 /**
  * Parses the « Numéros Ringover recevant les renvois du standard Keyyo » setting: one entry per
- * line (or separated by commas / semicolons; spaces inside a number are fine), optionally
- * « ringover=keyyo ». An entry that is not a phone number (under 9 digits) is skipped.
+ * line (or separated by commas / semicolons; spaces inside a number are fine), « ringover=keyyo ».
+ * An entry that is not a phone number (under 9 digits) is skipped; one without its Keyyo line is
+ * kept with line null, and counts for nothing in keyyoStandardOrigin.
  */
 export function forwardTargetEntries(textValue: string | null | undefined): string[] {
   return (textValue ?? "").split(/[\n\r,;]+/).map((x) => x.trim()).filter(Boolean);
@@ -137,11 +156,34 @@ export function parseForwardTargets(textValue: string | null | undefined): Map<s
   return out;
 }
 
-/** Entries of the setting that are not « number » or « number=number ». */
+/**
+ * Checks the pairs typed on /admin/keyyo: each Ringover number with ONE line of the Keyyo standard.
+ * Returns the normalised pairs to store, or the errors (empty rows skipped).
+ */
+export function validateForwardPairs(
+  pairs: Array<{ ringover: string; keyyo: string }>,
+  standardLines: Set<string>,
+): { pairs: Array<[string, string]>; errors: string[] } {
+  const seen = new Map<string, string>();
+  const errors: string[] = [];
+  for (const { ringover, keyyo } of pairs) {
+    if (!ringover.trim() && !keyyo.trim()) continue;
+    const r = normalizePhone(ringover);
+    const k = normalizePhone(keyyo);
+    if (!isPhone(ringover)) { errors.push(`« ${ringover} » n'est pas un numéro`); continue; }
+    if (!k) { errors.push(`${r} : choisissez la ligne du standard Keyyo (CPA ou ALM) qu'il reçoit`); continue; }
+    if (!standardLines.has(k)) { errors.push(`${r} : ${keyyo} n'est pas une ligne du standard Keyyo`); continue; }
+    if (seen.has(r) && seen.get(r) !== k) { errors.push(`${r} est associé à deux lignes : un numéro Ringover ne sert qu'une ligne du standard`); continue; }
+    seen.set(r, k);
+  }
+  return { pairs: [...seen], errors };
+}
+
+/** Entries of the setting that are not « ringover number=Keyyo standard line ». */
 export function invalidForwardTargets(textValue: string | null | undefined): string[] {
   return forwardTargetEntries(textValue).filter((entry) => {
     const parts = entry.split("=").map((x) => x.trim());
-    return parts.length > 2 || !isPhone(parts[0]) || (parts.length === 2 && !isPhone(parts[1]));
+    return parts.length !== 2 || !isPhone(parts[0]) || !isPhone(parts[1]);
   });
 }
 
@@ -157,10 +199,11 @@ export function keyyoStandardOrigin(
   const redirected = n.redirectedFrom.find((x) => keyyoLines.has(x));
   if (redirected) return { line: redirected, via: "redirection" };
   const reached = [n.called, n.ivrNumber].filter(Boolean);
+  // A declared Ringover number counts only with its Keyyo line, and that line wins.
+  const target = reached.find((x) => forwardTargets.get(x));
+  if (target) return { line: forwardTargets.get(target)!, via: "numéro de renvoi" };
   const direct = reached.find((x) => keyyoLines.has(x));
   if (direct) return { line: direct, via: "numéro appelé" };
-  const target = reached.find((x) => forwardTargets.has(x));
-  if (target) return { line: forwardTargets.get(target) ?? null, via: "numéro de renvoi" };
   return null;
 }
 
@@ -253,6 +296,9 @@ export function parseRingoverPayload(body: Obj, endpoint: RingoverEndpoint): Rin
     rawDirection: dir,
     called: to,
     redirectedFrom: redirectNumbers(body, data, ...[body.metadata, data.metadata, body.meta, data.meta, data.custom_data, data.tags].filter(isObj)),
+    from,
+    customerAlternates: numbersUnder(CUSTOMER_KEYS, [body, data, ...[body.metadata, data.metadata, body.meta, data.meta, data.custom_data].filter(isObj)])
+      .filter((x) => x !== from),
     ivrNumber: normalizePhone(text(ivr.number)),
     answeredBeforeEnd,
   };

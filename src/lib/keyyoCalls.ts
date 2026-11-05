@@ -36,6 +36,7 @@ import { prisma } from "@/lib/prisma";
 import { normalizePhone, routeForNumber } from "@/lib/phone";
 import { scheduleAzzurPush } from "@/lib/azzur";
 import { parisWallClock, type KeyyoNotification } from "@/lib/keyyoWebhook";
+import { entityOfTeamName } from "@/lib/entity";
 
 export type KeyyoMeta = {
   source: "keyyo-webhook";
@@ -181,14 +182,31 @@ export async function applyKeyyoNotification(n: KeyyoNotification, now: Date = n
   const hintNames = hint
     ? [plainName(`${hint.firstname ?? ""} ${hint.lastname ?? ""}`), plainName(`${hint.lastname ?? ""} ${hint.firstname ?? ""}`), plainName(hint.fullName)].filter(Boolean)
     : [];
-  const byName = (name: string) => {
-    const found = advisers.filter((a) => [plainName(`${a.prenom} ${a.nom}`), plainName(`${a.nom} ${a.prenom}`)].includes(name));
-    return found.length === 1 ? found[0] : null; // two advisers with the same name: not guessed
+  type Adviser = (typeof advisers)[number];
+  const agencyOf = (a: Adviser) => entityOfTeamName(a.team?.nom);
+  const namesOf = (a: Adviser) => [plainName(`${a.prenom} ${a.nom}`), plainName(`${a.nom} ${a.prenom}`)];
+  // The agency (CPA / ALM) of the standard line the call came from, when known: among the
+  // advisers a clue points to, the one of that agency; the same person's account in that agency
+  // when the clue points to their account in the other one. Otherwise only a single match counts
+  // (two advisers with the same name are not guessed).
+  const pick = (candidates: Adviser[]): Adviser | null => {
+    const unique = [...new Map(candidates.map((a) => [a.id, a] as const)).values()];
+    if (!unique.length) return null;
+    if (n.preferAgency) {
+      const inAgency = unique.filter((a) => agencyOf(a) === n.preferAgency);
+      if (inAgency.length === 1) return inAgency[0];
+      if (inAgency.length === 0) {
+        const names = new Set(unique.flatMap(namesOf));
+        const sameperson = advisers.filter((a) => agencyOf(a) === n.preferAgency && namesOf(a).some((x) => names.has(x)));
+        if (sameperson.length === 1) return sameperson[0];
+      }
+    }
+    return unique.length === 1 ? unique[0] : null;
   };
   let adviser =
-    find("id", () => (hint?.userId ? advisers.find((a) => a.id === hint.userId) : null)) ??
-    find("email", () => (hint?.email ? advisers.find((a) => a.email.toLowerCase() === hint.email!.trim().toLowerCase()) : null)) ??
-    find("nom", () => hintNames.map(byName).find(Boolean)) ??
+    find("id", () => pick(hint?.userId ? advisers.filter((a) => a.id === hint.userId) : [])) ??
+    find("email", () => pick(hint?.email ? advisers.filter((a) => a.email.toLowerCase() === hint.email!.trim().toLowerCase()) : [])) ??
+    find("nom", () => pick(advisers.filter((a) => namesOf(a).some((x) => hintNames.includes(x))))) ??
     find("ligne", () => n.adviserCandidates.map((p) => byPhone.get(p)).find(Boolean));
   if (!adviser && n.callRef && !n.sessionId) {
     const prior = await prisma.call.findFirst({
@@ -208,6 +226,10 @@ export async function applyKeyyoNotification(n: KeyyoNotification, now: Date = n
     return { outcome: `aucun conseiller avec la ligne ${n.adviserCandidates.join(" / ") || "(vide)"} : ignoré`, callId: null, adviserId: null, adviserName: null };
   }
   const adviserName = `${adviser.prenom} ${adviser.nom}`.trim();
+  const adviserAgency = entityOfTeamName(adviser.team?.nom);
+  const agencyWarning = n.preferAgency && adviserAgency && adviserAgency !== n.preferAgency
+    ? ` — attention : appel du standard ${n.preferAgency}, conseiller de l'équipe ${adviser.team?.nom ?? adviserAgency}`
+    : "";
   if (!n.customer) {
     return { outcome: "numéro de l'appelant absent ou masqué : ignoré", callId: null, adviserId: adviser.id, adviserName };
   }
@@ -329,7 +351,7 @@ export async function applyKeyyoNotification(n: KeyyoNotification, now: Date = n
   else if (result.sendIfStillMissed) scheduleMissedPush(call.id, ref, target);
   const what = result.created ? "appel créé" : "appel mis à jour";
   return {
-    outcome: `${what}${taken ? " (interception)" : ""}${n.voicemail ? " (messagerie : pas une réponse)" : ""} (${call.statut === "EN_COURS" ? "en cours" : call.statut === "MANQUE" ? "manqué" : "répondu"})${result.sendNow ? ", envoi CRM déclenché" : result.sendIfStillMissed ? `, envoi CRM dans ${Math.round(MISSED_DELAY_MS / 1000)} s s'il reste manqué` : ""}`,
+    outcome: `${what}${taken ? " (interception)" : ""}${n.voicemail ? " (messagerie : pas une réponse)" : ""} (${call.statut === "EN_COURS" ? "en cours" : call.statut === "MANQUE" ? "manqué" : "répondu"})${result.sendNow ? ", envoi CRM déclenché" : result.sendIfStillMissed ? `, envoi CRM dans ${Math.round(MISSED_DELAY_MS / 1000)} s s'il reste manqué` : ""}${agencyWarning}`,
     callId: call.id,
     adviserId: adviser.id,
     adviserName,
