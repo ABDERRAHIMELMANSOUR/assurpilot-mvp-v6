@@ -1095,6 +1095,40 @@ même logique que Keyyo (`src/lib/keyyoCalls.ts`) :
   JWT HS512) vérifiée avec la clé du webhook mise dans `RINGOVER_WEBHOOK_SECRET`. Sinon 401, rien n'est
   écrit. L'interrupteur et le journal de `/admin/keyyo` s'appliquent aussi.
 
+### Leads d'un site externe : `POST /api/leads/proassur/auto-alm`
+
+Point d'entrée pour un formulaire d'un **autre site** (Auto ALM). Il ne change rien à la logique
+existante : il crée un appel de plus et utilise l'envoi CRM existant.
+
+```
+POST https://<app>/api/leads/proassur/auto-alm
+Authorization: Bearer <WEB_LEADS_TOKEN>        (ou en-tête x-lead-token)
+Content-Type: application/json
+
+{ "nom": "Dupont", "prenom": "Marie", "telephone": "0612345678", "email": "marie.dupont@example.com",
+  "code_postal": "75011", "date_naissance": "1985-04-12", "commentaire": "Devis auto Clio 2019",
+  "source": "site-auto-alm", "consentement": true }
+```
+
+- **Champs** : `telephone` obligatoire (`06…`, `+336…`, `336…`) ; les autres facultatifs. Noms anglais
+  acceptés aussi (`phone`, `firstname`, `lastname`, `zip`…) ; `date_naissance` en `AAAA-MM-JJ` ou
+  `JJ/MM/AAAA`. Champ caché anti-robot `website` : rempli = réponse 200, rien n'est fait.
+- **Ce que fait la route** : (1) enregistre un appel « En cours » de l'équipe « Équipe auto ALM », ligne
+  « Ligne auto ALM », `rawMeta.source = "web-lead"` avec les champs du formulaire, attribué au conseiller
+  de `WEB_LEADS_AUTO_ALM_ADVISER_EMAIL` (membre actif de l'équipe) s'il est réglé ; (2) l'envoie à
+  ProAssur par le lien **AUTO_ALM existant**, avec l'envoi existant (`pushCallToAzzur`), les mêmes
+  interrupteurs d'Intégration AZZUR (« Intégration » et « Envois automatiques ») et le même journal
+  (une fiche par numéro). Seule différence, pour ce lead uniquement : les champs nom / prénom du lien
+  (`NomTxt`, `PrenomTxt`) reçoivent le nom et le prénom du formulaire ; le lien enregistré n'est pas
+  modifié. L'e-mail, le code postal… restent dans AssurPilot (le lien ProAssur n'a pas de champ pour eux).
+- **Réponses** : `201 {"ok":true,"leadId":"…","proassur":"envoyé à ProAssur","sent":true}` ; même
+  numéro dans les 10 minutes : `200` avec le lead déjà créé (`"duplicate":true`) ; `401` jeton ;
+  `422` champs (`"fields":{…}`) ; `503` si `WEB_LEADS_TOKEN` n'est pas réglé. Si l'envoi est désactivé,
+  le lead est enregistré et `proassur` dit pourquoi il n'est pas parti.
+- **Sécurité** : `WEB_LEADS_TOKEN` (Vercel, 16 caractères au moins) — à appeler depuis le **serveur** du
+  site, pas depuis le navigateur (un jeton dans une page web est public). `WEB_LEADS_ALLOWED_ORIGINS`
+  (origines séparées par des virgules) ajoute les en-têtes CORS pour ces origines seulement.
+
 ### Import de fichiers d'appels
 
 `POST /api/calls/import` (multipart, champ `file`, `preview=true` pour un essai
