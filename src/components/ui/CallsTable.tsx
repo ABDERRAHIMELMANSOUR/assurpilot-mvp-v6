@@ -68,6 +68,9 @@ function formatDate(d: string) {
   return date.toLocaleDateString("fr-FR", { day: "2-digit", month: "short" }) + ` ${time}`;
 }
 
+/** Order of the Durée column: longest first, shortest first, or the list's own order. */
+export type DurationSortDir = "desc" | "asc" | null;
+
 interface Props {
   calls:        Call[];
   showAgent?:   boolean;
@@ -79,6 +82,13 @@ interface Props {
   /** Viewer's own id — used to tell "I transferred this" from "sent to me". */
   currentUserId?: string;
   onRefresh?:   () => void;
+  /**
+   * Sorting by duration. Given together with `onDurationSortChange`, the Durée header becomes
+   * a button (longest first -> shortest first -> back to the usual order) and the rows are
+   * shown in that order. Without it the table is unchanged.
+   */
+  durationSort?: DurationSortDir;
+  onDurationSortChange?: (dir: DurationSortDir) => void;
 }
 
 export default function CallsTable({
@@ -90,6 +100,8 @@ export default function CallsTable({
   allowTransfer = false,
   currentUserId,
   onRefresh,
+  durationSort = null,
+  onDurationSortChange,
 }: Props) {
   const [resultModal, setResultModal]   = useState<Call | null>(null);
   const [transferModal, setTransferModal] = useState<Call | null>(null);
@@ -110,6 +122,14 @@ export default function CallsTable({
 
   // Determine which columns need an actions cell
   const hasActions = allowResult || isAdmin || allowTransfer;
+
+  // Rows in duration order when asked (equal durations: newest first), else as given.
+  const rows = durationSort
+    ? [...calls].sort((a, b) =>
+        (durationSort === "desc" ? -1 : 1) * ((a.durationSeconds ?? 0) - (b.durationSeconds ?? 0)) ||
+        new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())
+    : calls;
+  const nextDurationSort: DurationSortDir = durationSort === null ? "desc" : durationSort === "desc" ? "asc" : null;
 
   if (calls.length === 0) {
     return (
@@ -137,7 +157,29 @@ export default function CallsTable({
                 {showAgent  && <th className="table-th" style={{ minWidth: "120px" }}>Conseiller</th>}
                 <th className="table-th" style={{ minWidth: "120px" }}>Ligne</th>
                 <th className="table-th" style={{ minWidth: "110px" }}>Date & Heure</th>
-                <th className="table-th" style={{ minWidth: "70px"  }}>Durée</th>
+                <th
+                  className="table-th"
+                  style={{ minWidth: "70px"  }}
+                  aria-sort={durationSort === "desc" ? "descending" : durationSort === "asc" ? "ascending" : undefined}
+                >
+                  {onDurationSortChange ? (
+                    <button
+                      type="button"
+                      onClick={() => onDurationSortChange(nextDurationSort)}
+                      className={`inline-flex items-center gap-1 uppercase tracking-wider font-semibold hover:text-slate-900 ${durationSort ? "text-brand-600" : ""}`}
+                      title={
+                        durationSort === null ? "Trier : du plus long au plus court"
+                          : durationSort === "desc" ? "Trier : du plus court au plus long"
+                            : "Revenir à l'ordre par date"
+                      }
+                    >
+                      Durée
+                      <span aria-hidden className="text-[11px] leading-none">
+                        {durationSort === "desc" ? "↓" : durationSort === "asc" ? "↑" : "↕"}
+                      </span>
+                    </button>
+                  ) : "Durée"}
+                </th>
                 <th className="table-th" style={{ minWidth: "85px"  }}>Statut</th>
                 <th className="table-th" style={{ minWidth: "110px" }}>Résultat</th>
                 {showNotes && <th className="table-th" style={{ minWidth: "150px" }}>Notes</th>}
@@ -152,7 +194,7 @@ export default function CallsTable({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {calls.map((call) => {
+              {rows.map((call) => {
                 const statut      = statutConfig[call.statut] ?? { label: call.statut, cls: "badge-gray" };
                 const resBadge    = call.result ? getResultBadge(call.result.resultat) : null;
                 // Missed calls are qualifiable too: an agent calls back and

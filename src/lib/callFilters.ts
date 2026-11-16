@@ -53,5 +53,29 @@ export function callFilterClauses(params: URLSearchParams, role?: string | null)
   const statut = params.get("statut");
   if (statut) clauses.push({ statut });
 
+  // Result of the call (qualification): a CallResultOption value, or
+  // RESULTAT_A_QUALIFIER for calls not qualified yet.
+  const resultat = params.get("resultat");
+  if (resultat) clauses.push(resultat === RESULTAT_A_QUALIFIER ? { result: { is: null } } : { result: { is: { resultat } } });
+
   return clauses;
+}
+
+/** `?resultat=` value for "no result recorded yet". */
+export const RESULTAT_A_QUALIFIER = "A_QUALIFIER";
+
+export type DurationSort = "duration_desc" | "duration_asc";
+
+/** `?sort=duration_desc|duration_asc`; anything else = the usual newest-first order. */
+export function readDurationSort(params: URLSearchParams): DurationSort | null {
+  const sort = params.get("sort");
+  return sort === "duration_desc" || sort === "duration_asc" ? sort : null;
+}
+
+/** Longest (or shortest) first; equal durations stay newest first. */
+export function compareByDuration(sort: DurationSort) {
+  const dir = sort === "duration_desc" ? -1 : 1;
+  return (a: { durationSeconds: number; startedAt: Date | string }, b: { durationSeconds: number; startedAt: Date | string }) =>
+    dir * ((a.durationSeconds ?? 0) - (b.durationSeconds ?? 0)) ||
+    new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime();
 }

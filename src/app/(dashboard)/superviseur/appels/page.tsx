@@ -1,11 +1,12 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
 import { useSession } from "next-auth/react";
-import CallsTable from "@/components/ui/CallsTable";
+import CallsTable, { type DurationSortDir } from "@/components/ui/CallsTable";
+import CallStatusFilter, { withStatus } from "@/components/ui/CallStatusFilter";
 import DateFilter, { DateFilterState, buildQueryString } from "@/components/ui/DateFilter";
 import GroupToggle from "@/components/ui/GroupToggle";
 import { errorMessage } from "@/lib/fetchJson";
-import { withGroup } from "@/lib/query";
+import { withGroup, withParam } from "@/lib/query";
 
 // Coaches start on the current month (the API applies the same default).
 const EMPTY: DateFilterState = { period: "month", dateFrom: "", dateTo: "" };
@@ -22,11 +23,15 @@ export default function SuperviseurAppelsPage() {
   const [scope,   setScope]   = useState<Scope>("all");
   const [grouped, setGrouped] = useState(true);
   const [error,   setError]   = useState("");
+  // Dropdown statut / résultat and Durée order: applied by the server, over the whole period.
+  const [statusChoice, setStatusChoice] = useState("");
+  const [durationSort, setDurationSort] = useState<DurationSortDir>(null);
+  const listQuery = withParam(withStatus(buildQueryString(filter), statusChoice), "sort", durationSort ? `duration_${durationSort}` : "");
 
   const fetchCalls = useCallback(async () => {
     setLoading(true); setError("");
     try {
-      const res = await fetch("/api/calls" + withGroup(buildQueryString(filter), grouped));
+      const res = await fetch("/api/calls" + withGroup(listQuery, grouped));
       if (!res.ok) {
         const body = await res.json().catch(() => null);
         throw new Error(body?.error ?? `Erreur ${res.status}`);
@@ -39,7 +44,7 @@ export default function SuperviseurAppelsPage() {
     } finally {
       setLoading(false);
     }
-  }, [filter, grouped]);
+  }, [listQuery, grouped]);
 
   useEffect(() => { fetchCalls(); }, [fetchCalls]);
 
@@ -78,13 +83,15 @@ export default function SuperviseurAppelsPage() {
         </div>
       </div>
 
-      <div className="flex gap-1.5 mb-4 flex-wrap">
+      <div className="flex gap-1.5 mb-4 flex-wrap items-center">
         {TABS.map((t) => (
           <button key={t.key} onClick={() => setScope(t.key)}
             className={`btn text-xs py-1.5 ${scope === t.key ? "btn-primary" : "btn-secondary"}`}>
             {t.label}
           </button>
         ))}
+        <div className="h-5 w-px bg-slate-200 hidden sm:block mx-1" />
+        <CallStatusFilter value={statusChoice} onChange={setStatusChoice} />
       </div>
 
       {error && (
@@ -103,6 +110,8 @@ export default function SuperviseurAppelsPage() {
             allowTransfer
             currentUserId={currentUserId}
             onRefresh={fetchCalls}
+            durationSort={durationSort}
+            onDurationSortChange={setDurationSort}
           />
       }
     </div>

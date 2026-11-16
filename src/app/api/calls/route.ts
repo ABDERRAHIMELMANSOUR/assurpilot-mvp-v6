@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { CALL_INCLUDE } from "@/lib/selects";
 import { handleApiError, requireUser } from "@/lib/api";
 import { callScopeFor, filterForCoach, filterForUser } from "@/lib/scope";
-import { callFilterClauses } from "@/lib/callFilters";
+import { callFilterClauses, compareByDuration, readDurationSort } from "@/lib/callFilters";
 import { retentionClause } from "@/lib/retention";
 import {
   attachPriorContact,
@@ -110,6 +110,10 @@ export async function GET(req: NextRequest) {
     const where: Prisma.CallWhereInput = { AND: clauses };
 
     const grouped = wantsGrouping(params);
+    // Optional duration order. Ungrouped: the database returns the longest (or shortest)
+    // calls of the whole period. Grouped: the same newest-first scan as always (so each
+    // number keeps all its attempts), then the grouped rows are ordered by duration.
+    const durationSort = readDurationSort(params);
 
     // Count alongside the page so a truncated list can say so rather than
     // quietly disagreeing with the dashboard totals.
@@ -118,7 +122,9 @@ export async function GET(req: NextRequest) {
       prisma.call.findMany({
         where,
         include: CALL_INCLUDE,
-        orderBy: { startedAt: "desc" },
+        orderBy: durationSort && !grouped
+          ? [{ durationSeconds: durationSort === "duration_desc" ? "desc" : "asc" }, { startedAt: "desc" }]
+          : { startedAt: "desc" },
         take: grouped ? GROUP_SCAN_ROWS : MAX_ROWS,
       }),
     ]);
@@ -129,8 +135,10 @@ export async function GET(req: NextRequest) {
     // works a single lead from.
     const priorContacts = await lookupPriorContacts(calls);
 
-    const rows = grouped
-      ? groupCallsByCaller(calls, priorContacts).slice(0, MAX_ROWS)
+    const groupedRows = grouped ? groupCallsByCaller(calls, priorContacts) : null;
+    if (groupedRows && durationSort) groupedRows.sort(compareByDuration(durationSort));
+    const rows = groupedRows
+      ? groupedRows.slice(0, MAX_ROWS)
       : attachPriorContact(calls, priorContacts);
 
     // The response stays a bare array for backwards compatibility; the totals

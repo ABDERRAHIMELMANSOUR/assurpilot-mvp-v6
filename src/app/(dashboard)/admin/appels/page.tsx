@@ -1,12 +1,13 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
-import CallsTable from "@/components/ui/CallsTable";
+import CallsTable, { type DurationSortDir } from "@/components/ui/CallsTable";
+import CallStatusFilter, { withStatus } from "@/components/ui/CallStatusFilter";
 import DateFilter, { DateFilterState, buildQueryString } from "@/components/ui/DateFilter";
 import ExportCallsButton from "@/components/ui/ExportCallsButton";
 import GroupToggle from "@/components/ui/GroupToggle";
 import ScopeFilter, { EMPTY_SCOPE, ScopeFilterState, withScope } from "@/components/ui/ScopeFilter";
 import { errorMessage } from "@/lib/fetchJson";
-import { withGroup } from "@/lib/query";
+import { withGroup, withParam } from "@/lib/query";
 import { isDevisResult } from "@/lib/contracts";
 import { useResultLabels } from "@/lib/useResultLabels";
 import Link from "next/link";
@@ -22,6 +23,9 @@ export default function AdminAppelsPage() {
   const [filter,  setFilter]  = useState<DateFilterState>(EMPTY);
   const [scope,   setScope]   = useState<ScopeFilterState>(EMPTY_SCOPE);
   const [statut,  setStatut]  = useState("all");
+  // Dropdown statut / résultat and Durée order: applied by the server, over the whole period.
+  const [statusChoice, setStatusChoice] = useState("");
+  const [durationSort, setDurationSort] = useState<DurationSortDir>(null);
   const [grouped, setGrouped] = useState(true);
   const [error,   setError]   = useState("");
   const [truncated, setTruncated] = useState<{ shown: number; total: number } | null>(null);
@@ -29,14 +33,15 @@ export default function AdminAppelsPage() {
 
   // Date range + entity / line / coach, as one query string. The export sends
   // the same thing minus the grouping, so the workbook matches the screen.
-  const query = withScope(buildQueryString(filter), scope);
+  const query = withStatus(withScope(buildQueryString(filter), scope), statusChoice);
+  const listQuery = withParam(query, "sort", durationSort ? `duration_${durationSort}` : "");
 
   const fetchCalls = useCallback(async () => {
     setLoading(true); setError(""); setTruncated(null);
     try {
       // A failed request used to fall through to an empty array, which rendered
       // as "Aucun appel pour cette période" — indistinguishable from no data.
-      const res = await fetch("/api/calls" + withGroup(query, grouped));
+      const res = await fetch("/api/calls" + withGroup(listQuery, grouped));
       if (!res.ok) {
         const body = await res.json().catch(() => null);
         throw new Error(body?.error ?? `Erreur ${res.status}`);
@@ -55,7 +60,7 @@ export default function AdminAppelsPage() {
     } finally {
       setLoading(false);
     }
-  }, [query, grouped]);
+  }, [listQuery, grouped]);
 
   useEffect(() => { fetchCalls(); }, [fetchCalls]);
 
@@ -100,6 +105,7 @@ export default function AdminAppelsPage() {
           returns, the statut buttons slice what came back. */}
       <div className="flex flex-wrap items-center gap-3 mb-4">
         <ScopeFilter value={scope} onChange={setScope} />
+        <CallStatusFilter value={statusChoice} onChange={setStatusChoice} />
         <div className="h-5 w-px bg-slate-200 hidden sm:block" />
         <div className="flex gap-1.5 flex-wrap">
           {[
@@ -135,14 +141,17 @@ export default function AdminAppelsPage() {
 
       {truncated && (
         <div className="mb-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 text-xs text-amber-800">
-          Affichage des {truncated.shown} appels les plus récents sur {truncated.total}.
+          Affichage des {truncated.shown} appels {durationSort === "desc" && !grouped ? "les plus longs" : durationSort === "asc" && !grouped ? "les plus courts" : "les plus récents"} sur {truncated.total}.
           Affinez la période pour voir les autres.
         </div>
       )}
 
       {loading
         ? <div className="card p-8 text-center text-slate-400 animate-pulse">Chargement...</div>
-        : <CallsTable calls={filtered} showAgent showNotes isAdmin onRefresh={fetchCalls} />
+        : <CallsTable
+            calls={filtered} showAgent showNotes isAdmin onRefresh={fetchCalls}
+            durationSort={durationSort} onDurationSortChange={setDurationSort}
+          />
       }
     </div>
   );
