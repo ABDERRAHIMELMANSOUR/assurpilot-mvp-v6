@@ -2,6 +2,7 @@
 import { useEffect, useState, useCallback } from "react";
 import StatCard from "@/components/ui/StatCard";
 import DateFilter, { DateFilterState, buildQueryString } from "@/components/ui/DateFilter";
+import { formatTaux, tauxGlobal } from "@/lib/rates";
 
 const EMPTY: DateFilterState = { period: "month", dateFrom: "", dateTo: "" };
 
@@ -40,10 +41,10 @@ export default function ConseillerStatsPage() {
             <StatCard label="Répondus" tone="emerald"             value={stats.repondus}   subColor="text-emerald-600" />
             <StatCard label="Manqués" tone="rose"              value={stats.manques}    subColor="text-rose-500" />
             <StatCard label="Devis réalisés" tone="emerald"       value={stats.devis}      subColor="text-emerald-600" />
-            <StatCard label="Taux de conversion" tone="indigo"
-              value={`${stats.tauxConversion}%`}
-              sub="sur appels répondus"
-              subColor={stats.tauxConversion >= 30 ? "text-emerald-600" : "text-amber-600"} />
+            <StatCard label="Taux global (conversion)" tone="indigo"
+              value={formatTaux(stats.tauxGlobal ?? tauxGlobal(stats.contrats ?? 0, stats.total ?? 0))}
+              sub={`${stats.contrats ?? 0} contrat${(stats.contrats ?? 0) > 1 ? "s" : ""} signé${(stats.contrats ?? 0) > 1 ? "s" : ""} ÷ ${stats.total} appel${stats.total > 1 ? "s" : ""}`}
+              subColor="text-indigo-600" />
             <StatCard label="Durée moyenne" tone="amber"
               value={`${Math.floor(stats.dureeMoyenne/60)}:${(stats.dureeMoyenne%60).toString().padStart(2,"0")}`}
               sub="min:sec par appel" />

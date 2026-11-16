@@ -6,6 +6,7 @@ import ScopeFilter, { EMPTY_SCOPE, ScopeFilterState, coachName, useCoaches, with
 import StatsSection from "@/components/ui/StatsSection";
 import Link from "next/link";
 import { errorMessage } from "@/lib/fetchJson";
+import { TAUX_GLOBAL_FORMULE, formatTaux, tauxGlobal } from "@/lib/rates";
 
 const EMPTY: DateFilterState = { period: "month", dateFrom: "", dateTo: "" };
 
@@ -40,9 +41,10 @@ export default function AdminPage() {
 
   useEffect(() => { fetchStats(); }, [fetchStats]);
 
-  const tauxGlobal = stats && (stats.totalAppels - stats.totalManques) > 0
-    ? Math.round((stats.totalDevis / (stats.totalAppels - stats.totalManques)) * 100)
-    : 0;
+  // Same formula on every view (src/lib/rates.ts): contrats signés ÷ total des appels × 100.
+  const taux = stats ? stats.tauxGlobal ?? tauxGlobal(stats.totalContrats ?? 0, stats.totalAppels ?? 0) : 0;
+  // The bars of the ranking are scaled on the best rate shown, so small rates stay readable.
+  const bestTaux = Math.max(0, ...((stats?.leaderboard ?? []) as any[]).slice(0, 5).map((a) => a.tauxGlobal ?? a.tauxConversion ?? 0));
   const medals = ["🥇", "🥈", "🥉"];
 
   // Spells out what the snapshot covers, so a filtered section is never
@@ -104,8 +106,8 @@ export default function AdminPage() {
             <StatCard label="Devis réalisés" tone="indigo" value={stats.totalDevis}   subColor="text-indigo-600" />
             <StatCard label="Appels manqués" tone="rose" value={stats.totalManques} subColor="text-rose-500" />
             <StatCard label="Conseillers" tone="indigo"    value={stats.totalAgents}  sub="actifs" />
-            <StatCard label="Taux global" tone="indigo"    value={`${tauxGlobal}%`}
-              sub="conversion" subColor={tauxGlobal >= 25 ? "text-emerald-600" : "text-amber-600"} />
+            <StatCard label="Taux global" tone="indigo"    value={formatTaux(taux)}
+              sub="contrats ÷ appels" subColor="text-indigo-600" />
           </div>
 
           {/* Dedicated statistics snapshot: fed by the same /api/analytics
@@ -132,7 +134,7 @@ export default function AdminPage() {
                 </p>
               )}
               {(stats.leaderboard ?? []).slice(0, 5).map((agent: any, i: number) => {
-                const pct = agent.tauxConversion;
+                const pct = agent.tauxGlobal ?? agent.tauxConversion ?? 0;
                 return (
                   <div key={agent.id} className="px-5 py-3 flex items-center gap-4">
                     <span className="w-6 text-center text-base">
@@ -154,13 +156,13 @@ export default function AdminPage() {
                         </p>
                         <p className="text-[10px] text-slate-400 mt-0.5">contrats</p>
                       </div>
-                      <div className="hidden sm:flex items-center gap-2">
+                      <div className="hidden sm:flex items-center gap-2" title={`Taux global : ${TAUX_GLOBAL_FORMULE}`}>
                         <div className="w-20 h-2 bg-slate-100 rounded-full overflow-hidden">
-                          <div className={`h-full rounded-full ${pct>=40?"bg-emerald-500":pct>=20?"bg-amber-400":"bg-red-400"}`}
-                            style={{ width: `${pct}%` }} />
+                          <div className="h-full rounded-full bg-emerald-500"
+                            style={{ width: `${bestTaux > 0 ? Math.round((pct / bestTaux) * 100) : 0}%` }} />
                         </div>
-                        <span className={`text-xs font-semibold min-w-[2.5rem] text-right ${pct>=40?"text-emerald-600":pct>=20?"text-amber-600":"text-rose-500"}`}>
-                          {pct}%
+                        <span className="text-xs font-semibold min-w-[3rem] text-right text-slate-700 tabular-nums">
+                          {formatTaux(pct)}
                         </span>
                       </div>
                     </div>

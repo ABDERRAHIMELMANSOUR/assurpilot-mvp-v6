@@ -7,6 +7,7 @@ import DateFilter, { DateFilterState, buildQueryString } from "@/components/ui/D
 import GroupToggle from "@/components/ui/GroupToggle";
 import { withGroup } from "@/lib/query";
 import { usePolling } from "@/lib/usePolling";
+import { formatTaux, tauxGlobal } from "@/lib/rates";
 
 const EMPTY_FILTER: DateFilterState = { period: "", dateFrom: "", dateTo: "" };
 
@@ -78,12 +79,12 @@ export default function ConseillerPage() {
             sub="appels répétés"
             subColor={(stats.doublons ?? 0) > 0 ? "text-amber-600" : "text-slate-400"} />
           <StatCard label="Contrats signés" tone="emerald" value={stats.contrats ?? 0}
-            sub={`Taux ${stats.tauxContrat ?? 0}%`} subColor="text-emerald-600" />
+            sub={`Taux global ${formatTaux(stats.tauxGlobal ?? tauxGlobal(stats.contrats ?? 0, stats.total ?? 0))}`} subColor="text-emerald-600" />
           <StatCard label="Appels manqués" tone="rose" value={stats.manques}
             sub={stats.total > 0 ? `${Math.round((stats.manques / stats.total) * 100)}% du total` : "0%"}
             subColor={stats.manques > 0 ? "text-rose-500" : "text-slate-400"} />
           <StatCard label="Devis réalisés" tone="indigo" value={stats.devis}
-            sub={`Taux ${stats.tauxConversion}%`} subColor="text-indigo-600" />
+            sub={`sur ${stats.total} appel${stats.total > 1 ? "s" : ""}`} subColor="text-indigo-600" />
           <StatCard label="Durée moyenne" tone="amber"
             value={`${Math.floor(stats.dureeMoyenne / 60)}:${(stats.dureeMoyenne % 60).toString().padStart(2, "0")}`}
             sub="min:sec par appel" />

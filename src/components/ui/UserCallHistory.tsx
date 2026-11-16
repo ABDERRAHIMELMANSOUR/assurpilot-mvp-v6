@@ -8,6 +8,7 @@ import { errorMessage, fetchJsonOr } from "@/lib/fetchJson";
 import { isContractResult, isDevisResult } from "@/lib/contracts";
 import { usePolling } from "@/lib/usePolling";
 import { useResultLabels } from "@/lib/useResultLabels";
+import { formatTaux, tauxGlobal } from "@/lib/rates";
 
 type Profile = {
   id: string;
@@ -133,11 +134,13 @@ export default function UserCallHistory({
         <DateFilter value={filter} onChange={setFilter} allowAll={!defaultPeriod} />
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-5">
         <StatCard label="Total appels" value={calls.length} tone="brand" />
         <StatCard label="Répondus"     value={answered}     tone="brand" />
         <StatCard label="Contrats"     value={contrats}     tone="emerald" />
         <StatCard label="Devis"        value={devis}        tone="indigo" />
+        {/* Same formula as every dashboard (src/lib/rates.ts). */}
+        <StatCard label="Taux global"  value={formatTaux(tauxGlobal(contrats, calls.length))} tone="indigo" sub="contrats ÷ appels" />
       </div>
 
       {error && (

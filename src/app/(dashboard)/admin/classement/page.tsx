@@ -4,6 +4,7 @@ import DateFilter, { DateFilterState, buildQueryString } from "@/components/ui/D
 import ScopeFilter, { EMPTY_SCOPE, ScopeFilterState, withScope } from "@/components/ui/ScopeFilter";
 import { errorMessage } from "@/lib/fetchJson";
 import { withParam } from "@/lib/query";
+import { TAUX_GLOBAL_FORMULE, formatTaux } from "@/lib/rates";
 
 const EMPTY: DateFilterState = { period: "month", dateFrom: "", dateTo: "" };
 
@@ -42,6 +43,8 @@ export default function ClassementPage() {
   useEffect(() => { fetchStats(); }, [fetchStats]);
 
   const medals = ["🥇", "🥈", "🥉"];
+  // Bars scaled on the best rate of the list, so small rates stay readable.
+  const bestTaux = Math.max(0, ...((stats?.leaderboard ?? []) as any[]).map((a) => a.tauxGlobal ?? a.tauxConversion ?? 0));
 
   return (
     <div className="p-6 max-w-4xl mx-auto">
@@ -51,7 +54,7 @@ export default function ClassementPage() {
           <p className="text-sm text-slate-500 mt-0.5">
             {sort === "contrats"
               ? "Classé par contrats signés"
-              : "Classé par taux de conversion sur appels répondus"}
+              : `Classé par taux global (${TAUX_GLOBAL_FORMULE.toLowerCase()})`}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -62,7 +65,7 @@ export default function ClassementPage() {
             className="px-2.5 py-1.5 border border-slate-200 rounded-xl text-xs bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-400 transition-shadow"
           >
             <option value="contrats">Par contrats signés</option>
-            <option value="conversion">Par taux de conversion</option>
+            <option value="conversion">Par taux global</option>
           </select>
           <ScopeFilter value={scope} onChange={setScope} />
           <DateFilter value={filter} onChange={setFilter} />
@@ -90,12 +93,12 @@ export default function ClassementPage() {
                 <th className="table-th text-right">Manqués</th>
                 <th className="table-th text-right">Devis</th>
                 <th className="table-th text-right">Contrats</th>
-                <th className="table-th text-right">Taux</th>
+                <th className="table-th text-right" title={`Taux global : ${TAUX_GLOBAL_FORMULE}`}>Taux global</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {(stats.leaderboard ?? []).map((agent: any, i: number) => {
-                const pct = agent.tauxConversion;
+                const pct = agent.tauxGlobal ?? agent.tauxConversion ?? 0;
                 return (
                   <tr key={agent.id} className={`hover:bg-slate-50 ${i === 0 ? "bg-amber-50/40" : ""}`}>
                     <td className="table-td text-center">
@@ -122,11 +125,11 @@ export default function ClassementPage() {
                     <td className="table-td text-right">
                       <div className="flex items-center justify-end gap-2">
                         <div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                          <div className={`h-full rounded-full ${pct>=40?"bg-emerald-500":pct>=20?"bg-amber-400":"bg-red-400"}`}
-                            style={{ width: `${pct}%` }} />
+                          <div className="h-full rounded-full bg-emerald-500"
+                            style={{ width: `${bestTaux > 0 ? Math.round((pct / bestTaux) * 100) : 0}%` }} />
                         </div>
-                        <span className={`text-sm font-semibold ${pct>=40?"text-emerald-600":pct>=20?"text-amber-600":"text-rose-500"}`}>
-                          {pct}%
+                        <span className="text-sm font-semibold text-slate-700 tabular-nums">
+                          {formatTaux(pct)}
                         </span>
                       </div>
                     </td>

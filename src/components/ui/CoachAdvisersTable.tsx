@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useToast } from "@/components/ui/Toast";
 import { errorMessage, fetchJson } from "@/lib/fetchJson";
+import { TAUX_GLOBAL_FORMULE, formatTaux } from "@/lib/rates";
 
 export type AdviserStats = {
   id: string;
@@ -146,7 +147,7 @@ export default function CoachAdvisersTable({ rows, settings, onSettingsChange, a
               <th className="table-th text-right">Manqués</th>
               <th className="table-th text-right">Devis</th>
               <th className="table-th text-right">Contrats</th>
-              <th className="table-th text-right" title="Contrats signés / appels répondus">Taux</th>
+              <th className="table-th text-right" title={`Taux global : ${TAUX_GLOBAL_FORMULE}`}>Taux global</th>
               <th className="table-th text-right">Actions</th>
             </tr>
           </thead>
@@ -199,7 +200,7 @@ export default function CoachAdvisersTable({ rows, settings, onSettingsChange, a
                   <td className="table-td text-right text-sm"><Num value={row.manques} tone="text-rose-500" /></td>
                   <td className="table-td text-right text-sm"><Num value={row.devis} tone="text-indigo-600" /></td>
                   <td className="table-td text-right text-sm font-semibold"><Num value={row.contrats} tone="text-emerald-600" /></td>
-                  <td className="table-td text-right text-sm text-slate-500 tabular-nums">{row.tauxContrat}%</td>
+                  <td className="table-td text-right text-sm text-slate-500 tabular-nums">{formatTaux(row.tauxContrat)}</td>
 
                   {/* Actions: the two switches the coach controls. */}
                   <td className="table-td">

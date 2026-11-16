@@ -5,6 +5,7 @@ import DateFilter, { DateFilterState, buildQueryString } from "@/components/ui/D
 import CoachAdvisersTable, { AdviserSettings } from "@/components/ui/CoachAdvisersTable";
 import { errorMessage, fetchJson } from "@/lib/fetchJson";
 import { usePolling } from "@/lib/usePolling";
+import { formatTaux, tauxGlobal } from "@/lib/rates";
 import Link from "next/link";
 
 const EMPTY: DateFilterState = { period: "month", dateFrom: "", dateTo: "" };
@@ -72,9 +73,8 @@ export default function CoachDashboardPage() {
   useEffect(() => { void loadRoster(false); }, [loadRoster]);
   usePolling(() => loadRoster(true), 8_000);
 
-  const tauxGlobal = stats && (stats.totalAppels - stats.totalManques) > 0
-    ? Math.round((stats.totalDevis / (stats.totalAppels - stats.totalManques)) * 100)
-    : 0;
+  // Same formula on every view (src/lib/rates.ts): contrats signés ÷ total des appels × 100.
+  const taux = stats ? stats.tauxGlobal ?? tauxGlobal(stats.totalContrats ?? 0, stats.totalAppels ?? 0) : 0;
 
   const teamLabel = team?.nom ?? "votre équipe";
 
@@ -113,7 +113,7 @@ export default function CoachDashboardPage() {
             <StatCard label="Contrats signés" tone="emerald" value={stats.totalContrats ?? 0} subColor="text-emerald-600" />
             <StatCard label="Devis réalisés" tone="indigo" value={stats.totalDevis}   subColor="text-indigo-600" />
             <StatCard label="Appels manqués" tone="rose" value={stats.totalManques} subColor="text-rose-500" />
-            <StatCard label="Taux global" tone="indigo"    value={`${tauxGlobal}%`}  sub="conversion" subColor="text-brand-600" />
+            <StatCard label="Taux global" tone="indigo"    value={formatTaux(taux)}  sub="contrats ÷ appels" subColor="text-brand-600" />
           </div>
 
           <CoachAdvisersTable

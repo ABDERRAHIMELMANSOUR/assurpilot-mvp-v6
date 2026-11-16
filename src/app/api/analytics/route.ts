@@ -16,6 +16,7 @@ import {
 import { isContractResult, isDevisResult, type ResultLabels } from "@/lib/contracts";
 import { retentionClause } from "@/lib/retention";
 import { countUniqueCallers } from "@/lib/dedupe";
+import { tauxGlobal } from "@/lib/rates";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -50,8 +51,7 @@ function tally(calls: CallWithResult[], labels: ResultLabels) {
   const repondus = total - manques;
   // Every quote wording counts: "Devis", "Devis réalisé", "Devis envoyé"…
   const devis = calls.filter((c) => isDevisResult(c.result?.resultat, labels)).length;
-  // Signed contracts are the commercial outcome the ranking is built on; devis
-  // stays alongside it because the conversion rate is still read from it.
+  // Signed contracts are the commercial outcome the ranking and the rate are built on.
   const contrats = calls.filter((c) => isContractResult(c.result?.resultat, labels)).length;
 
   // Distinct prospects behind those calls, and the repeat attempts they hide.
@@ -67,9 +67,12 @@ function tally(calls: CallWithResult[], labels: ResultLabels) {
     repondus,
     devis,
     contrats,
-    tauxConversion: repondus > 0 ? Math.round((devis / repondus) * 100) : 0,
-    // Share of answered calls that ended in a signature.
-    tauxContrat: repondus > 0 ? Math.round((contrats / repondus) * 100) : 0,
+    // THE Taux global, same formula everywhere (src/lib/rates.ts): contrats signés ÷ total
+    // des appels × 100. tauxConversion and tauxContrat are kept as names for the existing
+    // screens and carry the same value.
+    tauxGlobal: tauxGlobal(contrats, total),
+    tauxConversion: tauxGlobal(contrats, total),
+    tauxContrat: tauxGlobal(contrats, total),
   };
 }
 
@@ -210,7 +213,10 @@ export async function GET(req: NextRequest) {
       totalDevis: leaderboard.reduce((sum, a) => sum + a.devis, 0),
       totalContrats: leaderboard.reduce((sum, a) => sum + a.contrats, 0),
       totalManques: leaderboard.reduce((sum, a) => sum + a.manques, 0),
+      // Taux global of the whole selection: total contrats ÷ total appels × 100.
+      tauxGlobal: 0,
     };
+    totals.tauxGlobal = tauxGlobal(totals.totalContrats, totals.totalAppels);
 
     const applied = {
       entity,

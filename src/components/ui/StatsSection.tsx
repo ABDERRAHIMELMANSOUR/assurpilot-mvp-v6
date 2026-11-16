@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { SUB_TEAM_LABEL } from "@/lib/entity";
+import { TAUX_GLOBAL_FORMULE, formatTaux } from "@/lib/rates";
 
 type TeamRow = {
   team: string;
@@ -161,7 +162,7 @@ export default function StatsSection({ teams, agents, caption }: Props) {
               <th className="table-th text-right">Manqués</th>
               <th className="table-th text-right">Devis</th>
               <th className="table-th text-right">Contrats</th>
-              <th className="table-th text-right">Taux contrat</th>
+              <th className="table-th text-right" title={`Taux global : ${TAUX_GLOBAL_FORMULE}`}>Taux global</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -191,7 +192,7 @@ export default function StatsSection({ teams, agents, caption }: Props) {
                   <Num value={a.contrats} tone="text-emerald-600" />
                 </td>
                 <td className="table-td text-right text-sm text-slate-500 tabular-nums">
-                  {a.tauxContrat}%
+                  {formatTaux(a.tauxContrat)}
                 </td>
               </tr>
             ))}
