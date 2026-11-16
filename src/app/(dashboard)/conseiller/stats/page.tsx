@@ -42,8 +42,8 @@ export default function ConseillerStatsPage() {
             <StatCard label="Manqués" tone="rose"              value={stats.manques}    subColor="text-rose-500" />
             <StatCard label="Devis réalisés" tone="emerald"       value={stats.devis}      subColor="text-emerald-600" />
             <StatCard label="Taux global (conversion)" tone="indigo"
-              value={formatTaux(stats.tauxGlobal ?? tauxGlobal(stats.contrats ?? 0, stats.total ?? 0))}
-              sub={`${stats.contrats ?? 0} contrat${(stats.contrats ?? 0) > 1 ? "s" : ""} signé${(stats.contrats ?? 0) > 1 ? "s" : ""} ÷ ${stats.total} appel${stats.total > 1 ? "s" : ""}`}
+              value={formatTaux(stats.tauxGlobal ?? tauxGlobal(stats.contrats ?? 0, stats.prospects ?? stats.total ?? 0))}
+              sub={`${stats.contrats ?? 0} contrat${(stats.contrats ?? 0) > 1 ? "s" : ""} signé${(stats.contrats ?? 0) > 1 ? "s" : ""} ÷ ${stats.prospects ?? stats.total} prospect${(stats.prospects ?? stats.total) > 1 ? "s" : ""}`}
               subColor="text-indigo-600" />
             <StatCard label="Durée moyenne" tone="amber"
               value={`${Math.floor(stats.dureeMoyenne/60)}:${(stats.dureeMoyenne%60).toString().padStart(2,"0")}`}

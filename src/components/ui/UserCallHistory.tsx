@@ -9,6 +9,7 @@ import { isContractResult, isDevisResult } from "@/lib/contracts";
 import { usePolling } from "@/lib/usePolling";
 import { useResultLabels } from "@/lib/useResultLabels";
 import { formatTaux, tauxGlobal } from "@/lib/rates";
+import { countUniqueCallers } from "@/lib/dedupe";
 
 type Profile = {
   id: string;
@@ -140,7 +141,7 @@ export default function UserCallHistory({
         <StatCard label="Contrats"     value={contrats}     tone="emerald" />
         <StatCard label="Devis"        value={devis}        tone="indigo" />
         {/* Same formula as every dashboard (src/lib/rates.ts). */}
-        <StatCard label="Taux global"  value={formatTaux(tauxGlobal(contrats, calls.length))} tone="indigo" sub="contrats ÷ appels" />
+        <StatCard label="Taux global"  value={formatTaux(tauxGlobal(contrats, countUniqueCallers(calls)))} tone="indigo" sub="contrats ÷ prospects" />
       </div>
 
       {error && (

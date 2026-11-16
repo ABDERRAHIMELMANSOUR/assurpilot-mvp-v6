@@ -73,8 +73,8 @@ export default function CoachDashboardPage() {
   useEffect(() => { void loadRoster(false); }, [loadRoster]);
   usePolling(() => loadRoster(true), 8_000);
 
-  // Same formula on every view (src/lib/rates.ts): contrats signés ÷ total des appels × 100.
-  const taux = stats ? stats.tauxGlobal ?? tauxGlobal(stats.totalContrats ?? 0, stats.totalAppels ?? 0) : 0;
+  // Same formula on every view (src/lib/rates.ts): contrats signés ÷ total des prospects × 100.
+  const taux = stats ? stats.tauxGlobal ?? tauxGlobal(stats.totalContrats ?? 0, stats.totalProspects ?? stats.totalAppels ?? 0) : 0;
 
   const teamLabel = team?.nom ?? "votre équipe";
 
@@ -113,7 +113,7 @@ export default function CoachDashboardPage() {
             <StatCard label="Contrats signés" tone="emerald" value={stats.totalContrats ?? 0} subColor="text-emerald-600" />
             <StatCard label="Devis réalisés" tone="indigo" value={stats.totalDevis}   subColor="text-indigo-600" />
             <StatCard label="Appels manqués" tone="rose" value={stats.totalManques} subColor="text-rose-500" />
-            <StatCard label="Taux global" tone="indigo"    value={formatTaux(taux)}  sub="contrats ÷ appels" subColor="text-brand-600" />
+            <StatCard label="Taux global" tone="indigo"    value={formatTaux(taux)}  sub="contrats ÷ prospects" subColor="text-brand-600" />
           </div>
 
           <CoachAdvisersTable

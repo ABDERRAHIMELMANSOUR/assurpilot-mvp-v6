@@ -79,7 +79,7 @@ export default function ConseillerPage() {
             sub="appels répétés"
             subColor={(stats.doublons ?? 0) > 0 ? "text-amber-600" : "text-slate-400"} />
           <StatCard label="Contrats signés" tone="emerald" value={stats.contrats ?? 0}
-            sub={`Taux global ${formatTaux(stats.tauxGlobal ?? tauxGlobal(stats.contrats ?? 0, stats.total ?? 0))}`} subColor="text-emerald-600" />
+            sub={`Taux global ${formatTaux(stats.tauxGlobal ?? tauxGlobal(stats.contrats ?? 0, stats.prospects ?? stats.total ?? 0))}`} subColor="text-emerald-600" />
           <StatCard label="Appels manqués" tone="rose" value={stats.manques}
             sub={stats.total > 0 ? `${Math.round((stats.manques / stats.total) * 100)}% du total` : "0%"}
             subColor={stats.manques > 0 ? "text-rose-500" : "text-slate-400"} />

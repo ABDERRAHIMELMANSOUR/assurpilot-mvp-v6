@@ -41,8 +41,8 @@ export default function AdminPage() {
 
   useEffect(() => { fetchStats(); }, [fetchStats]);
 
-  // Same formula on every view (src/lib/rates.ts): contrats signés ÷ total des appels × 100.
-  const taux = stats ? stats.tauxGlobal ?? tauxGlobal(stats.totalContrats ?? 0, stats.totalAppels ?? 0) : 0;
+  // Same formula on every view (src/lib/rates.ts): contrats signés ÷ total des prospects × 100.
+  const taux = stats ? stats.tauxGlobal ?? tauxGlobal(stats.totalContrats ?? 0, stats.totalProspects ?? stats.totalAppels ?? 0) : 0;
   // The bars of the ranking are scaled on the best rate shown, so small rates stay readable.
   const bestTaux = Math.max(0, ...((stats?.leaderboard ?? []) as any[]).slice(0, 5).map((a) => a.tauxGlobal ?? a.tauxConversion ?? 0));
   const medals = ["🥇", "🥈", "🥉"];
@@ -107,7 +107,7 @@ export default function AdminPage() {
             <StatCard label="Appels manqués" tone="rose" value={stats.totalManques} subColor="text-rose-500" />
             <StatCard label="Conseillers" tone="indigo"    value={stats.totalAgents}  sub="actifs" />
             <StatCard label="Taux global" tone="indigo"    value={formatTaux(taux)}
-              sub="contrats ÷ appels" subColor="text-indigo-600" />
+              sub="contrats ÷ prospects" subColor="text-indigo-600" />
           </div>
 
           {/* Dedicated statistics snapshot: fed by the same /api/analytics

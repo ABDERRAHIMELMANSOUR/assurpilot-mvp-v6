@@ -68,11 +68,11 @@ function tally(calls: CallWithResult[], labels: ResultLabels) {
     devis,
     contrats,
     // THE Taux global, same formula everywhere (src/lib/rates.ts): contrats signés ÷ total
-    // des appels × 100. tauxConversion and tauxContrat are kept as names for the existing
+    // des prospects × 100. tauxConversion and tauxContrat are kept as names for the existing
     // screens and carry the same value.
-    tauxGlobal: tauxGlobal(contrats, total),
-    tauxConversion: tauxGlobal(contrats, total),
-    tauxContrat: tauxGlobal(contrats, total),
+    tauxGlobal: tauxGlobal(contrats, prospects),
+    tauxConversion: tauxGlobal(contrats, prospects),
+    tauxContrat: tauxGlobal(contrats, prospects),
   };
 }
 
@@ -213,10 +213,11 @@ export async function GET(req: NextRequest) {
       totalDevis: leaderboard.reduce((sum, a) => sum + a.devis, 0),
       totalContrats: leaderboard.reduce((sum, a) => sum + a.contrats, 0),
       totalManques: leaderboard.reduce((sum, a) => sum + a.manques, 0),
-      // Taux global of the whole selection: total contrats ÷ total appels × 100.
+      // Taux global of the whole selection: total contrats ÷ total prospects × 100 (prospects
+      // counted across the whole selection, like the « Total prospects » card).
       tauxGlobal: 0,
     };
-    totals.tauxGlobal = tauxGlobal(totals.totalContrats, totals.totalAppels);
+    totals.tauxGlobal = tauxGlobal(totals.totalContrats, totals.totalProspects);
 
     const applied = {
       entity,
