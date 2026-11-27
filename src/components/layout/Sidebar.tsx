@@ -71,6 +71,7 @@ export default function Sidebar() {
           <>
             <NavLink href="/conseiller"       label="Mes appels" />
             <NavLink href="/conseiller/stats" label="Mes statistiques" />
+            <NavLink href="/conseiller/whatsapp" label="WhatsApp" />
             <SectionLabel label="Mon compte" />
             <NavLink href="/profil" label="Mon profil" />
           </>
@@ -82,6 +83,7 @@ export default function Sidebar() {
             <NavLink href="/superviseur"            label="Vue d'ensemble" />
             <NavLink href="/superviseur/mes-appels" label="Mes appels" />
             <NavLink href="/superviseur/appels"     label="Appels équipe" />
+            <NavLink href="/superviseur/whatsapp"   label="WhatsApp équipe" />
             <SectionLabel label="Équipe" />
             <NavLink href="/superviseur/equipe"   label="Mon équipe" />
             <NavLink href="/superviseur/activite" label="Activité" />
@@ -95,6 +97,7 @@ export default function Sidebar() {
             <SectionLabel label="Tableau de bord" />
             <NavLink href="/admin"               label="Vue globale" />
             <NavLink href="/admin/appels"        label="Tous les appels" />
+            <NavLink href="/admin/whatsapp"      label="Tous les chats WhatsApp" />
             <NavLink href="/admin/appels/import" label="Import fichier" />
             <NavLink href="/admin/classement"    label="Classement" />
             <NavLink href="/admin/statistiques-lignes" label="Statistiques lignes" />
@@ -115,6 +118,7 @@ export default function Sidebar() {
             <SectionLabel label="Configuration" />
             <NavLink href="/admin/resultats" label="Résultats d'appel" />
             <NavLink href="/admin/keyyo"     label="Config. Keyyo" />
+            <NavLink href="/admin/whatsapp/config" label="Config. WhatsApp" />
             <NavLink href="/admin/azzur"     label="Intégration AZZUR (Santé)" />
             <NavLink href="/admin/proassur"  label="Intégration ProAssur (Auto)" />
 
