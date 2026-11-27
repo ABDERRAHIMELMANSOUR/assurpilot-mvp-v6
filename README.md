@@ -78,12 +78,14 @@ Créés par `npm run db:seed` :
 |---------------------------|------------------------------------|
 | `/conseiller`             | Mes appels + ajouter résultat      |
 | `/conseiller/stats`       | Mes statistiques personnelles      |
+| `/conseiller/whatsapp`    | Mes conversations WhatsApp         |
 
 ### Superviseur
 | Route                      | Description                        |
 |----------------------------|------------------------------------|
 | `/superviseur`             | Vue d'ensemble équipe              |
 | `/superviseur/appels`      | Tous les appels de l'équipe        |
+| `/superviseur/whatsapp`    | Chats WhatsApp de l'équipe         |
 | `/superviseur/equipe`      | Gérer les conseillers (CRUD)       |
 | `/superviseur/activite`    | Dernières connexions de l'équipe   |
 
@@ -100,6 +102,8 @@ Créés par `npm run db:seed` :
 | `/admin/activite`            | Activité et connexions de tous        |
 | `/admin/resultats`           | Configurer les options de résultat    |
 | `/admin/keyyo`               | Configuration VoIP Keyyo              |
+| `/admin/whatsapp`            | Tous les chats WhatsApp               |
+| `/admin/whatsapp/config`     | Numéros WhatsApp, bascule, webhook    |
 
 ---
 
@@ -1128,6 +1132,34 @@ Content-Type: application/json
 - **Sécurité** : `WEB_LEADS_TOKEN` (Vercel, 16 caractères au moins) — à appeler depuis le **serveur** du
   site, pas depuis le navigateur (un jeton dans une page web est public). `WEB_LEADS_ALLOWED_ORIGINS`
   (origines séparées par des virgules) ajoute les en-têtes CORS pour ces origines seulement.
+
+### WhatsApp Cloud API
+
+Conversations WhatsApp avec les clients, dans l'application (`src/lib/whatsapp/`).
+
+- **Qui voit quoi** (`src/lib/whatsapp/scope.ts`, même règle que les appels) : le conseiller voit
+  les conversations dont il est propriétaire ; le coach voit les siennes et celles de ses conseillers
+  directs (`superviseurId`), en lecture seule pour celles de ses conseillers ; l'administrateur voit
+  tout, y compris la file « Non attribuées ». Écrire : le propriétaire ou un administrateur.
+- **Propriétaire d'un client** : à la création de la conversation, le premier conseiller (ou coach)
+  actif qui a eu ce numéro en appel — la personne du badge « Déjà contacté par ». Sinon, la
+  conversation va dans la file non attribuée. L'admin attribue à n'importe qui ; un coach, à lui-même
+  ou à ses conseillers (`PATCH /api/whatsapp/conversations/:id`).
+- **Fenêtre de 24 h** (`src/lib/whatsapp/rules.ts`) : texte libre seulement dans les 24 h qui suivent le
+  dernier message du client **sur le numéro qui envoie** ; sinon un modèle (`alm_confirmation_demande`,
+  `alm_appel_sans_reponse`, `alm_appel_manque`). La route d'envoi refuse un texte hors fenêtre (409).
+- **Statuts** : `pending` → `sent` → `delivered` → `read`, ou `failed` avec le message d'erreur de Meta.
+  Les statuts ne reviennent jamais en arrière quand Meta les envoie dans le désordre.
+- **Webhook** `GET|POST /api/whatsapp/webhook` : vérification Meta (`WHATSAPP_VERIFY_TOKEN`), puis
+  messages entrants et statuts, acceptés seulement avec une signature `X-Hub-Signature-256` valide
+  (`WHATSAPP_APP_SECRET`). Un message reçu deux fois n'est enregistré qu'une fois. Les événements d'un
+  numéro qui n'est pas le nôtre sont ignorés.
+- **Numéro principal / backup** (`/admin/whatsapp/config`, administrateur seul) : les deux numéros sont
+  définis par variables d'environnement ; la bascule choisit le numéro d'envoi et est journalisée
+  (`wa_switch_log`). Les deux numéros continuent de recevoir.
+- **Tables** : `wa_conversations`, `wa_messages`, `wa_switch_log` — nouvelles tables seulement, créées
+  par l'application au premier usage ; sinon `prisma/sql/011-whatsapp.sql`.
+- **Variables** : voir la section WhatsApp de `.env.example`.
 
 ### Import de fichiers d'appels
 

@@ -45,6 +45,8 @@ model User {
   callSettings     AdvisorCallSettings?
   // What an administrator has applied on the PBX for this adviser — see below.
   callApplied      AdvisorCallApplied?
+  // WhatsApp conversations this user owns (relation only: no column on users).
+  waConversations  WaConversation[]     @relation("WaConversationOwner")
 
   @@index([role])
   @@index([teamId])
@@ -272,4 +274,84 @@ model RoutingNotification {
 
   @@index([createdAt])
   @@map("routing_notifications")
+}
+
+// ─── WhatsApp Cloud API ─────────────────────────────────────────────────────
+// New tables only (prisma/sql/011-whatsapp.sql, also created on first use):
+// nothing in an existing table changes. The business numbers themselves (main
+// and backup) and every secret live in environment variables; the database only
+// keeps which slot is sending (a setting row in azzur_routes) and the traffic.
+
+// One thread per client WhatsApp number, whichever business number it used.
+// Its owner decides who sees it (src/lib/whatsapp/scope.ts):
+//   conseiller -> ownerUserId = self; coach -> self + direct reports; admin -> all.
+// No owner = the "non attribués" queue, visible to administrators only.
+model WaConversation {
+  id                       String    @id @default(cuid())
+  // Client number as Meta sends it: country code + digits, no "+" (33612345678).
+  waId                     String    @unique
+  // National form (0612345678), the key that matches Call.callerNumber.
+  clientPhone              String    @default("")
+  clientName               String    @default("")
+  ownerUserId              String?
+  assignedAt               DateTime?
+  assignedById             String?
+  // The 24-hour customer-service window: last message FROM the client, and the
+  // business number it was written to (the window is per business number).
+  lastInboundAt            DateTime?
+  lastInboundPhoneNumberId String?
+  lastMessageAt            DateTime  @default(now())
+  lastMessagePreview       String    @default("")
+  unreadCount              Int       @default(0)
+  createdAt                DateTime  @default(now())
+
+  owner    User?       @relation("WaConversationOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
+  messages WaMessage[]
+
+  @@index([ownerUserId, lastMessageAt])
+  @@index([lastMessageAt])
+  @@index([clientPhone])
+  @@map("wa_conversations")
+}
+
+model WaMessage {
+  id               String    @id @default(cuid())
+  conversationId   String
+  // IN (client -> us) or OUT (us -> client).
+  direction        String
+  // text | template | image | document | audio | video | location | ...
+  type             String    @default("text")
+  body             String    @default("")
+  templateName     String?
+  templateLanguage String?
+  templateParams   Json?
+  // Meta message id (wamid...). Unique: a webhook delivered twice is stored once.
+  waMessageId      String?   @unique
+  // Business number that sent or received it.
+  phoneNumberId    String    @default("")
+  // received (IN) | pending | sent | delivered | read | failed (OUT)
+  status           String
+  errorCode        String?
+  errorTitle       String?
+  sentById         String?
+  createdAt        DateTime  @default(now())
+  statusAt         DateTime?
+
+  conversation WaConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+  @@map("wa_messages")
+}
+
+// Every switch between the main and backup sending numbers (admin only).
+model WaSwitchLog {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  fromSlot  String
+  toSlot    String
+  actorId   String?
+  actorName String   @default("")
+
+  @@index([createdAt])
+  @@map("wa_switch_log")
 }
